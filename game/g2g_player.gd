@@ -36,6 +36,18 @@ signal finished(run: DotTimerRun)
 ## copy is drawn and never looked through.
 @export var has_camera: bool = false
 
+## Whether the person at the keyboard sees their own body in FIRST person.
+##
+## Off, which is what this genre has always shown and what a runner reading a landing
+## off the floor in front of them wants. It is a setting because it is a taste, not a
+## rule — `show_own_body` in [G2GPresentation]'s schema — and it changes nothing the
+## simulation can see: the head and hat stay culled either way, because those mounts
+## are at the eye. See [member G2GRig.owner_sees_head].
+var show_own_body: bool = false:
+	set(value):
+		show_own_body = value
+		_apply_own_body()
+
 var controller: DotFpsController = null
 var sampler: DotFpsSampler = null
 var rig: G2GRig = null
@@ -100,6 +112,15 @@ func _ready() -> void:
 		camera = G2GCamera.new()
 		camera.name = "Camera"
 		add_child(camera)
+
+		# [b]Here, and not left to the first [method present].[/b] `visible_to_owner`
+		# defaults to true because that is right for everybody else's rig, and the
+		# local one was corrected once a frame from `present()` — so the correct value
+		# was never the starting value, and any frame `present()` did not finish drew
+		# the player's own avatar at point-blank range. `present()` is a `_process`
+		# body, where a script error aborts the call and the game carries on, which is
+		# exactly how this repository lost its footsteps for a week. Start correct.
+		_apply_own_body()
 
 	if samples_input:
 		sampler = DotFpsSampler.new(controller.tunables)
@@ -298,7 +319,32 @@ func present(delta: float) -> void:
 		camera.global_position = eye
 		camera.global_basis = Basis(Vector3.UP, deg_to_rad(state.yaw))
 		camera.look(state.pitch, delta)
-		rig.visible_to_owner = camera.is_third_person()
+		_apply_own_body()
+
+
+## Settles what the owner's own camera draws of their own rig.
+##
+## Three states rather than two, and the third is the one the setting adds:
+##
+## [codeblock]
+## third person          the whole rig      the camera is behind the head
+## first, body on        the body only      the head and hat are AT the eye
+## first, body off       nothing            the default, and the genre's
+## [/codeblock]
+##
+## Called from [method present] every frame AND the moment the camera is built, so the
+## first value is the right one rather than the first correction. Nobody else's rig
+## goes through here: this is only ever the player holding the camera.
+func _apply_own_body() -> void:
+	if rig == null or camera == null:
+		return
+
+	var third := camera.is_third_person()
+
+	# The head before the whole rig, so the single `_apply_visibility` that matters is
+	# the one run with both flags already settled.
+	rig.owner_sees_head = third
+	rig.visible_to_owner = third or show_own_body
 
 
 func speed() -> float:

@@ -231,6 +231,13 @@ func _adopt(candidate: G2GPlayer) -> void:
 	if _sampler != null:
 		_sampler.tunables = player.controller.tunables
 
+	# The settings that live on the PLAYER rather than on the presentation layer, and
+	# for the same reason the sampler is here: `apply_all()` ran during `setup()`, when
+	# there was nobody to apply them to. A networked client reaches this function a
+	# JOIN after that, and again every time the server hands it a new player.
+	if presentation != null:
+		presentation.apply_own_body()
+
 
 func _build_netcode() -> DotResult:
 	net = DotNetManager.new()

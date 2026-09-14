@@ -31,6 +31,24 @@ var visible_to_owner: bool = true:
 		visible_to_owner = value
 		_apply_visibility()
 
+## Whether the head and the hat are part of what the owner sees.
+##
+## [b]Only meaningful while [member visible_to_owner] is on, and it exists because the
+## two halves of the rig are in different places relative to the camera.[/b] The head
+## and hat mounts sit AT the eye — that is what they are for — so a first-person camera
+## that draws them is inside a 40 cm cube and the view is a flat rectangle of one
+## colour with a straight edge across it, which is the artefact the layer split in
+## [method _set_layers_recursive] exists to prevent. The body mount is 40 cm below the
+## eye and draws as a torso, arms and legs, which is a body a player can see.
+##
+## So "show me my own body in first person" is this off and [member visible_to_owner]
+## on; third person is both on, because there the camera is behind the head rather
+## than inside it.
+var owner_sees_head: bool = true:
+	set(value):
+		owner_sees_head = value
+		_apply_visibility()
+
 ## The avatar currently applied, for a HUD or a debug dump.
 var avatar: DotAvatar = null
 
@@ -91,8 +109,16 @@ func _apply_visibility() -> void:
 	# Layers rather than `visible`, so the rig still casts a shadow a first-person
 	# player sees on the floor in front of them — which is the one cue for "how tall
 	# am I" a first-person view has.
+	#
+	# Per mount rather than for the whole rig, because [member owner_sees_head] is the
+	# difference between the two halves and the mounts are what separates them. A mount
+	# this rig never built (nothing has called `_ready` yet) compares unequal to
+	# `body_mount` and is hidden, which is the safe way round.
 	for child in get_children():
-		_set_layers_recursive(child, visible_to_owner)
+		var sees := visible_to_owner
+		if sees and not owner_sees_head and child != body_mount:
+			sees = false
+		_set_layers_recursive(child, sees)
 
 
 func _set_layers_recursive(node: Node, owner_sees: bool) -> void:
@@ -130,6 +156,10 @@ func describe() -> Dictionary:
 	return {
 		"avatar": str(avatar) if avatar != null else "-",
 		"crouch": "%.2f" % _crouch,
+		"owner_sees": "%s%s" % [
+			"yes" if visible_to_owner else "no",
+			"" if owner_sees_head else " (body only)",
+		],
 		"parts": body_mount.get_child_count() + head_mount.get_child_count()
 			+ hat_mount.get_child_count(),
 	}

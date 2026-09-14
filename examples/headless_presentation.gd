@@ -17,7 +17,7 @@ const G2GCamera := preload("../game/g2g_camera.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 56
+const CHECKS := 59
 
 var _passed := 0
 var _failed := 0
@@ -442,6 +442,28 @@ func _test_a_runner_does_not_see_their_own_head() -> void:
 		_drawn_by(rig, fp_mask) > 0,
 		"and in third person the owner sees it again"
 	)
+
+	# `show_own_body`: the third state, and the whole point of it is that it is NOT
+	# "first person with the cull turned off". The head mount is AT the eye, so a
+	# switch that showed the whole rig would put the camera inside a 40 cm cube and
+	# reproduce the bug this section is named after — on purpose, from a setting.
+	rig.owner_sees_head = false
+	await get_tree().process_frame
+
+	_check(
+		_drawn_by(rig.body_mount, fp_mask) > 0,
+		"with show_own_body on, the owner's first-person camera draws their body"
+	)
+	_check(
+		_drawn_by(rig.head_mount, fp_mask) == 0,
+		"and never their head, which is the mount the camera is inside"
+	)
+	_check(
+		_drawn_by(rig.head_mount, tp_mask) > 0,
+		"while everybody else still sees the whole of them"
+	)
+
+	rig.owner_sees_head = true
 
 	remove_child(rig)
 	rig.queue_free()

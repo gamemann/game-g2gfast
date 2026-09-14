@@ -123,6 +123,24 @@ static func schema() -> DotSettingsSchema:
 	))
 	s.add(DotSettingsDef.integer(&"fx_quality", 3, 0, 3, &"video"))
 
+	# [b]Off, which is both this genre's convention and the only default that costs a
+	# runner nothing.[/b] A body drawn at the eye is 40 cm of avatar between the player
+	# and the block they are about to land on, and the one visual cue a first-person
+	# runner has for their own height is the SHADOW on the floor ahead — which is cast
+	# either way, because the rig hides by render layer rather than by `visible`.
+	#
+	# ACCOUNT scope for the reason `sensitivity` and `preferred_style` have it: somebody
+	# who turned their body on once should not have to find the switch again on the next
+	# server. What it reaches is `G2GPlayer.show_own_body`; the head and the hat stay
+	# culled whatever this says, because those mounts are at the eye and drawing them
+	# fills the view with the inside of a cube.
+	s.add(DotSettingsDef.boolean(&"show_own_body", false, &"video").with_scope(
+		DotSettingsDef.Scope.ACCOUNT
+	).with_description(
+		"Draw your own character's body in first person. Off by default; the head is "
+		+ "never drawn, because the camera is inside it."
+	))
+
 	# [b]Zero by default, which is the opposite of every other game here.[/b] A surf ramp
 	# is a precision input at speed; shaking the camera for a landing is taking the run
 	# away. It is still a setting because the same server runs a deathmatch layer.
@@ -133,6 +151,25 @@ static func schema() -> DotSettingsSchema:
 	s.add(DotSettingsDef.boolean(&"allow_flashes", false, &"accessibility")
 		.with_description("Off by default here, for the same reason as the shake."))
 	return s
+
+
+## Pushes `show_own_body` onto the local player, whenever there is one.
+##
+## [b]Public, because the player is not here when the setting first is.[/b] `setup()`
+## runs `apply_all()` before anything has joined — offline the player is three lines
+## later, and on a networked client it is a JOIN event away — so this has to no-op
+## quietly and be called again by whoever adopts a player. [method G2GClient._adopt]
+## is that caller, and it is also what covers a reconnect, a map change and a player
+## replaced under a new session id.
+func apply_own_body() -> void:
+	if client == null or settings == null:
+		return
+
+	var player: Object = client.get("player")
+	if player == null:
+		return
+
+	player.set("show_own_body", bool(settings.get_value(&"show_own_body")))
 
 
 func _build_settings() -> DotResult:
@@ -165,6 +202,8 @@ func _on_setting_changed(key: StringName, value: Variant, _why: StringName) -> v
 			fx.config.allow_flashes = bool(value)
 		&"fx_quality":
 			fx.config.quality = int(value)
+		&"show_own_body":
+			apply_own_body()
 		&"chat_window":
 			_apply_chat_visibility()
 		&"chat_open_key":

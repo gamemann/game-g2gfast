@@ -31,6 +31,9 @@ godot --path .
 | **C** / **V** | Save a practice checkpoint / go back to it |
 | **M** | Next map |
 | **Esc** / **click** | Release the mouse / take it back. In a browser a click is also what captures it to begin with, because pointer lock needs a user gesture |
+| **`** | The console, which is also the settings screen: `settings` lists every one and each is a command of its own |
+
+`show_own_body 1` draws your own character in first person. Off by default, because this genre has never drawn one and a body at the eye is 40 cm of avatar over the block you are about to land on — your shadow on the floor ahead is drawn either way, and is the cue that actually helps. Your head and your hat are never drawn in first person whatever this says: both sit AT the eye, so the camera is inside them and drawing them fills the view with the inside of a cube. It is remembered per account rather than per machine.
 
 ## Running a server
 
