@@ -151,12 +151,41 @@ def tangent_frame(n):
 
 
 # ---------------------------------------------------------------- pakfile ----
-def read_pak(bsp):
+def read_pak(bsp, notes):
+    """Every file the .bsp carried in its embedded zip, by lowercased name.
+
+    [b]Read one entry at a time, and let a broken one be missing rather than fatal.[/b]
+    The obvious version is a dict comprehension over `namelist()`, and it was one until
+    `bhop_mario_fxd` -- a fifteen-year-old map whose pakfile has a bad CRC on a single
+    soundscape .txt that nothing here reads. `ZipFile.read` raises on that entry, the
+    comprehension propagates it, and 121 MB of perfectly good geometry imports as a
+    traceback. At one map a person re-packs the zip by hand; at fifty, one bad byte in a
+    file the importer does not even look at must not cost the map.
+
+    A skipped entry is reported rather than swallowed: if the missing file turns out to
+    have been a .vtf or a .vmt, the map imports with a prototype grid where its own
+    texture should be, and the note is the only thing that says why.
+    """
     off, ln, _ = bsp.dir[LUMP_PAKFILE]
     if not ln:
         return {}
-    z = zipfile.ZipFile(io.BytesIO(bsp.d[off:off + ln]))
-    return {n.lower(): z.read(n) for n in z.namelist()}
+    try:
+        z = zipfile.ZipFile(io.BytesIO(bsp.d[off:off + ln]))
+    except zipfile.BadZipFile as e:
+        notes.append("pakfile is unreadable (%s); every surface falls back to the "
+                     "prototype grid" % e)
+        return {}
+    pak, bad = {}, []
+    for n in z.namelist():
+        try:
+            pak[n.lower()] = z.read(n)
+        except (zipfile.BadZipFile, EOFError, OSError) as e:
+            bad.append("%s (%s)" % (n, e.__class__.__name__))
+    if bad:
+        notes.append("%d of %d pakfile entries could not be read and were skipped: %s"
+                     % (len(bad), len(z.namelist()), ", ".join(sorted(bad)[:5])
+                        + (" ..." if len(bad) > 5 else "")))
+    return pak
 
 
 def vmt_basetexture(src):
@@ -710,7 +739,17 @@ def zone_role(name):
         # every run and make the column meaningless.
         return ("CHECKPOINT", 0, "")
 
-    if "zone" not in n:
+    # [b]`start_trigger` is the same evidence as `zone_start`, and only one of them
+    # was being read.[/b] The gate here was `"zone" not in n`, so a mapper who called
+    # the volume a trigger rather than a zone had the label thrown away -- which is
+    # this function's own docstring happening again, one convention further out.
+    # `surf_greensway` names all four of its volumes `start_trigger`, `end_trigger`,
+    # `checkpoint_1` and `checkpoint_2`, and got a timer out of the two that happened
+    # to match. Over the eighteen maps imported here the widened gate changes exactly
+    # those two labels and nothing else, which is the only reason it is safe: this
+    # runs over `trigger_multiple` and `trigger_once` targetnames, where "start" and
+    # "end" are already about as unambiguous as a compiled map gets.
+    if "zone" not in n and "trigger" not in n:
         return None
     if "start" in n:
         kind = "START"
@@ -719,7 +758,9 @@ def zone_role(name):
     else:
         return None
 
-    rest = n.replace("zone", "").replace("start", "").replace("end", "")
+    # "trigger" comes off with the rest, or `start_trigger` leaves `trigger` behind as
+    # a track key and the map's main route becomes bonus 1.
+    rest = n.replace("zone", "").replace("trigger", "").replace("start", "").replace("end", "")
     rest = re.sub(r"[_\s]+", "_", rest).strip("_")
     rest = re.sub(r"^(map|the)_?", "", rest).strip("_")
     return (kind, 0, rest)
@@ -1500,7 +1541,8 @@ def main(argv=None):
     # The textures are decoded BEFORE the mesh, because which of them the pakfile
     # actually carried is what decides whether a surface gets the map's own UVs or a
     # world-placed prototype grid, and a vertex can only carry one of the two.
-    pak = read_pak(bsp)
+    notes = []
+    pak = read_pak(bsp, notes)
     materials = sorted({clean_material(bsp.face_material(f)[0]) for f in faces})
     tex = extract_textures(pak, materials, os.path.join(d, "textures"))
     textured = {m for m, (png, _) in tex.items() if png}
@@ -1513,7 +1555,6 @@ def main(argv=None):
         s["texture"] = None if s["prototype"] else png
         s["translucent"] = translucent and not s["prototype"]
 
-    notes = []
     collision_blob, collision, skipped_entities = build_collision(bsp, notes)
     # The collision block lives in the same .bin, after the mesh, so a map is still the
     # four files it was. Its offsets are written relative to its own block and shifted

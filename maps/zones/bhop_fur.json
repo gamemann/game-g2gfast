@@ -1,0 +1,13 @@
+{
+ "id": "bhop_fur",
+ "display_name": "bhop: fur",
+ "tier": 4,
+ "notes": "The whole map is 56 trigger_teleports, 48 destinations and worldspawn -- there is no other entity in the file, so there is nothing to read a label off. What it does have is a completely regular teleport graph, and the finish falls straight out of it. All 32 spawns sit on the destination `Stage1`, and exactly two triggers are aimed at it: a 2560x1536x16 pad, which is the floor under the start platform, and a 16x448x352 plane standing 23125 units away at the far end of the map. A 16-unit-thick wall at the opposite corner that sends you back to the start line is a finish line -- the same door-versus-pit measurement surf_kitsune needed, and here the two differ by a factor of five in width with nothing between them. Stage2..Stage31 are not emitted as splits: they are where each section returns a player who fell, and the map also carries LJ1..LJ12, Telehop1/2 and StageBonus in the same namespace, so numbering them would put a different set of splits on a run depending on which practice area a player wandered into.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": "Stage1", "extents": [400, 400, 180]},
+   "note": "the start platform; all 32 info_player_* entities are on this point"},
+  {"kind": "SPAWN", "track": 0, "destination": "Stage1"},
+  {"kind": "END", "track": 0, "teleport_to": "Stage1", "max_horizontal": 512,
+   "note": "the 16x448 plane at the far corner. The other trigger aimed at Stage1 is the 2560-wide start floor, which this width limit excludes"}
+ ]
+}

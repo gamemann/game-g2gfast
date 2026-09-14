@@ -1,0 +1,14 @@
+{
+ "id": "bhop_mario_fxd",
+ "display_name": "bhop: mario",
+ "tier": 3,
+ "notes": "The map labels its own start and finish, on info_teleport_destination point entities rather than on the trigger volumes, which is why nothing was read out of it automatically. Its shape is a lobby and a course: all 21 info_player_* spawns are in a room at z~13100 beside the `exit` destination, and the only trigger_teleport aimed at `start` is a 975x24 doorway standing in that room -- so the lobby is where you arrive and `start` [5365 -2963 -3770] is where the course begins. The finish is the other end of the same mechanism: exactly one trigger_teleport in the map is aimed at `finish`, it is a 2-unit-thick plane at the far end of the ride, and the destination it throws you to sits back at lobby height next to the `exit` door that returns you. A thin plane a player crosses once, aimed at a destination called finish, is a finish line.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": "start", "extents": [320, 320, 160]},
+   "note": "the start platform, where the lobby doorway puts you"},
+  {"kind": "SPAWN", "track": 0, "destination": "start", "destination_yaw": 0,
+   "note": "on the course rather than in the lobby: !r should put a runner back at the start line, not back through the door"},
+  {"kind": "END", "track": 0, "teleport_to": "finish",
+   "note": "the single 2x82x158 plane aimed at `finish`. No other trigger in the map targets it"}
+ ]
+}

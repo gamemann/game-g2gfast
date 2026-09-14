@@ -1,0 +1,13 @@
+{
+ "id": "bhop_aztec",
+ "display_name": "bhop: aztec",
+ "tier": 2,
+ "notes": "The map labels its start -- the destination `START`, which the 16 spawns stand on and which the start platform's own floor pad returns you to -- and does not label a finish. What it has instead is a pair of matched gates at the two far ends of the course: `ha` at [3364 -955] and `hb` at [-931 2227], both 70x70x109, both aimed at a destination back on the start platform. Those are the two places the map sends a player home from, and one of them is the end of the ride. `ha` is taken as the finish because the course's own section returns run Teleport1..Teleport7 and Teleport7 sits at [2562 -596], in the same arm as `ha`, two hundred units short of it -- so the last section the map numbers ends where `ha` stands. THE DOUBT IS WORTH WRITING DOWN: `hb` is the identical shape on the other arm, beside Teleport5, and if this map turns out to run 1..7 through both arms rather than ending at 7 then the finish is hb and every time filed here is short by an arm. Somebody who plays it can settle it in one run.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": "START", "extents": [256, 256, 160]},
+   "note": "the start platform, around both info_teleport_destination entities named START"},
+  {"kind": "SPAWN", "track": 0, "destination": "START"},
+  {"kind": "END", "track": 0, "teleport_to": "ha",
+   "note": "the gate at the far end of the Teleport7 arm. See the doubt in the notes above"}
+ ]
+}

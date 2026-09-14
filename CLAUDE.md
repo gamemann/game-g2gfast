@@ -178,6 +178,23 @@ everything. The controller aims from the eye whichever is active.
 `sv_allow_thirdperson 0` is server-side because third person sees over ledges first
 person cannot, and it puts anybody already in it back.
 
+**`show_own_body` is a third state, and it is not "first person with the cull off".** The
+rig's three mounts are in two different places relative to the camera: the body mount is
+40 cm below the eye and draws as a torso, arms and legs, while the head and hat mounts sit
+*at* the eye — that is what they are for. So a switch that simply showed the whole rig
+would put the camera inside a 40 cm cube and fill the view with one flat colour behind a
+straight edge, which is exactly the artefact `G2GRig._set_layers_recursive` was written to
+end and exactly what it looks like in a bug report. `G2GRig.owner_sees_head` is therefore
+a second flag and the three states are *nothing* / *body only* / *everything*, settled in
+one place in `G2GPlayer._apply_own_body`.
+
+**The default is applied where the camera is built, not on the first frame that draws.**
+`visible_to_owner` defaults to true because that is right for everybody else's rig, so the
+local one was only ever *corrected*, once a frame, from `present()` — a `_process` body,
+where a script error aborts the call and the game carries on. Any frame that did not
+finish drew the player's own avatar at point-blank range. A default that has to be
+corrected is not a default.
+
 ## Decision 4: one avatar schema, two sources of parts
 
 `G2GAvatars.schema()` is a real `DotAvatarSchema` — body, head, hat — and the rig has one

@@ -1,0 +1,14 @@
+{
+ "id": "bhop_monster_jam",
+ "display_name": "bhop: monster jam",
+ "tier": 3,
+ "notes": "One trigger_teleport out of 62 is aimed at the destination named `end`, and it is a 71x43 gate rather than one of the room-sized pits the other 61 are -- so it is a thing a player walks through on purpose, which is what a finish is. There is no matching start label: the map's 24 info_player_* spawns sit in a tight 291x755 cluster at [4318 1146 6852] and that cluster is the start platform, so the start line is drawn around it rather than around a name.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": [4318, 1146, 6852], "extents": [420, 640, 180]},
+   "note": "the spawn platform: the bounding box of all 24 info_player_* entities, with margin"},
+  {"kind": "SPAWN", "track": 0, "destination": [4314, 1037, 6792],
+   "note": "an actual info_player_* origin, not the middle of the cluster. The cluster spans two tiers -- 19 spawns at z 6792 and 5 at z 6912 -- so its centroid is at 6852, which is the air between them: a player put there falls 15 m and the suite catches it"},
+  {"kind": "END", "track": 0, "teleport_to": "end",
+   "note": "the one gate-sized teleport aimed at `end`; every other teleport in the map is a pit"}
+ ]
+}

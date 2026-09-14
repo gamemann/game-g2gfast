@@ -1,0 +1,13 @@
+{
+ "id": "bhop_badges",
+ "display_name": "bhop: badges",
+ "tier": 3,
+ "notes": "Exactly one of the map's 285 trigger_teleports is aimed at the destination named `end`, and it is a 64x64x16 pad -- a thing you land on, against 284 pits and section returns. That is the finish. The start is unlabelled and is the spawn platform: 16 info_player_* entities on a 1024x1024 square at z -3984, which is the only place in the map they are.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": [-9376, 12160, -3984], "extents": [640, 640, 180]},
+   "note": "the 1024-unit spawn platform, plus margin"},
+  {"kind": "SPAWN", "track": 0, "destination": [-9376, 12160, -3984]},
+  {"kind": "END", "track": 0, "teleport_to": "end",
+   "note": "the single 64x64 pad aimed at `end`"}
+ ]
+}

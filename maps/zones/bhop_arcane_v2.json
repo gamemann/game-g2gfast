@@ -1,0 +1,13 @@
+{
+ "id": "bhop_arcane_v2",
+ "display_name": "bhop: arcane",
+ "tier": 4,
+ "notes": "A practice hub with a course attached, and the hub is why this needs writing down. All 25 spawns are one point at [0 0 14416] in a room whose floor is 64x64x128 teleport pads, one per lettered sub-stage (stage1a..stage5k, 182 destinations) -- so a player can pad straight to any section. That is the map's own design and every server that has run it has zoned it the same way: the start line is the hub room, the finish is the finish. The finish itself is chained: five `*_stop` pads teleport to `end_stop`, which sits inside the one trigger aimed at the destination `end`, which throws you out of the course. Timing hub-to-end is therefore honest about the route and cannot be honest about a player who pads past half of it; a records server that cares should zone the sections as tracks instead.",
+ "zones": [
+  {"kind": "START", "track": 0, "around": {"point": [0, 0, 14416], "extents": [320, 320, 180]},
+   "note": "the hub room, around the single point all 25 info_player_* entities share"},
+  {"kind": "SPAWN", "track": 0, "destination": [0, 0, 14416]},
+  {"kind": "END", "track": 0, "teleport_to": "end",
+   "note": "the one trigger aimed at the `end` destination. `end_stop` -- where the five stage-stop pads land -- is a point inside this same volume, so both routes to the finish cross it"}
+ ]
+}
