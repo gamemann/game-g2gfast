@@ -437,7 +437,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 135 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 51 checks
+godot --headless --path . res://examples/headless_presentation.tscn  # 56 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
 godot --headless --path . res://examples/dedicated.tscn      # 121 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
@@ -493,6 +493,14 @@ avatar, a map change, a bot, and leaving.
 the project's 128 — and checks the game and the timer count at 100, because a test
 using the same number at both ends would pass with the chain disconnected.
 
+
+## Two layers, and the one line that had to tell them apart
+
+`G2GRig` keeps a player's body on two visibility layers so the **owner's** first-person camera can cull it while every other camera still draws it — layers rather than `visible`, because a first-person player who is culled out of their own view still needs their shadow, which is the only cue a first-person view has for how tall they are and where they are standing.
+
+Every part of that worked except the part that had to differ. `G2GCamera.first.cull_mask` correctly excludes `LAYER_LOCAL_BODY`, `third` correctly includes it, `G2GPlayer` correctly sets `rig.visible_to_owner = camera.is_third_person()` — and `_set_layers_recursive` then set **both** layers unconditionally, so the culled layer was never the only one. `owner_sees` arrived and was used for nothing but a `cast_shadow` ternary whose two branches were identical, which is the tell. The first-person camera therefore drew its own player's avatar at point-blank range and the bottom third of the screen was a magenta dome, on every map, in every frame, for every player.
+
+**No assertion in this repository looked at a layer mask**, and none of the numbers involved were wrong — there was nothing to notice except the picture. It was found in a screen recording. `headless_presentation` checks it now, because the check is one bitwise AND against the camera's own cull mask and the alternative is noticing again.
 
 ## The player layer is reached, and third person here stays cosmetic
 

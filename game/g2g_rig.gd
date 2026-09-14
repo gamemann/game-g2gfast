@@ -98,15 +98,29 @@ func _apply_visibility() -> void:
 func _set_layers_recursive(node: Node, owner_sees: bool) -> void:
 	if node is VisualInstance3D:
 		var visual := node as VisualInstance3D
-		# Layer 1 is what every camera sees; LAYER_LOCAL_BODY is what the local
-		# first-person camera culls. Both set, so every OTHER camera still draws it.
-		visual.layers = 1 | (1 << (LAYER_LOCAL_BODY - 1))
+		# Layer 1 is what every camera sees, LAYER_LOCAL_BODY is the one the local
+		# first-person camera culls, and the point of two layers is to be on a
+		# DIFFERENT one depending on whether the owner should see this rig.
+		#
+		# [b]Setting both unconditionally defeats the whole mechanism[/b], which is
+		# what this did: `owner_sees` arrived, was used for nothing but a ternary
+		# whose branches were identical, and every rig stayed on layer 1 — so the
+		# first-person camera drew its own player's body at point-blank range, and
+		# the bottom third of the screen was the inside of the player's own head.
+		# The cull mask, the layer constant and the third-person path were all
+		# correct; only the one line that had to differ did not.
+		visual.layers = (
+			(1 | (1 << (LAYER_LOCAL_BODY - 1))) if owner_sees
+			else (1 << (LAYER_LOCAL_BODY - 1))
+		)
 
+		# Unconditional, and not an oversight: a first-person player is culled out of
+		# their own camera and their SHADOW is then the only cue for how tall they are
+		# and where they are standing. Casting it is the reason this uses layers
+		# rather than `visible`.
 		if node is GeometryInstance3D:
-			(node as GeometryInstance3D).cast_shadow = (
-				GeometryInstance3D.SHADOW_CASTING_SETTING_ON if not owner_sees
-				else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			)
+			(node as GeometryInstance3D).cast_shadow = \
+				GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 	for child in node.get_children():
 		_set_layers_recursive(child, owner_sees)

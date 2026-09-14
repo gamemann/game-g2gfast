@@ -2,6 +2,8 @@ extends Node
 
 const G2GParty := preload("../game/g2g_party.gd")
 const G2GPresentation := preload("../game/g2g_presentation.gd")
+const G2GRig := preload("../game/g2g_rig.gd")
+const G2GCamera := preload("../game/g2g_camera.gd")
 
 ## Settings, audio, effects, the console and the practice session.
 ##
@@ -15,7 +17,7 @@ const G2GPresentation := preload("../game/g2g_presentation.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 51
+const CHECKS := 56
 
 var _passed := 0
 var _failed := 0
@@ -41,6 +43,7 @@ func _run() -> void:
 	_test_console_is_prefixed()
 	_test_a_party_run_is_tainted()
 	_test_chat_box()
+	await _test_a_runner_does_not_see_their_own_head()
 
 	print("")
 	_check(
@@ -370,6 +373,96 @@ func _test_chat_box() -> void:
 
 
 # --- Harness ---------------------------------------------------------------
+
+## The one bug in this file's history that no assertion in it could have caught, and
+## the reason it is now an assertion.
+##
+## [G2GRig] puts a player's body on two visibility layers so the OWNER'S first-person
+## camera can cull it while every other camera still draws it — that is what
+## [member G2GCamera.first]'s cull mask is for, and the third-person path depends on
+## the same two layers. It set both layers unconditionally, so the culled layer was
+## never the only one and the first-person camera drew its own player's avatar at
+## point-blank range. The bottom third of the screen was the inside of the player's
+## own head, in every frame, on every map.
+##
+## Every number in the game was right: the cull mask, the layer constant, the
+## third-person view, and the `visible_to_owner` flag, which arrived correctly and was
+## then used for nothing. It was found in a screen recording, which is where an
+## interface bug is always found. What it costs to check here is one bitwise AND.
+func _test_a_runner_does_not_see_their_own_head() -> void:
+	_section("A first-person runner is culled out of their own camera")
+
+	var camera := G2GCamera.new()
+	add_child(camera)
+	await get_tree().process_frame
+
+	var fp_mask: int = camera.first.cull_mask
+	var tp_mask: int = camera.third.cull_mask
+
+	_check(
+		fp_mask & (1 << (G2GRig.LAYER_LOCAL_BODY - 1)) == 0,
+		"the first-person camera culls the local-body layer",
+		"mask 0x%05X" % fp_mask
+	)
+	_check(
+		tp_mask & (1 << (G2GRig.LAYER_LOCAL_BODY - 1)) != 0,
+		"and the third-person camera does not",
+		"mask 0x%05X" % tp_mask
+	)
+
+	var rig := G2GRig.new()
+	add_child(rig)
+	await get_tree().process_frame
+
+	# Stand-ins for whatever avatar is loaded: the rule is about the layers, not about
+	# which mesh happens to be mounted.
+	for mount in [rig.body_mount, rig.head_mount]:
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = SphereMesh.new()
+		mount.add_child(mesh)
+
+	rig.visible_to_owner = false
+	await get_tree().process_frame
+
+	var hidden := _drawn_by(rig, fp_mask)
+	_check(
+		hidden == 0,
+		"a rig its owner must not see is drawn by none of their first-person camera",
+		"%d visuals still drawn" % hidden
+	)
+	_check(
+		_drawn_by(rig, tp_mask) > 0,
+		"and is still drawn by every other camera, so other players can see them"
+	)
+
+	rig.visible_to_owner = true
+	await get_tree().process_frame
+
+	_check(
+		_drawn_by(rig, fp_mask) > 0,
+		"and in third person the owner sees it again"
+	)
+
+	remove_child(rig)
+	rig.queue_free()
+	remove_child(camera)
+	camera.queue_free()
+
+	_completed += 1
+
+
+## How many of [param node]'s visuals a camera with [param mask] would draw.
+func _drawn_by(node: Node, mask: int) -> int:
+	var count := 0
+
+	if node is VisualInstance3D and (node as VisualInstance3D).layers & mask != 0:
+		count += 1
+
+	for child in node.get_children():
+		count += _drawn_by(child, mask)
+
+	return count
+
 
 func _section(title: String) -> void:
 	_entered += 1
