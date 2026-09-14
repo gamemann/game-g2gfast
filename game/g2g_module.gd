@@ -146,6 +146,16 @@ func _module_load() -> DotResult:
 	# no longer there.
 	var map_commands := DotMapCommands.new()
 	map_commands.session = game.maps
+	# [b]The catalogue is not the set of maps this server can play, and on this one it
+	# never was.[/b] `DotMapCommands` refuses an id the catalogue does not hold, which is
+	# right on a server whose maps are all on disk and wrong on every deployment of this
+	# game: it is delivered as a pack with `maps/imported/` excluded, so the catalogue
+	# holds the boot map and whatever has been fetched since. An operator typing
+	# `map surf_kitsune` on a freshly booted one was answered "No map called
+	# 'surf_kitsune'" about a map sitting on the content origin, and `change_fn` below --
+	# which exists to fetch exactly that -- was never reached. A real typo is still
+	# refused, with the same suggestion, after the fetch has failed to find it.
+	map_commands.may_fetch_unknown = true
 	map_commands.change_fn = func(id: StringName) -> DotResult:
 		return await game.change_map(id)
 	map_commands.player_count_fn = func() -> int:
@@ -153,6 +163,27 @@ func _module_load() -> DotResult:
 	map_commands.bind(self)
 	add_command("g2g_maps_reload", _cmd_maps_reload,
 		"Re-read maps/ from disk, picking up anything dropped in", DotAdminFlags.CHANGEMAP)
+
+	# The delivered server's map list. See [member G2GConfig.content_maps] for why a game
+	# that finds its maps by looking needs to be told about these: there is no directory
+	# to look in when the maps are on a CDN, so `maps`, the rotation and `rtv` would all
+	# offer the three built-in scenes and nothing else.
+	#
+	# Set live as well as at load. The sweep is in the background either way, so an
+	# operator adding a map id to a running server gets it without a restart, which is
+	# the same promise `g2g_maps_reload` makes for the disk.
+	add_cvar("sv_content_maps", " ".join(game.config.content_maps),
+		"Map ids to fetch from the content origin, space- or comma-separated."
+	).changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.content_maps = _split_map_ids(new_value)
+			# Not awaited on purpose -- see G2GGame.fetch_content_maps. A cvar handler
+			# that blocked on 66 MB would hang the console that set it.
+			game.fetch_content_maps()
+	)
+
+	if not game.config.content_maps.is_empty():
+		game.fetch_content_maps()
 	add_command("g2g_rtv", _cmd_rtv, "Rock the vote", "").with_chat()
 
 	# What twenty years of bhop servers taught everybody's fingers: `!r`, `!wr`,
@@ -704,6 +735,18 @@ func _register_games() -> void:
 ## invalid because of the first, and quietly did nothing. The console reported all
 ## of them as set. Refusing at the console is what makes the operator see the
 ## refusal, and trying the value on a copy is what keeps the live config clean.
+## Split `sv_content_maps` into ids. Commas or spaces, because an operator pasting a
+## map list has one or the other and being refused over a separator is a waste of their
+## afternoon.
+func _split_map_ids(value: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	for part in value.replace(",", " ").split(" ", false):
+		var id := part.strip_edges()
+		if id != "":
+			out.append(id)
+	return out
+
+
 func _movement_cvar(cvar_name: String, field: String, description: String) -> void:
 	var current: Variant = game.config.get(field)
 	var text := ("1" if current else "0") if current is bool else str(current)

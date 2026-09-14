@@ -89,6 +89,9 @@ signal player_removed(player_id: StringName)
 ## not ask dot-cloud again. dot-cloud is itself idempotent; this saves the await.
 var _map_content_seen: Dictionary = {}
 
+## Whether [method fetch_content_maps] is already sweeping the configured set.
+var _fetching_content_maps: bool = false
+
 var authoritative: bool = true
 
 var maps: DotMapSession = null
@@ -909,6 +912,69 @@ func ensure_map_content(id: StringName) -> DotResult:
 		"map": String(id), "dir": dir
 	})
 	return DotResult.success(null)
+
+
+## Fetch every id in [member G2GConfig.content_maps] into the catalogue, in the background.
+##
+## [b]Deliberately not awaited by the caller, and that is the one thing to know about
+## it.[/b] Calling a coroutine without `await` is normally this family's own mistake —
+## it returns a [GDScriptFunctionState] and the work silently does not happen where the
+## caller thought it did. Here the work DOES happen, on its own, and being made to wait
+## for it is the bug: this is up to 66 MB over the network, and a server that blocked
+## its boot on it would sit unreachable for a minute on a slow link with nothing in the
+## log to say why. So it is started and left, and the catalogue grows under a running
+## server exactly the way [method rescan_maps] already lets it.
+##
+## One at a time rather than eight at once. They share a link and a content client, and
+## eight concurrent transfers finish no sooner while making the progress lines — the
+## operator's only view of a long download — interleave into nonsense.
+##
+## Re-entrant calls are dropped rather than queued: the cvar that sets this is settable
+## live, and an operator pasting a list twice should not start a second sweep of the
+## same eight maps.
+func fetch_content_maps() -> void:
+	if _fetching_content_maps or config == null or config.content_maps.is_empty():
+		return
+
+	_fetching_content_maps = true
+	var wanted := config.content_maps
+	var added: Array[StringName] = []
+	var failed := 0
+
+	DotLog.info(CHANNEL, "fetching the configured map set", {"maps": wanted.size()})
+
+	for raw in wanted:
+		var id := StringName(raw.strip_edges())
+		if id == &"":
+			continue
+		if maps != null and maps.catalogue != null and maps.catalogue.has(id):
+			continue
+
+		var res: DotResult = await ensure_map_content(id)
+
+		# `ensure_map_content` succeeds and does nothing when there is no content client,
+		# so "ok" is not "arrived" -- the catalogue is what says whether it arrived, and
+		# a server with no content origin should say so once rather than eight times.
+		if not res.ok:
+			failed += 1
+			DotLog.warn(CHANNEL, "a configured map could not be fetched",
+				{"map": String(id), "why": res.error.message})
+		elif maps != null and maps.catalogue != null and maps.catalogue.has(id):
+			added.append(id)
+
+	_fetching_content_maps = false
+
+	var total := maps.catalogue.size() if maps != null and maps.catalogue != null else 0
+	DotLog.info(CHANNEL, "the configured map set is in", {
+		"added": added.size(), "failed": failed, "catalogue": total,
+	})
+
+	# The same signal a disk rescan emits, because to everything downstream -- the
+	# rotation's pool, a vote's ballot, a client's map list -- this IS a rescan: the set
+	# of maps this server can load just changed, and nothing cares which side of the
+	# network they came from.
+	var removed: Array[StringName] = []
+	maps_rescanned.emit({"added": added, "removed": removed, "total": total})
 
 
 func _on_map_changing(_from: DotMapDef, _to: DotMapDef) -> void:

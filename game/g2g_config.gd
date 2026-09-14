@@ -127,6 +127,28 @@ const G2GUnits := preload("g2g_units.gd")
 ## A map catalogue JSON file. Empty uses the maps this build ships.
 @export var catalogue_path: String = ""
 
+## Map ids to fetch from the content origin at boot, beyond the one being loaded.
+##
+## [b]This is the map list a delivered server has instead of a directory.[/b]
+## [G2GMapCatalogue] finds maps by looking, and that is still how a server run from
+## source gets all eight of them — they are on its disk. A server that mounts the game
+## as a pack has no `maps/imported/` at all: the directory is excluded from the pack
+## on purpose, because it is 66 MB of geometry and a player should download the map
+## being played rather than every map that could be. So the catalogue on a delivered
+## server holds the built-in scenes and whatever has been FETCHED, and nothing has been
+## fetched until somebody asks for it by name.
+##
+## What that costs is not the `map` command — [member DotMapCommands.may_fetch_unknown]
+## lets a typed id through to the fetch — it is everything that reads the catalogue as
+## a SET: `maps` lists three scenes on a surf server, the rotation can only ever choose
+## between those three, and `rtv` offers them. A rotation that silently excludes every
+## real map is the failure worth naming, because the server keeps working and just
+## never plays anything anybody came for.
+##
+## Fetched in the background after boot, one at a time, and already-cached ones cost
+## nothing. Set it from `sv_content_maps`, space- or comma-separated.
+@export var content_maps: PackedStringArray = PackedStringArray()
+
 ## Seconds a map runs before the next is chosen. 0 disables it.
 @export_range(0.0, 86400.0, 30.0) var map_seconds: float = 1800.0
 
