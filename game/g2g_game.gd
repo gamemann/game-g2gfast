@@ -119,6 +119,15 @@ var replays: G2GReplays = G2GReplays.new()
 ## [b]A layer, not a mode switch on the game.[/b] While it exists the timer still runs
 ## and a player who never presses fire plays exactly the game they played before —
 ## which is the only shape a deathmatch on a records server can honestly take.
+## Every world object the server has an id for. See [DotEntityTable].
+##
+## [b]Here rather than on [code]combat[/code], which is where the ids are minted.[/b]
+## The table outlives the deathmatch layer -- `sv_deathmatch` is a cvar an operator
+## turns off mid-map -- and the hunters and the effects layer both ask it questions
+## without going through combat at all. A handle whose lifetime is shorter than its
+## holders' is the shape that leaks.
+var entities := DotEntityTable.new()
+
 var combat: G2GCombat = null
 
 ## Hunters on the course. Null unless `sv_hunters` built them.

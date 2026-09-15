@@ -408,7 +408,11 @@ func hunter_attack(npc: DotNpcInstance, victim: StringName, amount: float) -> vo
 	# Attacker 0, which dot-combat reads as the world. A hunter is not on the
 	# scoreboard and crediting one would put a row there keyed on an id no player has
 	# — the bug game-arena shipped from the other end.
-	var damage := DotDamage.make(0, G2GCombat.entity_id_for(victim), amount, type)
+	# Asked of the table rather than computed from the name. The two were the same
+	# number until entity ids stopped being derived from player ids; a swipe that
+	# computed one would now be damaging an entity that does not exist, silently,
+	# because dot-combat has nothing registered under it and simply does nothing.
+	var damage := DotDamage.make(0, game.combat.entity_for(victim), amount, type)
 	damage.weapon_id = npc.def.id if npc.def != null else &"hunter"
 	game.combat.manager.apply_damage(damage)
 

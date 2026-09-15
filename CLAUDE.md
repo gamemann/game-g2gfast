@@ -74,7 +74,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (135), headless_net (90), dedicated (121),
+examples/           headless_run (135), headless_net (90), dedicated (134),
                     headless_imported (25 per map, plus one per track and stage),
                     headless_maps (24), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -326,9 +326,14 @@ hit and the worst shot.
 
 Three things in the wiring that are not obvious:
 
-- **The entity id is the player's own id with the `u` taken off**, and the inverse is a
-  lookup rather than `"u%d" %`. Two spellings of one id format are two ends of a
-  serialisation that never meet, which this family has paid for twice.
+- **Entity ids come from `DotEntityTable` and are not derived from anything.** They
+  used to be the player's own id with the `u` taken off, which worked and taught the
+  family why it should not: a derived id means a formula, a formula has an inverse, and
+  two spellings of one id format are two ends of a serialisation that never meet. The
+  `u` still comes off for the **userid** — a loadout's storage key and
+  `session_by_userid` both want the account number, and neither wants a runtime handle.
+  One function used to serve both, which was harmless while they were the same integer
+  and would have been silent the day they stopped being.
 - **The match carries no time limit.** The map's clock ends the map, and a second clock
   underneath it that ends the match is two authorities over one question — dot-vote's
   director already owns the first.
@@ -456,7 +461,7 @@ godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 135 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 56 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
-godot --headless --path . res://examples/dedicated.tscn      # 121 checks
+godot --headless --path . res://examples/dedicated.tscn      # 134 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 25 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 24 checks
@@ -1333,6 +1338,12 @@ This game keys players by `StringName`; dot-combat and dot-effects both key by `
 since the class was written and nothing went the other way. A caller that hashed the name
 instead would get a number that is stable, plausible, and **not** the one the health, the
 hitboxes and the kill feed use.
+
+Both directions are `DotEntityTable`'s now. `entity_for` is `id_for_key`, `player_id_for`
+is `key_for_id` — which also stopped it walking every kit comparing ints on a call that
+runs once per kill, once per respawn and once per hunter swipe. The paragraph above is
+kept because the reasoning is what produced the addon: the comment that sat on
+`player_id_for` is, word for word, what `DotEntityTable` exists to make unnecessary.
 
 ## `!spec` did nothing, and `g2g_map` deliberately still does
 

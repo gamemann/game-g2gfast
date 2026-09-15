@@ -14,11 +14,21 @@ const G2GStats := preload("g2g_stats.gd")
 ## hitboxes, health, an arsenal and a scoreboard, and takes nothing away — a player who
 ## never presses fire plays exactly the game they played before.
 ##
-## [b]The entity id is the player's own id with the `u` taken off.[/b] `G2GGame` keys
-## everything on `u<userid>`, dot-combat keys everything on an integer, and one
-## translation in one place is the difference between four id spaces and two. The ghost
-## is deliberately excluded: it is a replay, it cannot be hurt, and registering it would
-## put a bot on the scoreboard that never dies and never leaves.
+## [b]Entity ids come from [DotEntityTable] and are not derived from anything.[/b] They
+## used to be the player's own id with the `u` taken off, which worked and taught the
+## family why it should not: a derived id means a formula, a formula has an inverse, and
+## the two ends of one serialisation are exactly as capable of never meeting as the two
+## ends of a wire. The comment that used to sit on that inverse said so. Now the game
+## opens an entity keyed on the player id and asks the table in both directions, which
+## is also how [method player_id_for] stopped being a linear scan.
+##
+## [b]What the `u` still comes off for is the userid[/b], which is a different thing
+## that happened to share the function: a loadout's storage key and
+## `DotServer.session_by_userid` both want the account number, and neither wants a
+## runtime handle. That is [method userid_of], and it is unchanged on disk.
+##
+## The ghost is deliberately excluded: it is a replay, it cannot be hurt, and
+## registering it would put a bot on the scoreboard that never dies and never leaves.
 ##
 ## [codeblock]
 ## var combat := G2GCombat.new()
@@ -262,8 +272,13 @@ func _apply_loadout(player_id: StringName) -> void:
 ## `DotLoadoutKey.is_usable` has a minimum length, so a bare `u7` is refused before any
 ## store sees it — and the check exists so a malformed key can never reach a filesystem
 ## path. Padding is right; loosening the check is not.
+##
+## [b]The userid, never the entity id.[/b] It used to call the function that produced
+## both, which was the same number then and would not be now — and a key on disk that
+## follows a runtime handle is every saved loadout on the server orphaned the day the
+## handle changes. A persistent key is derived from a persistent thing.
 static func _loadout_key(player_id: StringName) -> String:
-	return "g2g-player-%08d" % entity_id_for(player_id)
+	return "g2g-player-%08d" % userid_of(player_id)
 
 
 func _build_loadouts() -> void:
@@ -336,7 +351,25 @@ func _arm(player: G2GPlayer) -> void:
 	if _kit.has(player.player_id):
 		return
 
-	var entity := entity_id_for(player.player_id)
+	var opened := game.entities.open(
+		DotEntity.KIND_PLAYER,
+		player,
+		&"",
+		player.player_id,
+		float(game.current_tick()) / float(maxi(game.tick_rate, 1))
+	)
+
+	if not opened.ok:
+		# Every refusal here is a bug rather than a condition: this player is already
+		# armed (guarded above), or their node is already an entity. Arming anyway
+		# would register a second health record against a body that has one.
+		DotLog.error(CHANNEL, "could not open an entity for a player", {
+			"player": String(player.player_id),
+			"why": opened.error.message,
+		})
+		return
+
+	var entity: int = (opened.value as DotEntityHandle).id
 
 	var health := DotHealth.new()
 	health.name = "Health"
@@ -434,6 +467,11 @@ func _disarm(player_id: StringName) -> void:
 
 	if match_node != null and is_instance_valid(match_node):
 		match_node.remove_player(str(kit["entity"]))
+
+	# After the two forgets, not before: both are keyed on the entity id, and closing
+	# first would leave this reading the id out of the kit anyway while the table had
+	# already stopped agreeing that it meant anything.
+	game.entities.close(int(kit["entity"]), DotEntityTable.REASON_DESPAWN)
 
 	_kit.erase(player_id)
 
@@ -611,36 +649,36 @@ func _on_respawn_due(key: String, spawn: DotSpawnPoint, tick: int) -> void:
 
 # --- Ids -------------------------------------------------------------------
 
-## The combat entity id for a player. `u123` becomes 123.
-static func entity_id_for(player_id: StringName) -> int:
+## The account number inside a player id. `u123` becomes 123.
+##
+## [b]Not an entity id, and the rename is the point.[/b] This function used to be called
+## `entity_id_for` and had three callers doing two different jobs: two wanted the
+## account number — a loadout's filename and `DotServer.session_by_userid` — and one
+## wanted the combat handle. They were the same number, so nothing was wrong, and
+## nothing would have told anybody the day they stopped being.
+static func userid_of(player_id: StringName) -> int:
 	var text := String(player_id)
 	return text.substr(1).to_int() if text.begins_with("u") else text.to_int()
 
 
-## The inverse, looked up rather than reconstructed.
-##
-## [b]Not `"u%d" % entity`.[/b] That would be a second spelling of the id format, and
-## the two ends of one serialisation are exactly as capable of never meeting as the two
-## ends of a wire — which this family has now paid for twice.
 ## The combat entity id for a player, or 0 when they have no kit.
 ##
-## The other direction from [method player_id_for], and it exists because two id spaces
-## meet here: this game keys players by [StringName] and dot-combat and dot-effects both
-## key by int. A caller that hashed the name instead would produce a number that is
-## stable, plausible and not the one the health, the hitboxes and the kill feed use.
+## Two id spaces meet here: this game keys players by [StringName] and dot-combat and
+## dot-effects both key by int. A caller that hashed the name instead would produce a
+## number that is stable, plausible and not the one the health, the hitboxes and the
+## kill feed use — which is why [DotEntityTable] stores the key rather than deriving it.
 func entity_for(player_id: StringName) -> int:
-	var kit: Variant = _kit.get(player_id, null)
-	if kit == null:
-		return 0
-	return int((kit as Dictionary)["entity"])
+	return game.entities.id_for_key(player_id) if game != null else 0
 
 
+## The other direction, and it is now a lookup rather than a scan.
+##
+## [b]Not `"u%d" % entity`.[/b] That would be a second spelling of one serialisation.
+## It used to walk every kit comparing ints, which was correct and O(n) on a call that
+## runs once per kill, once per respawn and once per hunter swipe; the table keeps the
+## reverse index that makes it one dictionary read.
 func player_id_for(entity_id: int) -> StringName:
-	for id in _kit.keys():
-		if int((_kit[id] as Dictionary)["entity"]) == entity_id:
-			return id
-
-	return &""
+	return game.entities.key_for_id(entity_id) if game != null else &""
 
 
 func _kit_for_entity(entity_id: int) -> Dictionary:

@@ -306,7 +306,10 @@ func _build_identity() -> DotResult:
 		return ready
 
 	if server.modules != null and not server.modules.has_module("platform"):
-		var loaded := server.modules.load_module(PLATFORM_MODULE_PATH)
+		# Awaited: see the same call in arena. A module load is a coroutine.
+		var loaded: DotResult = await server.modules.load_module(
+			PLATFORM_MODULE_PATH
+		)
 
 		if not loaded.ok:
 			return loaded.wrap("The platform module would not load")
@@ -349,7 +352,7 @@ func _build_vote() -> DotResult:
 			server.broadcast_message(line)
 
 	vote.is_admin_fn = func(voter: StringName) -> bool:
-		var session := server.session_by_userid(G2GCombat.entity_id_for(voter))
+		var session := server.session_by_userid(G2GCombat.userid_of(voter))
 		return session != null and session.permissions.has(DotAdminFlags.CHANGEMAP)
 
 	var ready := vote.setup()

@@ -3,6 +3,7 @@ extends Node
 const G2GAvatars := preload("../game/g2g_avatars.gd")
 const G2GBrowser := preload("../game/g2g_browser.gd")
 const G2GCamera := preload("../game/g2g_camera.gd")
+const G2GCombat := preload("../game/g2g_combat.gd")
 const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GIdentity := preload("../game/g2g_identity.gd")
@@ -156,7 +157,9 @@ func _boot() -> void:
 	_check(game.maps.current != null, "the game loads its first map")
 	_check(game.tick_rate == 100 and game.timers.tick_rate == 100, "and counts at the server's 100 ticks", "%d / %d" % [game.tick_rate, game.timers.tick_rate])
 
-	var loaded := server.modules.load_module("res://game/g2g_module.gd")
+	var loaded: DotResult = await server.modules.load_module(
+		"res://game/g2g_module.gd"
+	)
 	_check(loaded.ok, "the g2gfast module loads", loaded.error.message if not loaded.ok else "")
 	_check(server.console.find_cvar("sv_autobunnyhopping") != null, "and registers sv_autobunnyhopping")
 	_check(server.console.find_cvar("sv_airaccelerate") != null, "and sv_airaccelerate")
@@ -592,6 +595,33 @@ func _test_modes() -> void:
 			_check(
 				runner.timer != null,
 				"and still has a timer, because the run is the point"
+			)
+
+			# The id round trip, in one assertion, because the two ends of one
+			# serialisation are exactly as capable of never meeting as the two ends
+			# of a wire -- and these two used to be a formula and its inverse.
+			var entity := game.combat.entity_for(&"u4242")
+
+			_check(entity != 0, "and an entity id from the table (%d)" % entity)
+			_check(
+				DotEntity.is_kind(entity, DotEntity.KIND_PLAYER),
+				"which says it names a player, without a range check",
+				DotEntity.describe_id(entity)
+			)
+			_check(
+				game.combat.player_id_for(entity) == &"u4242",
+				"and turns back into the player it came from"
+			)
+			# The conflation the table removed: the account number and the combat
+			# handle used to be the same integer, so a loadout's filename and a
+			# session lookup were quietly riding on a runtime id.
+			_check(
+				G2GCombat.userid_of(&"u4242") == 4242,
+				"the userid is still parsed out of the name, unchanged"
+			)
+			_check(
+				entity != 4242,
+				"and is no longer what the entity id happens to be"
 			)
 
 			# The ghost is deliberately not armed: it is a replay, it cannot be hurt,
