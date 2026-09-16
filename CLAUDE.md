@@ -1437,6 +1437,22 @@ one a player made believing it counted.
 
 Migration is off: a time made of two machines' clocks is worse than no time at all.
 
+## Three imported maps are not courses, and the suite used to say that was a failure
+
+`maps/zones/README.md` has said since it was written that three of the eighteen imported maps have no finish and that **none of them is a mistake**: `buses_from_hell_fixed` is a vehicle map with no route to time, and `bhop_eazy` and `bhop_lego2` are section-chain maps whose sections are all labelled and whose END is not — nothing in either file distinguishes the last gate from the twenty-six before it. Guessing a finish would produce a leaderboard that looks right and measures a route the map does not have.
+
+`headless_imported` asserted the opposite for every map it found, so it had been **exiting 1 on three maps behaving exactly as documented**. The check and the decision contradicted each other for as long as both existed, and the check was the one that was wrong. A suite that is red for a reason nobody intends to fix is a suite people stop reading, and it takes the real failures with it.
+
+**The exemption is asserted in both directions, which is what stops it being a mute button.** `NOT_COURSES` maps are checked for *not* having a runnable main track: if one grows a finish, the list has gone stale and the failure is how anybody finds out. `NO_PIT` is a separate list of one for the same reason at a smaller scale — `bhop_eazy` and `bhop_lego2` do have pits and are still checked for them, and folding the two lists together would stop asking two maps a question they currently answer correctly. Armed by listing a real course in `NOT_COURSES`; it fails with both checks naming the list.
+
+## One imported map loses 55 surfaces, and it is the renderer rather than the importer
+
+`bhop_monster_jam` has **311 surfaces** and Godot's per-mesh limit is 256, so the last 55 never reach the mesh — `Condition "surfaces.size() == RenderingServerEnums::MAX_MESH_SURFACES" is true`, 55 times, at load. It is the only one of the eighteen over the cap; the next largest is `bhop_mario_fxd` at 153.
+
+**It costs rendering and not play.** Collision is built by `_build_collision` out of the manifest's own convex-per-brush block rather than out of the drawn geometry — a decision made for a different reason, and the reason this is a cosmetic bug instead of a map with holes you fall through. Every collision and stands-on-it check passes on that map.
+
+The fix is to split a manifest's surfaces across more than one `MeshInstance3D` when there are more than 256 of them, in `G2GBspMap`, and it is not done. What is written down is the number, so the next person who sees 55 identical engine errors knows which map, how many, and that the player cannot feel it.
+
 ## Things deliberately not here
 
 - **A second transport.** The bridge speaks through `DotClientLink`'s RPCs on one

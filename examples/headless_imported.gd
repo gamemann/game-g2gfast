@@ -23,6 +23,37 @@ const G2GUnits := preload("../game/g2g_units.gd")
 ## Skips rather than fails when nothing has been imported: `maps/imported/` is
 ## optional content and a clone that has never run the importer is not broken.
 
+## The imported maps that are deliberately NOT courses, and why each one is not.
+##
+## [b]This suite asserted that every imported map is runnable, and `maps/zones/README.md`
+## says in so many words that three of them are not.[/b] The check and the decision
+## contradicted each other for as long as both existed, and the suite was the one that was
+## wrong: it had been exiting 1 on three maps that are behaving exactly as documented.
+##
+## - `buses_from_hell_fixed` is a vehicle map. No teleports, no destinations, eight
+##   `func_rotating` and a `game_ui` — there is no route to time.
+## - `bhop_eazy` and `bhop_lego2` are section-chain maps (`t11`..`t2727`, `s_1`..`s_30`)
+##   whose sections are all labelled and whose END is not. Nothing in either file
+##   distinguishes the last gate from the twenty-six before it, and guessing would produce a
+##   leaderboard that looks right and measures a route the map does not have.
+##
+## [b]The exemption is checked in both directions, which is what stops it being a mute
+## button.[/b] A map in here that turns out to HAVE a runnable main track fails — because
+## the reason it is listed has stopped being true and the list is now the lie. That is the
+## same bargain every skip in this family makes: it is allowed to skip a check, it is not
+## allowed to stop asking the question.
+const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2"]
+
+## The imported maps with no pit, which is a different question from having no finish.
+##
+## [b]A separate list of one, rather than reusing [constant NOT_COURSES], and the difference
+## is the whole point.[/b] A surf or bhop map's `trigger_teleport` volumes ARE its pit, and
+## losing them means a player who falls off falls for ever. `bhop_eazy` and `bhop_lego2`
+## have pits and are checked for them; only `buses_from_hell_fixed` has none, because a
+## vehicle map has nothing to fall off. Folding the two lists together would stop asking two
+## maps a question they currently answer correctly, which is how an exemption quietly grows.
+const NO_PIT := ["buses_from_hell_fixed"]
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
 const CHECKS_PER_MAP := 25
 
@@ -185,8 +216,12 @@ func _test_zones() -> void:
 	var respawns := zones.of_kind(DotTimerZone.Kind.RESPAWN).size()
 	# A surf map's trigger_teleport volumes are its pit. Losing them means a player
 	# who falls off falls for ever, which is the bug dot-timer's effect_requested was.
-	_check(respawns > 0, "with the pit volumes carried across as RESPAWN zones",
-		"%d respawn zones" % respawns)
+	if NO_PIT.has(_map_id):
+		_check(respawns == 0, "has no pit, and still has none",
+			"listed in NO_PIT; %d respawn zones" % respawns)
+	else:
+		_check(respawns > 0, "with the pit volumes carried across as RESPAWN zones",
+			"%d respawn zones" % respawns)
 
 	# Source sweeps its trigger tests; dot-timer samples a point per tick. A pit drawn
 	# as a 16-unit plane -- which is how every one of them is drawn, because in Source
@@ -200,9 +235,18 @@ func _test_zones() -> void:
 	# in its entity lump or in maps/zones/ before it was offered as a level; a map
 	# that reaches here without them is one the importer stopped reading.
 	var tracks := zones.playable_tracks()
-	_check(tracks.has(DotTimerTrack.MAIN),
-		"the main track has both a start line and a finish",
-		"runnable tracks: %s" % str(tracks))
+
+	if NOT_COURSES.has(_map_id):
+		# Asserted the other way round. See [constant NOT_COURSES]: if this map has grown a
+		# finish, the list is out of date and that is worth a failure, because the next
+		# person to read it would believe it.
+		_check(not tracks.has(DotTimerTrack.MAIN),
+			"is not a course, and still is not",
+			"listed in NOT_COURSES; runnable tracks: %s" % str(tracks))
+	else:
+		_check(tracks.has(DotTimerTrack.MAIN),
+			"the main track has both a start line and a finish",
+			"runnable tracks: %s" % str(tracks))
 
 	# A track a player cannot be put on is a track nobody plays. `spawn_for` falls
 	# back to `fallback_spawn_units` for a missing one, which is the main track's
@@ -236,6 +280,17 @@ func _test_runnable() -> void:
 
 	var start := zones.first_of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN)
 	var finish := zones.first_of_kind(DotTimerZone.Kind.END, DotTimerTrack.MAIN)
+
+	if NOT_COURSES.has(_map_id):
+		# Both checks still run and still count; what changes is what the right answer is.
+		# See [constant NOT_COURSES] — a map listed there that grows a finish is a list that
+		# has gone stale, and the failure is how anybody finds out.
+		_check(start == null or finish == null,
+			"has no run to time, as documented",
+			"listed in NOT_COURSES")
+		_check(true, "and no stages to order")
+		return
+
 	if start == null or finish == null:
 		_check(false, "a run can be started, split and finished", "no start or no end")
 		_check(false, "and its stages come out in order")
