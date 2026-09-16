@@ -1503,3 +1503,24 @@ The fix is to split a manifest's surfaces across more than one `MeshInstance3D` 
 
   What would still be better for the hand-built half is a light, high-contrast set whose
   line weight survives the tiling. The generated grid is the specification for that.
+
+
+## `the needle`, and the first route here a bot runs end to end
+
+`bhop_g2g_intro` bonus 2 is ten blocks at a constant 96-unit gap whose width closes from 192 down to 48, with two stage splits on it. Everything else on this map is about SPEED: the main route's gap grows until only a player who kept the last block's momentum crosses it, and bonus 1 is a warm-up. The needle asks for none of that and is still hard, because a block 48 units across is 16 units wider than the player and the whole of it is aim. It is also the practice route this map did not have, for the player who cannot yet chain hops and was refused by everything here at the tenth block.
+
+**A constant gap is the one shape a scripted bot can complete, and that is why the route is shaped like one.** A bot cannot strafe, so it cannot gain, so any route that demands a gain is a route no check can ever drive from a start line to a finish. Every other bonus in this repository is checked by putting a bot on the pad, driving it, and asserting where it ENDED. `headless_run` drives this one through both stage splits into the finish zone, which means the geometry, the zones, the splits and the end line are all proved by something other than reading them: a block moved 100 units fails this and fails nothing else anywhere.
+
+**Two numbers were measured rather than chosen, and both are worth keeping.**
+
+**96 rather than 160.** At a 160-unit gap a hopping bot carried the prestrafe across two gaps and fell at the third, every time. A chained hop takes off wherever the last one landed rather than at the lip, so the distance actually available is the jump minus however far onto the block the bot arrived, and that margin bleeds a little every landing. *A gap a standing jump clears is not a gap a chain of them clears* — which is the number the main route encodes in its first block and nowhere says out loud.
+
+**Jumped AT the gaps, not held.** A bot holding jump with `sv_autobunnyhopping 1` leaves the ground on the tick it lands, so `accelerate` never gets a grounded tick and there is no strafe to gain with in the air: it bleeds to `sv_maxairwishspeed`, which is 30 u/s, and 30 u/s clears nothing on this map. `_needle_jumps_at` presses jump only in the last thirty units of a block, which keeps the bot grounded for the rest of each one — and it reads the window out of the **map's** constants, so moving a block moves the jump with it.
+
+That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s while holding jump, and that number is the **prestrafe** being carried into the first hop rather than anything hopping achieved. The check is true and it is not evidence that the bot is running.
+
+## The bonus tracks had no respawn zone
+
+A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
+
+`surf_g2g_intro` was given per-bonus respawn zones when its second bonus was added, and `headless_run.zones_have_respawn_on_bonuses` was written at the same time — **asked on the surf map only.** So the guard existed, passed, and was never once pointed at the map that was broken. It is asked on this map now too. Same shape as the stale copied list this tree has had in `setup.sh`, both check scripts, both bootstraps and `tools/export_zones.gd`: the fix went to one place and the question was never asked of the others.

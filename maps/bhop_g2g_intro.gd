@@ -13,6 +13,30 @@ const G2GGeometry := preload("../game/g2g_geometry.gd")
 ##
 ## The bonus is a short side route off the start pad: three wide platforms and a
 ## finish, for a player who wants a warm-up.
+##
+## [b]Bonus 2 is the other half of that, and it is a different skill rather than a
+## harder version of the same one.[/b] The main route and bonus 1 are both about SPEED:
+## the gap grows until only a player who kept the last block's momentum can cross it.
+## `the needle` keeps its gap at 96 units the whole way down — the shortest gap on the
+## map, and well inside a standing jump at run speed, so no hop on it is ever about
+## carrying speed — and narrows the landing instead, 192 units wide down to 48. A block
+## 48 units across is 16 units wider than the player, and the whole of it is aim.
+##
+## Two reasons that shape rather than a longer gap. A player who cannot yet chain hops
+## has nothing to practise on this map, because everything else on it refuses them at
+## the tenth block; the needle refuses nobody for lack of speed and is still hard. And a
+## constant gap is the one shape a SCRIPTED bot can complete — it cannot strafe, so it
+## cannot gain, so a route that demands a gain is a route no check can ever drive end to
+## end. `headless_run` drives this one from its start line to its finish through both of
+## its stage splits, which nothing in this repository could do on a bonus before.
+##
+## [b]96 rather than 160, and the difference was measured rather than chosen.[/b] At 160
+## a hopping bot cleared seven blocks and fell at the eighth: a chained hop takes off
+## wherever the last one landed rather than at the lip, so the distance actually
+## available is the jump MINUS however far onto the block the bot arrived, and that
+## margin bleeds a little every landing. A gap a standing jump clears is not the same
+## as a gap a chain of them clears, which is the number this map's main route encodes in
+## its first block and nowhere says out loud.
 
 const BLOCKS := 16
 const BLOCK_LENGTH := 160.0
@@ -23,6 +47,14 @@ const LAST_GAP := 288.0
 
 const START_Z := 0.0
 const FLOOR_Y := 0.0
+
+## Bonus 2, `the needle`: constant gap, narrowing blocks. West of the start pad, running
+## the same way as the main route so a player learns one heading rather than two.
+const NEEDLE_X := -640.0
+const NEEDLE_BLOCKS := 10
+const NEEDLE_GAP := 96.0
+const NEEDLE_FIRST_WIDTH := 192.0
+const NEEDLE_LAST_WIDTH := 48.0
 
 
 func _build() -> void:
@@ -66,9 +98,52 @@ func _build() -> void:
 		Vector3(256.0, BLOCK_THICKNESS, 256.0), G2GGeometry.COLOUR_END
 	)
 
+	# Bonus 2, `the needle`. Its own start pad west of the main one, then ten blocks at a
+	# constant 160-unit gap whose width closes from 192 to 48, and a finish wide enough
+	# to land on after the last of them.
+	G2GGeometry.box(
+		self, Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + 256.0),
+		Vector3(256.0, BLOCK_THICKNESS, 512.0), G2GGeometry.COLOUR_START
+	)
+
+	for i in range(NEEDLE_BLOCKS):
+		G2GGeometry.box(
+			self,
+			Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, needle_z(i) - BLOCK_LENGTH * 0.5),
+			Vector3(needle_width(i), BLOCK_THICKNESS, BLOCK_LENGTH),
+			G2GGeometry.COLOUR_BONUS
+		)
+
+	G2GGeometry.box(
+		self,
+		Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, needle_end_z() - 192.0),
+		Vector3(256.0, BLOCK_THICKNESS, 384.0), G2GGeometry.COLOUR_END
+	)
+
 
 static func gap_at(index: int) -> float:
 	return lerpf(FIRST_GAP, LAST_GAP, float(index) / float(maxi(BLOCKS - 1, 1)))
+
+
+## Z of the front edge of needle block [param index]. One arithmetic, read by the
+## geometry and by the zones, because a stage line placed from a second copy of a
+## block's position is a split that drifts the first time a number here moves.
+static func needle_z(index: int) -> float:
+	return START_Z - float(index) * (BLOCK_LENGTH + NEEDLE_GAP)
+
+
+## How wide needle block [param index] is. Closes linearly, so the difficulty is a ramp
+## rather than a wall — the player who falls learns where their aim runs out.
+static func needle_width(index: int) -> float:
+	return lerpf(
+		NEEDLE_FIRST_WIDTH, NEEDLE_LAST_WIDTH,
+		float(index) / float(maxi(NEEDLE_BLOCKS - 1, 1))
+	)
+
+
+## Z of the far edge of the needle's last block: where its finish pad begins.
+static func needle_end_z() -> float:
+	return needle_z(NEEDLE_BLOCKS - 1) - BLOCK_LENGTH
 
 
 static func end_z() -> float:
@@ -134,5 +209,61 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.END, bonus,
 		Vector3(1472.0, FLOOR_Y, START_Z + 128.0), Vector3(1728.0, FLOOR_Y + 128.0, START_Z + 384.0)))
 	zones.add(zone_spawn(bonus, Vector3(640.0, FLOOR_Y + 8.0, START_Z + 256.0), -90.0))
+
+	# [b]The bonus tracks had no respawn zone, and the main track has had one since the
+	# map was written.[/b] A `DotTimerZone` carries a track, and a RESPAWN zone on track
+	# 0 catches nobody who is running track 1 — so a player who missed a bonus platform
+	# here fell out of the world for ever with nothing in the log to say so, while the
+	# same mistake on the main route put them back on the pad. Found by driving a bot
+	# down the needle: it fell at a block and was still falling 1,370 metres later.
+	#
+	# `surf_g2g_intro` was given per-bonus respawn zones when its second bonus was
+	# added, and `headless_run.zones_have_respawn_on_bonuses` was written then — but it
+	# is asked on the surf map only, so this map was never the one being checked. The
+	# same one-map fix this tree has now missed in six places.
+	var fall_low := Vector3(-4096.0, FLOOR_Y - 1024.0, finish_z - 4096.0)
+	var fall_high := Vector3(4096.0, FLOOR_Y - 192.0, START_Z + 4096.0)
+
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, bonus, fall_low, fall_high))
+
+	# Bonus 2, `the needle`, with two stage splits on it.
+	#
+	# [b]Stages on a bonus track, which nothing here had.[/b] `DotTimerZoneSet` keys a
+	# stage by its track, and every stage zone in this repository was on the main one —
+	# so `stage_count(track)`, the per-stage splits and `!s<n>` on anything but the main
+	# route were code no map had ever asked to run. The two lines are on blocks 3 and 7:
+	# the first is where the blocks stop being generous and the second is where they get
+	# genuinely thin, which is where a player wants to know their time.
+	var needle := DotTimerTrack.of_bonus(2)
+	var needle_finish := needle_end_z()
+
+	zones.add(zone_box(DotTimerZone.Kind.START, needle,
+		Vector3(NEEDLE_X - 128.0, FLOOR_Y, START_Z),
+		Vector3(NEEDLE_X + 128.0, FLOOR_Y + 128.0, START_Z + 512.0)))
+	zones.add(zone_box(DotTimerZone.Kind.END, needle,
+		Vector3(NEEDLE_X - 128.0, FLOOR_Y, needle_finish - 384.0),
+		Vector3(NEEDLE_X + 128.0, FLOOR_Y + 128.0, needle_finish - 64.0)))
+
+	for i in range(2):
+		var block := 3 if i == 0 else 7
+		var nz := needle_z(block)
+		var half := needle_width(block) * 0.5
+
+		zones.add(zone_stage(
+			needle, i + 1,
+			Vector3(NEEDLE_X - half, FLOOR_Y, nz - BLOCK_LENGTH),
+			Vector3(NEEDLE_X + half, FLOOR_Y + 128.0, nz),
+			Vector3(NEEDLE_X, FLOOR_Y + 8.0, nz - BLOCK_LENGTH * 0.5),
+			# Facing DOWN the needle. Yaw 0 is -Z here — it is what the spawn zones on
+			# this map use and it is the direction `headless_run` drives a bot to make
+			# progress. The main route's three stage lines say 180.0, which faces a
+			# player back up the course they were about to run; that is not changed
+			# here because it is existing content on a track with records against it,
+			# but it is not copied either.
+			0.0
+		))
+
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, needle, fall_low, fall_high))
+	zones.add(zone_spawn(needle, Vector3(NEEDLE_X, FLOOR_Y + 8.0, START_Z + 400.0), 0.0))
 
 	return zones

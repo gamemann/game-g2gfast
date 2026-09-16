@@ -21,7 +21,9 @@ const G2GUnits := preload("../game/g2g_units.gd")
 ## godot --headless --path . res://examples/headless_run.tscn
 ## [/codeblock]
 
-const CHECKS := 135
+const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
+
+const CHECKS := 143
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -50,6 +52,7 @@ func _run() -> void:
 	await _test_auto_bhop_gate()
 	await _test_zone_files_match()
 	await _test_bhop_run()
+	await _test_needle_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
 	await _test_ghost()
@@ -359,8 +362,20 @@ func _test_boot() -> void:
 
 	var zones := game.timers.zones
 	_check(zones != null and zones.problems().is_empty(), "the map's zones are well formed", ", ".join(zones.problems()) if zones else "no zones")
-	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1]), "with a main track and one bonus", str(zones.playable_tracks()) if zones else "")
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2]), "with a main track and two bonuses", str(zones.playable_tracks()) if zones else "")
 	_check(zones != null and zones.stage_count(0) == 3, "and three stages")
+	# [b]Stages on a track that is not the main one.[/b] `stage_count` takes a track and
+	# every stage zone in this repository was on track 0, so the argument had only ever
+	# been passed one value — a per-track count that is only ever asked about one track
+	# is a constant with a parameter on it. The needle has two.
+	_check(zones != null and zones.stage_count(2) == 2, "two of which are on a bonus track", str(zones.stage_count(2)) if zones else "")
+	# [b]Asked on THIS map, not only on the surf one.[/b] A RESPAWN zone carries a track
+	# and catches nobody on another, so a bonus without one is a player who falls out of
+	# the world for ever while the same mistake on the main route puts them back on the
+	# pad. `zones_have_respawn_on_bonuses` was written when the surf map's second bonus
+	# was added and had only ever been asked there — and this map's two bonuses had no
+	# respawn zone at all until a bot was driven off one of them and kept falling.
+	_check(zones_have_respawn_on_bonuses(), "and every bonus here puts a fallen player back")
 	_check(zones != null and zones.thin_zones(G2GUnits.to_metres(3500.0), game.tick_rate).is_empty(),
 		"and no zone a 3500 u/s player passes through between ticks")
 
@@ -611,6 +626,151 @@ func _test_bhop_run() -> void:
 	var page: DotResult = await game.boards.page(&"fastest", {"map": "bhop_g2g_intro", "track": "0", "style": "normal"})
 	_check((page.value as Array).size() >= 1 or (filed.size() == 1 and filed[0][1] != ""),
 		"and reaches the leaderboard, or says why not", str(filed))
+
+
+## Whether a bot at [param z_units] on the needle should be holding jump this tick.
+##
+## [b]The map's arithmetic, not a copy of it.[/b] `-z_units` is how far down the route
+## the bot has come; the blocks repeat every `BLOCK_LENGTH + NEEDLE_GAP`, occupying the
+## first `BLOCK_LENGTH` of each cycle. Jump in the last thirty units of a block and
+## nowhere else: airborne the answer stops mattering, because with `auto_hop` a jump is
+## taken on the landing tick and the key is long since released by then.
+##
+## Nothing before the start line, where the bot is building the speed it will spend.
+func _needle_jumps_at(z_units: float) -> bool:
+	if z_units >= 0.0:
+		return false
+
+	var cycle := BhopIntro.BLOCK_LENGTH + BhopIntro.NEEDLE_GAP
+
+	return fposmod(-z_units, cycle) >= BhopIntro.BLOCK_LENGTH - 30.0
+
+
+## `the needle`: a bonus a scripted bot can run from its start line to its finish.
+##
+## [b]This is the first route in this repository a bot completes end to end, and the
+## map was shaped so that it could be.[/b] Every other bonus here is checked by putting
+## a bot on the pad, driving it, and asserting where it ENDED — because a straight-line
+## bot cannot strafe, cannot gain speed, and so cannot clear a gap that demands a gain.
+## `bhop_g2g_intro`'s main route is exactly such a gap by its tenth block, and the surf
+## bonuses need a strafe to stay on a bank at all.
+##
+## The needle keeps its gap at a constant 160 units, which a player at run speed clears
+## without gaining anything, and puts the difficulty in the landing instead. That makes
+## it hard for a person and possible for a bot — and a route a bot can run is a route
+## whose geometry, zones, stage splits and finish are all checked by something other
+## than reading them.
+##
+## So the assertions here are the ones the other bonuses cannot make: the run starts at
+## the start line, BOTH stage splits are crossed in order, and the finish line ends it.
+## A block moved 100 units fails this; it fails nothing anywhere else.
+func _test_needle_bonus() -> void:
+	print("the needle, run end to end")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var needle := DotTimerTrack.of_bonus(2)
+
+	_check(game.timers.set_player_track(&"bot", needle), "a player can switch to the needle")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var spawn := game.current_map_node().spawn_for(needle)
+	_check(
+		bot.global_position.distance_to(spawn) < 1.0,
+		"and spawns on its own pad rather than the main one",
+		"%.1f m from the main spawn"
+			% bot.global_position.distance_to(game.current_map_node().spawn_for(DotTimerTrack.MAIN))
+	)
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	var reset := false
+
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset = true
+
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(func(run: DotTimerRun) -> void: finished.append(run))
+
+	# [b]Jumped AT the gaps, not held.[/b] This is the whole reason the route is
+	# runnable, and it was measured here rather than assumed: a bot that holds jump on a
+	# server with `sv_autobunnyhopping 1` leaves the ground on the tick it lands, so
+	# `accelerate` never gets a grounded tick to work in and there is no strafe to gain
+	# in the air — so it bleeds to `sv_maxairwishspeed`, which is 30 u/s. Driven that way
+	# it carried the prestrafe across two gaps and fell at the third, every time.
+	#
+	# Pressing jump only in the last thirty units of a block keeps it grounded for the
+	# rest of each one, which is where `accelerate` puts the speed back. The window is
+	# read out of the MAP's own constants rather than written down here, so moving a
+	# block moves the bot's jump with it; a copied number would be this tree's own stale
+	# list at the size of a test that silently stops proving anything.
+	await _prestrafe(&"bot", 120)
+
+	var started := false
+	var top := 0.0
+	var deepest := 0.0
+	var resets := 0
+
+	for _i in range(2600):
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.set_button(
+			DotFpsCommand.BUTTON_JUMP,
+			_needle_jumps_at(G2GUnits.vector_to_units(bot.global_position).z)
+		)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+		top = maxf(top, G2GUnits.to_units(bot.speed()))
+		deepest = minf(deepest, G2GUnits.vector_to_units(bot.global_position).z)
+
+		if reset:
+			resets += 1
+			reset = false
+
+		if bot.timer.run.is_active():
+			started = true
+
+		if not finished.is_empty():
+			break
+
+	print("  ..    needle: top %.0f u/s, reached z %.0f u, %d resets" % [top, deepest, resets])
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+
+	_check(started, "leaving its pad starts a run on the needle's own track")
+	_check(
+		deepest <= BhopIntro.needle_end_z(),
+		"and the bot reaches the far end of the blocks rather than falling short",
+		"reached %.0f u of %.0f" % [deepest, BhopIntro.needle_end_z()]
+	)
+	_check(
+		splits == [1, 2],
+		"crossing both of its stage lines, in order",
+		"%s, ended at %s u, %s u/s" % [
+			str(splits),
+			str(G2GUnits.vector_to_units(bot.global_position).round()),
+			G2GUnits.format_speed(bot.speed())
+		]
+	)
+	_check(
+		finished.size() == 1 and finished[0].track == needle,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished" % finished.size()
+	)
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
 
 
 func _test_surf_run() -> void:
