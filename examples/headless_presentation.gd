@@ -17,7 +17,7 @@ const G2GCamera := preload("../game/g2g_camera.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 59
+const CHECKS := 63
 
 var _passed := 0
 var _failed := 0
@@ -44,6 +44,8 @@ func _run() -> void:
 	_test_a_party_run_is_tainted()
 	_test_chat_box()
 	await _test_a_runner_does_not_see_their_own_head()
+
+	_test_every_sound_has_a_voice()
 
 	print("")
 	_check(
@@ -484,6 +486,52 @@ func _drawn_by(node: Node, mask: int) -> int:
 		count += _drawn_by(child, mask)
 
 	return count
+
+
+func _test_every_sound_has_a_voice() -> void:
+	# This game shipped a complete catalogue pointing at files nobody has produced, and
+	# was therefore silent while every check about its audio passed. The two directions
+	# below are the ones that go wrong without erroring: an id with no recipe is one sound
+	# that stays silent for ever, and a recipe naming an id the catalogue does not have is
+	# a decision that reaches nothing. Neither is visible from any assertion about the
+	# catalogue on its own -- and a headless run cannot hear the result, so this is as
+	# close as an assertion gets. game-arena/tools/audio_probe.sh is the other half.
+	_section("Every sound this game declares has a noise to make")
+
+	var cat := G2GPresentation.sound_catalogue()
+	var recipes := G2GPresentation.sound_recipes()
+
+	var uncovered: Array[String] = []
+	for id in cat.ids():
+		if not recipes.has(id):
+			uncovered.append(String(id))
+	_check(
+		uncovered.is_empty(),
+		"every id in the catalogue has a stand-in voice",
+		"silent for ever: %s" % str(uncovered)
+	)
+
+	var stray: Array[String] = []
+	for id in recipes.keys():
+		if cat.find(StringName(id)) == null:
+			stray.append(String(id))
+	_check(stray.is_empty(), "and no recipe names an id that is not there", str(stray))
+
+	var bank := DotAudioSynth.bank(cat, recipes)
+	_check(
+		bank.has(&"land") and bank.has("res://audio/land.ogg"),
+		"the bank answers under both the id and the path the def names"
+	)
+	_check(
+		(
+			(bank[&"jump"] as AudioStreamWAV).data
+			!= (bank[&"land"] as AudioStreamWAV).data
+		),
+		"and jump does not sound like land",
+		"a jump and a landing are the rhythm a runner keeps time by, and two that sounded alike would be worse than silence"
+	)
+
+	_done()
 
 
 func _section(title: String) -> void:

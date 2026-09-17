@@ -1389,6 +1389,8 @@ rather than listened for**, for the reason game-hungario watches its own eating:
 fires on the authority, which on a netted client is somewhere else, so a client that hooked
 a signal would be silent online and perfectly noisy offline.
 
+**And that landing made no sound at all until now.** The catalogue named seven `.ogg` files nobody has produced, so the speedometer above was arithmetic reaching a path that does not exist — a decision made carefully and then inaudible. `sound_recipes()` maps each of the seven to a `DotAudioSynth` voice and `DotAudioSinkGodot` falls through to that bank when the path resolves to nothing, so the rhythm is audible without this repository shipping a byte of audio. The same restraint as the camera shake applies to the choice of voices: `land` is an impact rather than a thud with a body, because a long tail smears the rhythm it is there to mark. `tools/audio_probe.sh` is the only thing here that can tell "this game would make a noise" apart from "this game has a table of sounds" — a headless run has no audio device, so every assertion about audio in `headless_presentation` passes on a silent build.
+
 **The server's console is bridged in with a prefix here and unprefixed everywhere else.**
 The two consoles share names that mean opposite things — `!s3` on a client is a local
 navigation and on a server is a teleport that ends a run — and an unprefixed remote console

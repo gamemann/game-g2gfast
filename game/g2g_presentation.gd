@@ -269,6 +269,29 @@ static func sound_catalogue() -> DotAudioCatalogue:
 	return c
 
 
+## Which synthesised voice stands in for each id until real audio is dropped into
+## [constant SOUND_DIR].
+##
+## [b]A timer game is the one here where sound is part of the input loop rather than
+## decoration.[/b] A bunny hop is a rhythm, and the jump and the landing are how a runner
+## hears whether they kept it — which is why those two are the shortest and the most
+## different-sounding things in this table. Everything else is the clock reporting.
+##
+## The same restraint as the camera shake this game turns off by default: a long tail on a
+## landing would smear the rhythm it is there to mark, so `land` is an impact and not a
+## thud with a body.
+static func sound_recipes() -> Dictionary:
+	return {
+		&"land": DotAudioSynth.Voice.IMPACT,
+		&"jump": DotAudioSynth.Voice.STEP,
+		&"timer_start": DotAudioSynth.Voice.BLIP,
+		&"timer_split": DotAudioSynth.Voice.CLICK,
+		&"timer_finish": DotAudioSynth.Voice.PICKUP,
+		&"personal_best": DotAudioSynth.Voice.SPAWN,
+		&"teleport": DotAudioSynth.Voice.DENY,
+	}
+
+
 func _build_audio() -> DotResult:
 	audio = DotAudioManager.new()
 	audio.name = "Audio"
@@ -282,6 +305,20 @@ func _build_audio() -> DotResult:
 	var res := audio.setup()
 	if not res.ok:
 		return res.wrap("g2gfast's audio")
+
+	# Only on a real sink, and only after setup: the manager decides whether there is a
+	# device, and on a headless server there is nothing to bake for. Building the bank
+	# anyway would be arithmetic per dedicated-server startup for streams no process on
+	# that machine can play.
+	var godot_sink := audio.sink as DotAudioSinkGodot
+	if godot_sink != null:
+		godot_sink.bank = DotAudioSynth.bank(audio.catalogue, sound_recipes())
+		DotLog.info(
+			CHANNEL,
+			"no audio files; synthesised stand-ins are in use",
+			{"ids": sound_recipes().size(), "dir": SOUND_DIR}
+		)
+
 	return DotResult.success(null)
 
 

@@ -134,7 +134,10 @@ func _arrange_practice() -> void:
 	# A checkpoint used. The HUD must say PRACTICE from this moment, and a run that
 	# quietly stayed recordable after one is the bug this frame is here to show.
 	if _player.timer == null:
-		push_warning("no timer on the player; PRACTICE cannot be drawn")
+		# print, not push_warning: this is a tool and its output is stdout. A
+		# push_warning would arrive in another stream with an engine backtrace
+		# stapled to it, which reads like a crash in a script that is fine.
+		print("screenshot: no timer on the player; PRACTICE cannot be drawn")
 		return
 
 	_player.timer.run.used_checkpoints = true
