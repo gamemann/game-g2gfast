@@ -61,7 +61,7 @@ game/
   g2g_browser.gd    dot-browser's client half: !servers, and what a row says
 npcs/               two hunters and the body they share
 props/              three practice blocks, in the genre's 32/64/128 sizes
-maps/               bhop_g2g_intro, surf_g2g_intro, and their .zones.json
+maps/               bhop_g2g_intro, bhop_g2g_stages, surf_g2g_intro, and their .zones.json
   imported_map.tscn THE scene every imported map uses. In the build; the maps are not
   imported/<id>/    what tools/bsp_import.py wrote: <id>.bin, <id>.json, the lightmap
                     atlas and the textures. Data only -- no scene, no script.
@@ -74,10 +74,14 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (135), headless_net (90), dedicated (134),
+examples/           headless_run (160), headless_net (90), dedicated (134),
                     headless_imported (25 per map, plus one per track and stage),
-                    headless_maps (24), jitter_probe (4 configurations)
+                    headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
+                    route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
+                    map from its own spawn, looking down it. bsp_preview orbits a
+                    whole map, which on a map whose four routes span 5,800 units of
+                    X makes every one of them a sliver
                     bsp_read.py, vtf.py, bsp_import.py — Source .bsp to a map
                     import_maps.sh — import a whole directory of them, idempotently
                     bsp_preview.gd/.tscn/.sh — render an imported map and exit

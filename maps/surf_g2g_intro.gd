@@ -2,7 +2,7 @@ extends "../game/g2g_map.gd"
 
 const G2GGeometry := preload("../game/g2g_geometry.gd")
 
-## `surf_g2g_intro` — two ramps meeting in a valley, descending, with a bonus.
+## `surf_g2g_intro` — two ramps meeting in a valley, descending, with three bonuses.
 ##
 ## Surf ramps are built at angles a player cannot stand on — the standable
 ## limit is a normal of 0.7, about 45.6° — and this one is 60°. The player drops off
@@ -11,6 +11,11 @@ const G2GGeometry := preload("../game/g2g_geometry.gd")
 ## dot-player-controller's crease resolution exists for.
 ##
 ## Everything in genre units. The valley falls 3072 units over 8192.
+##
+## [b]The ramps above are level along their length and the descent is the floor's.[/b]
+## That is measured rather than suspected — `headless_run` prints how much of the route
+## a bot actually rides — and `the fall line`, bonus 3, is the route on this map where
+## the answer is the ramp. See the constants below it.
 
 const START_Z := 0.0
 const END_Z := -8192.0
@@ -20,6 +25,58 @@ const VALLEY_HALF_WIDTH := 96.0
 const RAMP_WIDTH := 1024.0
 const RAMP_ANGLE := 60.0
 const RAMP_THICKNESS := 32.0
+
+# --- Bonus 3: the fall line ------------------------------------------------
+#
+# [b]The route where the descent comes from the ramp.[/b] Every other surface on this
+# map that is called a ramp is banked about the run axis and LEVEL along its length —
+# `G2GGeometry.ramp` rotates about `Vector3.FORWARD`, which tilts a slab in X and Y and
+# leaves its Z extent horizontal — so a player riding one is carried sideways into the
+# valley and every metre they descend afterwards comes from the stepped floor. Driving
+# it says so: a bot on the main track rides under 5% of a 156 m route, crosses neither
+# split, and the 636 u/s the suite reads as "surf speed" is what falling into the pit is
+# worth. See `[surf-ramp-1]`.
+#
+# This route is the same two banked faces PITCHED downhill, so the fall line runs along
+# the route instead of across it. The bank is unchanged at 60° and still past anything a
+# player can stand on, which is what makes it surf rather than a slide; the pitch is what
+# makes the ramp, rather than the floor under it, the thing that makes a player fast.
+#
+# [b]It is a pitched BED with a bank either side, and it was a V first.[/b] The first
+# draft made the whole route out of two banked faces meeting in a crease, on the theory
+# that a V self-centres and is therefore drivable by a bot that cannot air-strafe. It
+# does self-centre, and it is not surf: two faces banked the same amount opposite ways
+# resolve to a normal pointing straight UP, so the crease of a V built out of two
+# surfaces nobody can stand on is a surface everybody can stand on. Driven, the bot
+# rode 18 m, came to rest in the crease and sat there for the remaining 1,200 ticks.
+#
+# So the thing carrying the player is a single face pitched past the standable limit,
+# the way `the plunge` is in game-playground — the bot holds forward and nothing else —
+# and the two 60° banks are at the EDGES, where a drifting player is thrown back to the
+# middle instead of off the route. That is the arrangement a surf map's own tube
+# sections use, and it is the one that survives being driven.
+const FALL_X := 3300.0
+const FALL_PITCH := 50.0          ## downhill along the run. The whole point of the route
+const FALL_BANK := 60.0           ## the two side faces, same as the main ramps: unstandable
+const FALL_BED := 512.0           ## width of the pitched bed the route is actually ridden on
+const FALL_FACE := 768.0          ## each side face's width, before banking
+const FALL_TOP_Y := START_Y - 96.0
+const FALL_TOP_Z := START_Z - 64.0
+const FALL_RUN := 2816.0          ## horizontal Z the chute covers
+const FALL_SPLITS := [1, 2]
+
+
+## How far the fall line drops over its run. Derived, so moving the pitch moves the
+## finish pad, the stage lines and the zone bounds with it rather than leaving three
+## numbers to be updated by hand.
+static func fall_drop() -> float:
+	return FALL_RUN * tan(deg_to_rad(FALL_PITCH))
+
+
+## The centre of the trough at a fraction along its run.
+static func fall_point(t: float) -> Vector3:
+	return Vector3(FALL_X, FALL_TOP_Y - fall_drop() * t, FALL_TOP_Z - FALL_RUN * t)
+
 
 
 func _build() -> void:
@@ -132,6 +189,67 @@ func _build() -> void:
 	G2GGeometry.box(self, Vector3(-1500.0, START_Y - 1560.0 - 16.0, START_Z - 3300.0),
 		Vector3(768.0, 32.0, 640.0), G2GGeometry.COLOUR_END)
 
+	_build_fall_line()
+
+
+## Bonus 3 — the fall line. See the constants above for why it exists.
+func _build_fall_line() -> void:
+	# A pad that reaches the chute. The other three pads stop at `START_Z + 64` and
+	# nothing is under the 128 units between there and this route's mouth, so this one
+	# is 512 deep rather than 384 and its back edge IS `FALL_TOP_Z`. A pad that stops
+	# short of the thing it feeds is a route that begins with a fall, and a fall is
+	# what the rest of this map already does.
+	G2GGeometry.box(self, Vector3(FALL_X, FALL_TOP_Y - 16.0, START_Z + 192.0),
+		Vector3(384.0, 32.0, 512.0), G2GGeometry.COLOUR_BONUS)
+
+	# [b]Rotating about +X by a NEGATIVE angle sends the -Z end down[/b], and -Z is the
+	# direction every route on this map runs. `G2GGeometry.ramp` rotates about
+	# `Vector3.FORWARD` instead, which tilts a slab in X and Y and leaves its Z extent
+	# horizontal — which is why every other ramp on this map is level along its length.
+	var pitch := Basis(Vector3.RIGHT, deg_to_rad(-FALL_PITCH))
+	var centre := fall_point(0.5)
+
+	# [b]A pitched slab has to be LONGER than the ground it covers[/b]: it spans
+	# `FALL_RUN` of Z along a surface inclined at `FALL_PITCH`, so its own length is
+	# that over the cosine. Getting this wrong shortens the route and leaves the finish
+	# pad hanging in the air past the end of the ramp.
+	var slab_length := FALL_RUN / cos(deg_to_rad(FALL_PITCH))
+
+	# The bed. `fall_point` is its CENTRE, so the surface ridden on is half a thickness
+	# above the line every zone below is placed off — which is inside the tolerance of
+	# all of them and is why they are all written against one function.
+	G2GGeometry.box(self, centre,
+		Vector3(FALL_BED, RAMP_THICKNESS, slab_length),
+		G2GGeometry.COLOUR_RAMP, pitch)
+
+	var out := cos(deg_to_rad(FALL_BANK)) * FALL_FACE * 0.5
+	var lift := sin(deg_to_rad(FALL_BANK)) * FALL_FACE * 0.5
+
+	for side in [-1.0, 1.0]:
+		# Each bank's low edge lands on the bed's own edge: a face banked this way has
+		# its low edge `out` in and `lift` down from its centre, so centring it
+		# `FALL_BED * 0.5 + out` out and `lift` up puts that edge exactly on the seam.
+		# Then the whole offset is pitched with the slab, so the bank follows the bed
+		# down rather than crossing it.
+		var offset := pitch * Vector3(
+			side * (FALL_BED * 0.5 + out), lift + RAMP_THICKNESS * 0.5, 0.0
+		)
+		G2GGeometry.box(
+			self,
+			centre + offset,
+			Vector3(FALL_FACE, RAMP_THICKNESS, slab_length),
+			G2GGeometry.COLOUR_BONUS,
+			pitch * Basis(Vector3.FORWARD, deg_to_rad(-side * FALL_BANK))
+		)
+
+	# The run-out and the finish, level with the bed where it ends. Wide and long,
+	# because a player arriving here is doing better than 1,500 u/s down a 50° face and
+	# a pad they can overshoot is a route that ends in the pit for the one reason that
+	# is not the player's fault.
+	var bottom := fall_point(1.0)
+	G2GGeometry.box(self, Vector3(FALL_X, bottom.y - 16.0, bottom.z - 768.0),
+		Vector3(1024.0, 32.0, 1536.0), G2GGeometry.COLOUR_END)
+
 
 func timer_zones() -> DotTimerZoneSet:
 	return build_zones()
@@ -192,7 +310,41 @@ static func build_zones() -> DotTimerZoneSet:
 	# falling, for as long as they were prepared to watch. It is the main track's own
 	# bug from before `DotTimer.effect_requested` was connected, still live on two
 	# tracks, and it stayed invisible because nothing had ever driven a bonus.
-	for track in [bonus, transfer]:
+	# Bonus 3 — the fall line. Every bound below is read off `fall_point`, which is the
+	# crease itself, so changing the pitch moves the geometry, the splits, the finish
+	# and this zone set together. The map that this route was added to has four numbers
+	# for its own finish pad written out by hand and they are the reason `[track-zone-1]`
+	# exists.
+	var fall := DotTimerTrack.of_bonus(3)
+	var mouth := fall_point(0.0)
+	var foot := fall_point(1.0)
+
+	zones.add(zone_box(DotTimerZone.Kind.START, fall,
+		Vector3(FALL_X - 192.0, FALL_TOP_Y, START_Z + 64.0),
+		Vector3(FALL_X + 192.0, FALL_TOP_Y + 256.0, START_Z + 448.0)))
+	zones.add(zone_spawn(fall, Vector3(FALL_X, FALL_TOP_Y + 8.0, START_Z + 300.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.END, fall,
+		Vector3(FALL_X - 512.0, foot.y, foot.z - 1536.0),
+		Vector3(FALL_X + 512.0, foot.y + 512.0, foot.z)))
+
+	# [b]Yaw 0, and this route says why rather than copying the three above it.[/b] Yaw
+	# 0 is -Z, which is the direction every route on this map runs and what its SPAWN
+	# zones already use; the main track's two stage lines pass 180 and face a restarting
+	# player back up the map. That is `[stage-yaw-1]`, it is live on this map as well as
+	# on `bhop_g2g_intro`, and it is not changed here because those two lines are on a
+	# scored track.
+	for i in FALL_SPLITS:
+		var t := float(i) / float(FALL_SPLITS.size() + 1)
+		var at := fall_point(t)
+		zones.add(zone_stage(
+			fall, i,
+			Vector3(FALL_X - 640.0, at.y - 192.0, at.z - 96.0),
+			Vector3(FALL_X + 640.0, at.y + 640.0, at.z + 96.0),
+			Vector3(FALL_X, at.y + 64.0, at.z + 128.0),
+			0.0
+		))
+
+	for track in [bonus, transfer, fall]:
 		zones.add(zone_box(DotTimerZone.Kind.RESPAWN, track,
 			Vector3(-16384.0, END_Y - 4096.0, END_Z - 16384.0),
 			Vector3(16384.0, END_Y - 1536.0, START_Z + 16384.0)))

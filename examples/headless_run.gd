@@ -22,8 +22,9 @@ const G2GUnits := preload("../game/g2g_units.gd")
 ## [/codeblock]
 
 const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
+const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 
-const CHECKS := 143
+const CHECKS := 160
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -55,6 +56,7 @@ func _run() -> void:
 	await _test_needle_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
+	await _test_the_fall_line()
 	await _test_ghost()
 	await _test_progression()
 	await _test_spectating()
@@ -813,6 +815,13 @@ func _test_surf_run() -> void:
 
 	game.timers.effect_requested.connect(on_reset)
 
+	# Where the bot actually gets to, so the assertions below can be read against it.
+	var entry_z := bot.global_position.z
+	var deepest_z := entry_z
+	var splits: Array[int] = []
+	var on_stage := func(number: int, _split: float) -> void: splits.append(number)
+	bot.timer.stage_reached.connect(on_stage)
+
 	for i in range(1500):
 		var c := DotFpsCommand.new()
 		var phase := (i / 90) % 2
@@ -827,11 +836,37 @@ func _test_surf_run() -> void:
 			airborne += 1
 		top = maxf(top, bot.speed())
 		descended += 1
+		deepest_z = minf(deepest_z, bot.global_position.z)
 
 		if reset[0]:
 			break
 
 	game.timers.effect_requested.disconnect(on_reset)
+	bot.timer.stage_reached.disconnect(on_stage)
+
+	# [b]The number nobody had, PRINTED rather than asserted.[/b] Every check below
+	# passes, and every one of them is satisfied by a bot that is FALLING: not grounded
+	# because it is in mid-air, "surf speed" because that is what four seconds of
+	# gravity is worth, and the respawn zone catching it is asserted as a feature. What
+	# none of them says is how much of this route was ridden, and the answer is a
+	# under 5% of it with neither split crossed.
+	#
+	# The cause is the map rather than the bot: `G2GGeometry.ramp` rotates about
+	# `Vector3.FORWARD`, which banks a slab in X and Y and leaves its Z extent
+	# horizontal, so both of this map's ramps are LEVEL along their length and give a
+	# player nothing. The descent comes from the stepped valley floor between them. That
+	# is `[surf-ramp-1]`, and it is the same finding game-playground's `pg_surf_intro`
+	# made about itself — these two maps were built the same way.
+	#
+	# The main run is deliberately NOT reshaped: it has records against it and a scored
+	# route is Christian's to change. `the fall line` below is the route on this map
+	# where the answer is the ramp.
+	var travelled := entry_z - deepest_z
+	var route := G2GUnits.to_metres(8192.0)
+	print(
+		"        the main run: %.1f m of a %.0f m route, %d of 2 splits, top %s u/s"
+		% [travelled, route, splits.size(), G2GUnits.format_speed(top)]
+	)
 
 	_check(
 		reset[0],
@@ -957,6 +992,184 @@ func _test_transfer_bonus() -> void:
 		zones_have_respawn_on_bonuses(),
 		"and a bonus that is missed puts the player back, like the main track"
 	)
+
+
+## `surf_g2g_intro`'s third bonus — the route where the descent comes from the ramp.
+##
+## [b]This exists because of the measurement in [method _test_surf_run].[/b] Both of
+## this map's main ramps are banked about the run axis and level along their length, so
+## the descent on every other route here comes from the floor; a scripted strafer covers
+## under 5% of a 156 m route and crosses neither split, while two checks over it pass about
+## a player who is falling into the pit. The fall line is a single face pitched past the
+## standable limit and descending ALONG the run, so gravity accelerates the player down
+## it — which is the thing the map was supposed to be about and was not.
+##
+## It is straight, and that is deliberate for the same reason `_test_needle_bonus` gives
+## about a constant gap: a scripted bot cannot air-strafe, so a route that needs turning
+## is a route no suite ever runs end to end. Here the bot holds forward and nothing else.
+func _test_the_fall_line() -> void:
+	print("the fall line — surf_g2g_intro's third bonus")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var fall := DotTimerTrack.of_bonus(3)
+	var zones := game.timers.zones
+
+	_check(
+		zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3]),
+		"the surf map has four routes now rather than three",
+		str(zones.playable_tracks()) if zones else "no zones"
+	)
+
+	# [b]Asked of THIS track by name, rather than of `problems()`.[/b] A zone carries a
+	# track, so a set that is complete for track 0 and partial for track 3 passes
+	# `problems()` — which is a per-zone check — while being an unfinishable route. This
+	# family has shipped that hole twice; see `[track-zone-1]`.
+	for kind in [
+		DotTimerZone.Kind.START,
+		DotTimerZone.Kind.END,
+		DotTimerZone.Kind.SPAWN,
+		DotTimerZone.Kind.RESPAWN,
+	]:
+		_check(
+			zones != null and zones.of_kind(kind, fall).size() == 1,
+			"the fall line has its own %s zone" % DotTimerZone.Kind.keys()[kind].to_lower(),
+			"%d" % (zones.of_kind(kind, fall).size() if zones else -1)
+		)
+
+	_check(
+		zones != null and zones.stage_count(fall) == SurfIntro.FALL_SPLITS.size(),
+		"and a split for each fraction the map names",
+		"%d" % (zones.stage_count(fall) if zones else -1)
+	)
+
+	# The face has to be unstandable or none of this is surf, and it is asked of the
+	# tunables this game actually runs a player with rather than of a number written
+	# down a second time here. The pitch is the one thing about this route that cannot
+	# be changed without changing what the route IS.
+	var max_slope: float = bot.controller.tunables.max_slope_angle
+	_check(
+		SurfIntro.FALL_PITCH > max_slope,
+		"its bed is steeper than a player can stand on",
+		"%.0f° against %.1f°" % [SurfIntro.FALL_PITCH, max_slope]
+	)
+
+	# A player here is the fastest thing on the map, so it is the route where a thin
+	# line is certain to be passed through between ticks rather than merely likely.
+	_check(
+		zones != null and zones.thin_zones(G2GUnits.to_metres(3500.0), game.tick_rate).is_empty(),
+		"and no zone a 3500 u/s player crosses without entering"
+	)
+
+	_check(game.timers.set_player_track(&"bot", fall), "the track switches to the fall line")
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var spawn := game.current_map_node().spawn_for(fall)
+	_check(
+		bot.global_position.distance_to(spawn) < 1.0,
+		"which spawns on its own pad, away from the other three",
+		"%.1f m from the main spawn" % spawn.distance_to(game.current_map_node().spawn_for(0))
+	)
+
+	game.config.air_accelerate = 150.0
+	game.apply_movement()
+
+	# Arrays, because a GDScript lambda captures a local by value.
+	var started: Array[bool] = [false]
+	var finished: Array[bool] = [false]
+	var reset: Array[bool] = [false]
+	var splits: Array[int] = []
+
+	var on_start := func(_run: DotTimerRun) -> void: started[0] = true
+	var on_stage := func(number: int, _split: float) -> void: splits.append(number)
+	var on_finish := func(_run: DotTimerRun) -> void: finished[0] = true
+	var on_reset := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+
+	bot.timer.run_started.connect(on_start)
+	bot.timer.stage_reached.connect(on_stage)
+	bot.timer.run_finished.connect(on_finish)
+	game.timers.effect_requested.connect(on_reset)
+
+	# Off the pad, then nothing but forward. No jump pattern and no strafe: on a face
+	# nobody can stand on there is no ground to leave.
+	await _prestrafe(&"bot", 60)
+
+	var command := DotFpsCommand.new()
+	command.move = Vector2(0.0, 1.0)
+	command.yaw = 0.0
+
+	var ticks := 0
+	var airborne := 0
+	var top := 0.0
+	var entry_z := bot.global_position.z
+	var entry_y := bot.global_position.y
+
+	for i in range(1400):
+		bot.controller.apply_command(command.duplicate_command())
+		await get_tree().physics_frame
+		ticks = i + 1
+
+		if not bot.controller.state.is_grounded():
+			airborne += 1
+
+		top = maxf(top, bot.speed())
+
+		if finished[0] or reset[0]:
+			break
+
+	bot.timer.run_started.disconnect(on_start)
+	bot.timer.stage_reached.disconnect(on_stage)
+	bot.timer.run_finished.disconnect(on_finish)
+	game.timers.effect_requested.disconnect(on_reset)
+
+	game.config.air_accelerate = 1000.0
+	game.apply_movement()
+
+	# The whole difference between the two routes, stated as a number and printed
+	# beside the main run's. A detail line shows only when a check fails, and this is
+	# the figure every future question about this map is really about.
+	print(
+		"        the fall line: %.1f m travelled, chute is %.0f m, in %d ticks, top %s u/s"
+		% [
+			entry_z - bot.global_position.z,
+			G2GUnits.to_metres(SurfIntro.FALL_RUN),
+			ticks,
+			G2GUnits.format_speed(top),
+		]
+	)
+
+	_check(started[0], "leaving its pad starts a run on the fall line's own track")
+	_check(
+		G2GUnits.to_units(top) > 1200.0,
+		"the bed makes the player fast, which this map's own ramps never do",
+		"%s u/s" % G2GUnits.format_speed(top)
+	)
+	_check(splits == [1, 2], "it crosses both splits, in order", str(splits))
+	_check(
+		finished[0] and not reset[0],
+		"and reaches the finish holding nothing but forward",
+		"gave up at tick %d, y %.1f, z %.1f%s" % [
+			ticks, bot.global_position.y, bot.global_position.z,
+			", put back by the respawn zone" if reset[0] else "",
+		]
+	)
+	_check(not bot.timer.run.is_active(), "and the run is over rather than still running")
+	_check(
+		bot.controller.motor.stuck_ticks == 0,
+		"without the slide ever running out of iterations",
+		"%d stuck ticks" % bot.controller.motor.stuck_ticks
+	)
+	_check(
+		entry_y - bot.global_position.y > G2GUnits.to_metres(SurfIntro.fall_drop() * 0.9),
+		"and the descent is the ramp's, not a fall past it",
+		"%.1f m of %.1f m" % [
+			entry_y - bot.global_position.y, G2GUnits.to_metres(SurfIntro.fall_drop())
+		]
+	)
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
 
 
 ## Whether every playable track on the current map has a respawn zone.
