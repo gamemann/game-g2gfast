@@ -935,16 +935,28 @@ func _test_transfer_bonus() -> void:
 
 	var started := false
 	var finished := false
-	var reset := false
 	var yaw := 0.0
+	var entry := bot.global_position
+	var rode := entry
+	var travelled := 0.0
+
+	# [b]An Array, not a bool, and this one was a bool.[/b] A GDScript lambda captures a
+	# local by VALUE, so a flag set inside a signal handler reads false everywhere
+	# outside it. `_test_surf_run` twenty lines up carries a comment saying exactly
+	# this, and the same mistake was live here the whole time: `reset` was written only
+	# by the handler below, so it was false on every tick of every run since this test
+	# was written. The loop therefore never broke early, the bot fell off the route, the
+	# respawn zone put it back, and the check that read its position afterwards was
+	# reading the pad -- and passed. See docs/gdscript-hazards.md.
+	var reset: Array[bool] = [false]
 
 	var watch := func(id: StringName, zone: DotTimerZone) -> void:
 		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
-			reset = true
+			reset[0] = true
 
 	game.timers.effect_requested.connect(watch)
 
-	for i in range(1200):
+	for i in range(2000):
 		var c := DotFpsCommand.new()
 		var phase := (i / 90) % 2
 		c.move = Vector2(1.0 if phase == 0 else -1.0, 0.0)
@@ -960,29 +972,60 @@ func _test_transfer_bonus() -> void:
 			finished = true
 			break
 
-		if reset:
+		if reset[0]:
 			break
+
+		# Read BEFORE the respawn zone fires, which is the whole point -- see below.
+		rode = bot.global_position
+		travelled = maxf(travelled, entry.z - rode.z)
 
 	game.timers.effect_requested.disconnect(watch)
 	game.config.air_accelerate = 1000.0
 	game.apply_movement()
 
 	_check(started, "leaving its pad starts a run on the bonus's own track")
-	# [b]Where it ENDS, not whether it cleared.[/b] A crude bot alternating strafe
-	# every ninety ticks is not a surfer and never will be; what it can prove is the
-	# thing the geometry has to be right for -- that the route holds a player from the
-	# pad to the bottom. The failure this catches is the one the first draft had: the
-	# second ramp covered only the back third of the first, so coming off early meant
-	# falling between them, and the bot ended 500 m under the level with nothing in
-	# the log to say so.
-	var at := bot.global_position
-	var floor_m := G2GUnits.to_metres(START_Y - 1700.0)
-	var roof_m := G2GUnits.to_metres(START_Y + 256.0)
+
+	# [b]This check used to read `bot.global_position` AFTER the loop and it was
+	# reading the pad.[/b] It asserted that the bot ended "between its pad and its
+	# floor", which is the thing the geometry has to be right for -- and the loop
+	# breaks on `reset`, by which time the respawn zone has already teleported the bot
+	# back to the pad. So the position it read was the spawn, every time, and the check
+	# passed most loudly in exactly the case it was written to catch: a bot that fell
+	# off the route entirely. Driving it is what showed this -- the bot ends at the
+	# spawn to a tenth of a metre.
+	#
+	# What a crude bot alternating strafe every ninety ticks can actually prove is not
+	# that it cleared the route; it is not a surfer and never will be. It is that a
+	# player who loses the bank is PUT BACK rather than falling for ever, which is the
+	# bug the bonus tracks shipped with. So that is what is asserted, and how far it
+	# got is printed, because the distance is the number every question about this
+	# route is really about. See `[bonus-run-2]`: bonus 1 is a single bank and bonus 2
+	# needs a transfer in mid-air, and neither is completable by a bot that cannot
+	# air-strafe. `the fall line` is the route on this map that is, and it is driven to
+	# its finish in `_test_the_fall_line`.
+	var spawn_m := game.current_map_node().spawn_for(transfer)
+	# [b]2,000 ticks, not 1,200, and the number is load-bearing.[/b] At 1,200 the bot
+	# had fallen to y -48.6 m and the respawn zone -- whose roof is 1,536 units under
+	# the map's finish -- was ten units below it, so the loop ended with the bot in
+	# mid-air and `reset` still false. The check below then passed by being asked about
+	# nothing at all, which is the same failure in a different costume. A falling player
+	# has a long way to go before this map catches them, and the window has to cover it.
+	print(
+		"        the transfer: rode %.1f m to y %.1f, %s"
+		% [
+			travelled, rode.y,
+			"put back on its pad" if reset[0]
+				else ("still on the route" if rode.y > G2GUnits.to_metres(START_Y - 1700.0)
+					else "below the route's floor and still falling"),
+		]
+	)
 
 	_check(
-		at.y > floor_m and at.y < roof_m,
-		"and the route holds the bot between its pad and its floor",
-		"y %.1f m, route is %.1f to %.1f" % [at.y, floor_m, roof_m]
+		reset[0] and bot.global_position.distance_to(spawn_m) < 1.0,
+		"and a bot that loses the bank is put back on its pad rather than falling for ever",
+		"reset=%s, %.1f m from the pad" % [
+			reset[0], bot.global_position.distance_to(spawn_m)
+		]
 	)
 
 	# The respawn zone the bonus tracks did not have. With it, a bot that does fall is
