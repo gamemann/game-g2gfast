@@ -175,7 +175,25 @@ static func _scene_ids(root: String) -> Array[StringName]:
 		if not name.ends_with(".tscn"):
 			continue
 		var id := StringName(name.substr(0, name.length() - 5))
-		if ResourceLoader.exists("%s/%s.tscn" % [root, id]):
+		var path := "%s/%s.tscn" % [root, id]
+
+		# [b]The shared scene is not a map.[/b] Every imported map borrows
+		# [constant IMPORTED_SCENE], and it has to live in maps/ beside the
+		# hand-written ones so it ships in the build -- which is exactly where this
+		# scan looks. Without this it enters the catalogue as the id `imported_map`,
+		# flagged imported because its scene IS the imported scene, carrying no
+		# manifest because there is no map behind it. A rotation can pick it and a
+		# vote can offer it, and nothing can load it.
+		#
+		# It is invisible on a developer machine, which is why it survived: the only
+		# check that looks takes the FIRST entry flagged imported, and a machine with
+		# maps/imported/ populated finds a real one first. A clean checkout has no
+		# imported maps at all, so the template is the only candidate -- so CI saw it
+		# on the first run and every suite here had passed for months.
+		if path == IMPORTED_SCENE:
+			continue
+
+		if ResourceLoader.exists(path):
 			out.append(id)
 	return out
 
