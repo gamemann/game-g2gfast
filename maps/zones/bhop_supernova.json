@@ -1,0 +1,29 @@
+{
+ "id": "bhop_supernova",
+ "display_name": "bhop: supernova",
+ "tier": 1,
+ "author": "Sonia_ and Benchmarked",
+ "attribution": {"author": "Sonia_ (map design) and Benchmarked (gameplay); skybox Mr.Who; textures TopHATTwaffle and Sonia_; testers Juked, tricksterr, plar, samurai; Subnautica models by Unknown Worlds Entertainment", "source": "https://gamebanana.com/mods/313046 (GameBanana, submitted by Sonia_ 2021-08-11; its file is bhop_supernova_dc876.rar). A later port also exists. Nothing in the .bsp names an author: no game_text, no worldspawn comment; the pakfile carries only particles and a .nav", "archive": "bhop_supernova_dc876.rar", "recorded": "2026-09-23"},
+ "notes": "A plain numbered chain and nothing else: 18 destinations cp1..cp17 (plus cp7a, a second checkpoint 40 units from cp7 for the vertical part of section 7), and every one of the 31 trigger_teleports is a floor pad aimed at the checkpoint of the section it lies under. There is no door, no finish label and no end destination. The start is the cp1 platform, where all 37 spawns stand. The finish is the platform at the far end of section 17, the last section the map numbers: the cp17 pit runs 6000 units north of cp17 and this 1600x1300 platform sits on top of its far end, walled on the north, with no geometry beyond it. That is a judgement from the brushes rather than a label. The author's page gives it as 'tier 1, showcase time 1:30'.",
+ "zones": [
+  {"kind": "START", "track": 0, "box": [[-8656, -15936, 560], [-6800, -14848, 780]], "note": "the cp1 platform, measured from the brushes: floor at z 576, wall at x -8656, edges at x -6800, y -15936 and y -14848. All 37 info_player_* and the destination `cp1` are on it"},
+  {"kind": "SPAWN", "track": 0, "destination": "cp1"},
+  {"kind": "END", "track": 0, "box": [[4960, 12840, -3776], [6600, 14200, -3560]], "note": "the end platform of section 17: a 1600x1300 floor at z -3768 with a curved wall round its north side, at the far end of the cp17 pit (y 8512..14656) and 4800 units from cp17. Nothing lies beyond it"},
+  {"kind": "STAGE", "track": 0, "number": 2, "box": [[-7784, -13176, 560], [-6856, -12568, 776]], "note": "the platform under destination `cp2`, where every section-2 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 3, "box": [[-5832, -10928, 560], [-5128, -9744, 776]], "note": "the platform under destination `cp3`, where every section-3 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 4, "box": [[-5744, -7200, 560], [-5264, -6464, 776]], "note": "the platform under destination `cp4`, where every section-4 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 5, "box": [[-4072, -1768, 400], [-3208, -1288, 616]], "note": "the platform under destination `cp5`, where every section-5 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 6, "box": [[3904, -1328, -208], [4768, -208, 8]], "note": "the platform under destination `cp6`, where every section-6 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 7, "near": {"class": "trigger_multiple", "point": [7352.0, 4516.0, -250.5], "within": 48}, "note": "the one section the map gives a volume: the trigger that renames the player `fcp7`, around destinations `cp7` and `cp7a`"},
+  {"kind": "STAGE", "track": 0, "number": 8, "box": [[6720, 6936, -1472], [8000, 9400, -1256]], "note": "the platform under destination `cp8`, where every section-8 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 9, "box": [[2248, 1724, -3600], [3528, 3004, -3384]], "note": "the platform under destination `cp9`, where every section-9 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 10, "box": [[-3344, 1720, -3600], [-2032, 3000, -3384]], "note": "the platform under destination `cp10`, where every section-10 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 11, "box": [[-4520, 1008, -3776], [-3336, 2256, -3560]], "note": "the platform under destination `cp11`, where every section-11 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 12, "box": [[-8640, 976, -3776], [-7648, 2256, -3560]], "note": "the platform under destination `cp12`, where every section-12 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 13, "box": [[-8896, 2760, -3904], [-7648, 4552, -3688]], "note": "the platform under destination `cp13`, where every section-13 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 14, "box": [[-8744, 8488, -3904], [-7496, 9928, -3688]], "note": "the platform under destination `cp14`, where every section-14 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 15, "box": [[-3648, 10656, -3776], [-2016, 11968, -3560]], "note": "the platform under destination `cp15`, where every section-15 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 16, "box": [[-616, 4728, -3776], [1080, 6232, -3560]], "note": "the platform under destination `cp16`, where every section-16 pit returns you; measured from the brushes"},
+  {"kind": "STAGE", "track": 0, "number": 17, "box": [[5080, 6823, -3776], [6360, 8519, -3560]], "note": "the platform under destination `cp17`, where every section-17 pit returns you; measured from the brushes"}
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "id": "bhop_interloper",
+ "display_name": "bhop: interloper",
+ "tier": 3,
+ "author": "Tony Montana",
+ "attribution": {"author": "Tony Montana", "source": "https://gamebanana.com/mods/125285 (submitter tmontana, credited 'Creator: Tony Montana'); in the map: game_text `text2` 'Map by Tony Montana', and the `nothing/mapby` texture 'Map by Tony Montana [U:1:8784568]'", "archive": "bhop_interloper.zip", "recorded": "2026-09-23"},
+ "notes": "The finish is the pad textured `tony/brushes/endboost` (470x470 at [7136 1744 3984]): the trigger_multiple on it (filter cp_deny) renames the player cp_cp, fires the env_fades `fade`/`fade2` and after 5 s renames them cp_tele; a trigger_push filtered on cp_cp throws them up, and the trigger_teleport around it filtered on cp_teleport (1728x1728x3072) sends them to the destination named `end`, a separate room at [-1736 -1488 352]. That teleport is the finish line here rather than the pad, because this importer does not read filters and the column would otherwise be a pit enclosing the pad; entering it is entering the finish room. It is the far end of the route: section returns run t_dest_1..t_dest_38 and t_dest_38's section is the one beside it. The route is three parts joined by two door-sized teleports, `part2` (96x96, end of t_dest_18's part) and `part3` (64x64, end of t_dest_30's), which are the stages. The start: players spawn in a room at [-7672 4062] whose floor teleports to `spawn`, the intro camera; `start_relay` parks them for 14 s and then drops them at [-5760 3744 2440] into the pool of the start room below, whose exit (a trigger_multiple at y 4992..5248 that switches on the course fog) leads into section 1 and the t_dest_1 pit. The start line is that room.",
+ "doorways": {"max_horizontal": 128},
+ "conditional_teleports": {"filters": ["bhopfilter"], "note": "the map's anti-standing trap: a trigger_multiple on each block sets the player's name to the one this filter passes after a delay and resets it after another, so the teleport only fires on a player who stood on a block too long. This game does not run the map's outputs, so imported unconditionally it fired on every landing. Dropped; standing still is allowed here and costs the player time instead"},
+ "zones": [
+  {"kind": "START", "track": 0, "box": [[-6272, 3072, -64], [-5248, 4992, 192]], "note": "the start room the intro drops you into (pool and floor at z 0), up to the fog trigger at its exit"},
+  {"kind": "SPAWN", "track": 0, "destination": [-5760, 4480, 0], "note": "on the start room's floor. Not `spawn`: that is the intro camera 2400 units up, and the info_player_* entities are in the room that teleports you to it"},
+  {"kind": "STAGE", "track": 0, "number": 2, "around": {"point": "part2", "extents": [128, 128, 832]}, "destination": "t_dest_19", "note": "part 2: the drop column under `part2`, where the 96x96 door at the end of part 1 lands you, down to the platform t_dest_19 stands on"},
+  {"kind": "STAGE", "track": 0, "number": 3, "near": {"class": "trigger_multiple", "point": [3064, -9672, 3248], "within": 64}, "destination": "part3", "note": "part 3: the 336x336 trigger_multiple around `part3` (it resets the fog on arrival), reached only through the 64x64 door at the end of part 2"},
+  {"kind": "END", "track": 0, "teleport_to": "end", "max_horizontal": 2000, "note": "the 1728x1728 column around the endboost pad that sends a finished player to the `end` room. The other teleport aimed at `end` is the 3072-wide floor of the end room itself, which the width limit excludes"}
+ ]
+}

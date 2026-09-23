@@ -1,0 +1,23 @@
+{
+ "id": "bhop_tesquo_v2",
+ "display_name": "bhop: tesquo",
+ "tier": 4,
+ "author": "george (GeorgeRulesLOL), one stage by Jagg",
+ "attribution": {"author": "george (GeorgeRulesLOL); 'Made a stage': Jagg", "source": "https://gamebanana.com/mods/126185 (submitter GeorgeRulesLOL, 'Main mapper'); in the map the `george/tesquo/credits` texture reads 'BHOP_TESQUO -- A map by george.' with thanks to JAGG and the testers", "archive": "bhop_tesquo_v2.rar", "recorded": "2026-09-23"},
+ "notes": "The finish is the one trigger_teleport aimed at `tesqend` -- a 40x40 pad in a magenta room at the end of the last level, which puts the player in the end room directly beneath the start room (the two are stacked at [-4200 4300], floors z 2000 and 2272; the GameBanana page apologises for both). Nothing else aims at `tesqend`. The start is the upper room: all 40 spawns are in it, and its only way out is an 8x352 door teleport between the env_laser gate at x -4000 and the destination `s1l1`. The page says the map is '9 mpbhop levels', and the door teleports give exactly nine in a single chain: spawn -> s1l1, s1 -> `s2` (134x8), s2 -> `js1l1` (96x96; js1 is Jagg's stage, JAGG on the credits), js1 -> `s3l1` (40x128), s3 -> `s4l1` (40x40), s4 -> `s5l1` (48x40), s5 -> `s6enter` (72x72), s6 -> `s7l` (64x64), s7 -> `s8l1` (400x7), s8 -> `tesqend`. Those arrival points are the stages. The pits do not return a player directly: each sends to a cell `sNcM` in a grid at [-3560..-3224 -1376..-1232 1984], and a 32x32 teleport in the cell sends on to the level point `sNlM`; the `doorways` rule reads the level doors and the cells alike, which is harmless because nothing reaches a cell once the pits respawn.",
+ "doorways": {"max_horizontal": 400},
+ "conditional_teleports": {"filters": ["bhop"], "note": "the map's anti-standing trap: a trigger_multiple on each block sets the player's name to the one this filter passes after a delay and resets it after another, so the teleport only fires on a player who stood on a block too long. This game does not run the map's outputs, so imported unconditionally it fired on every landing. Dropped; standing still is allowed here and costs the player time instead"},
+ "zones": [
+  {"kind": "START", "track": 0, "box": [[-4392, 4120, 2272], [-3992, 4472, 2480]], "note": "the upper room: all 40 info_player_terrorist, bounded by the door teleport to s1l1 at x -3992"},
+  {"kind": "SPAWN", "track": 0, "destination": [-4312, 4264, 2368], "note": "an actual info_player_terrorist origin"},
+  {"kind": "STAGE", "track": 0, "number": 2, "around": {"point": "s2", "extents": [128, 128, 96]}, "note": "level 2, where the 134x8 door at the end of level 1 lands you", "destination": "s2"},
+  {"kind": "STAGE", "track": 0, "number": 3, "around": {"point": "js1l1", "extents": [128, 128, 96]}, "note": "level 3, Jagg's stage (js1), via the 96x96 door above s2", "destination": "js1l1"},
+  {"kind": "STAGE", "track": 0, "number": 4, "around": {"point": "s3l1", "extents": [128, 128, 96]}, "note": "level 4 (the map's s3), via the 40x128 door at the end of js1", "destination": "s3l1"},
+  {"kind": "STAGE", "track": 0, "number": 5, "around": {"point": "s4l1", "extents": [128, 128, 96]}, "note": "level 5 (s4), via the 40x40 door at the end of s3", "destination": "s4l1"},
+  {"kind": "STAGE", "track": 0, "number": 6, "around": {"point": "s5l1", "extents": [128, 128, 96]}, "note": "level 6 (s5), via the 48x40 door at the end of s4", "destination": "s5l1"},
+  {"kind": "STAGE", "track": 0, "number": 7, "around": {"point": "s6enter", "extents": [128, 128, 96]}, "note": "level 7 (s6), via the 72x72 door at the end of s5", "destination": "s6enter"},
+  {"kind": "STAGE", "track": 0, "number": 8, "around": {"point": "s7l", "extents": [128, 128, 96]}, "note": "level 8 (s7), via the 64x64 door at the end of s6", "destination": "s7l"},
+  {"kind": "STAGE", "track": 0, "number": 9, "around": {"point": "s8l1", "extents": [128, 128, 96]}, "note": "level 9 (s8, the osu level), via the 400x7 door at the end of s7", "destination": "s8l1"},
+  {"kind": "END", "track": 0, "teleport_to": "tesqend", "note": "the single 40x40 pad aimed at `tesqend`, at the end of s8"}
+ ]
+}
