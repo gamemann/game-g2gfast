@@ -3,6 +3,8 @@
  "display_name": "bhop: badges",
  "tier": 3,
  "notes": "Exactly one of the map's 285 trigger_teleports is aimed at the destination named `end`, and it is a 64x64x16 pad -- a thing you land on, against 284 pits and section returns. That is the finish. The start is unlabelled and is the spawn platform: 16 info_player_* entities on a 1024x1024 square at z -3984, which is the only place in the map they are.",
+ "conditional_teleports": {"filters": ["filter_activator"],
+  "note": "the map's anti-standing trap: a trigger_multiple on each block sets the player's name to the one this filter passes after a delay and resets it after another, so the teleport only fires on a player who stood on a block too long. This game does not run the map's outputs, so imported unconditionally it fired on every landing. Dropped; standing still is allowed here and costs the player time instead"},
  "zones": [
   {"kind": "START", "track": 0, "around": {"point": [-9376, 12160, -3984], "extents": [640, 640, 180]},
    "note": "the 1024-unit spawn platform, plus margin"},

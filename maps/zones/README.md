@@ -27,3 +27,9 @@ Plus `"kind"`, `"track"`, `"number"` (a stage), `"destination"` (a name or a poi
 `"doorways": {"max_horizontal": 512}` opts a map into the rule that a teleport volume narrower than that is a **door the player walks through** rather than the pit — `TELEPORT`, which keeps the run, rather than `RESPAWN`, which ends it. It is not on by default because it is only true of a map whose sections are joined by doors.
 
 Anything a rule cannot resolve is an error and stops the import. That is deliberate: a finish line that silently resolved to nothing is a map that cannot be finished, and nothing about playing it would say so.
+
+## Filters, doors and credit
+
+`"conditional_teleports": {"filters": ["name"], "note": "..."}` drops the `trigger_teleport`s behind those filters. A name is the filter entity's `targetname` (what the teleport's `filtername` holds) or the activator name it passes. Use it for a trap whose name the map sets and then resets — the anti-standing block — and never for a checkpoint pit, whose name stays set and which is a real pit. A listed name that matches no teleport stops the import. Teleports behind a class filter no player passes are dropped without being asked.
+
+`"attribution": {"author": ..., "source": ..., "archive": ..., "recorded": ...}` is who made the map and where that was read. Every map imported from 2026-09-23 on carries one; the eighteen before it do not yet (`[credit-1]` in the nightly list).

@@ -54,8 +54,33 @@ const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2"]
 ## maps a question they currently answer correctly, which is how an exemption quietly grows.
 const NO_PIT := ["buses_from_hell_fixed"]
 
+## Arrivals on these maps that DO land inside a pit on their own track, by label.
+##
+## [b]Known, not accepted.[/b] Each is a different fault the importer does not yet
+## understand, written down so the check below can be asserted on every other map while
+## these are worked through (`[arrive-1]` in the nightly list):
+##
+## - `surf_summit` stage 3 is put on a floor-level plane 6,272 by 4,224 units that sends
+##   a player to the map start -- the destination is the checkpoint trigger's floor, and
+##   that trigger reaches down to the plane.
+## - `surf_greensway` stage 2 and `surf_mesa`'s door land inside teleport brushes 2,000
+##   to 4,000 units across whose boxes are almost certainly wider than the brushes: a
+##   wedge under a ramp has a bounding box over the ramp.
+##
+## All three are inside the MAPPER's trigger, not inside thickness this importer added --
+## `clear_arrivals` in `tools/bsp_import.py` trims that, and it is what took
+## `surf_aquaflow` stage 2 off this list.
+##
+## Asserted both ways, like [constant NOT_COURSES]: a map in here whose arrival stops
+## landing in a pit fails, so the list cannot outlive its reason.
+const ARRIVES_IN_PIT := {
+	"surf_summit": ["stage 3"],
+	"surf_greensway": ["stage 2"],
+	"surf_mesa": ["door"],
+}
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 26
+const CHECKS_PER_MAP := 28
 
 ## A script error inside a test aborts THAT TEST and not the run, so a suite that has
 ## quietly lost two checks still prints "0 failed" — which is what happened while this
@@ -98,6 +123,8 @@ func _run() -> void:
 		_test_runnable()
 		await _test_stands_on_it()
 		await _test_stands_where_it_sends_you()
+		_test_arrivals_miss_the_pits()
+		_test_a_door_keeps_the_run()
 		if game != null:
 			game.queue_free()
 			game = null
@@ -199,7 +226,10 @@ func _test_geometry() -> void:
 	# Source's own limit is +/-16384 units, so a map is at most 32768 across. Ten
 	# times that means the unit ratio was applied twice or not at all -- the one
 	# mistake that makes an imported map silently unplayable rather than wrong.
-	_check(units.x > 1000.0 and units.x < 40000.0 and units.y < 40000.0,
+	# The LONGEST side, not x: bhop_grove is one corridor 704 units across and 32,192
+	# long, and asking its x of the unit ratio failed a map that is exactly right.
+	var longest := maxf(units.x, maxf(units.y, units.z))
+	_check(longest > 1000.0 and longest < 40000.0,
 		"and is the size a Source map can be", "%.0f x %.0f x %.0f units" % [units.x, units.y, units.z])
 
 
@@ -440,3 +470,101 @@ func _test_stands_where_it_sends_you() -> void:
 		var drop := at.y - bot.global_position.y
 		_check(drop < 8.0, "%s is somewhere a player can stand" % spot[0],
 			"fell %.1f m from %s" % [drop, str(at / G2GUnits.METRES_PER_UNIT)])
+
+
+## Every place the map puts a player -- a spawn, a stage, the far side of a door -- is
+## outside every pit on that track.
+##
+## [b]A pit that contains its own arrival is a loop nobody can see from the zone list.[/b]
+## A respawn fires on ENTRY, so a player put inside one is sent back to the start the
+## first time they move -- which from the player's side is a `!s2` that does nothing and
+## a stage nobody can reach. bhop_pandora2_fix spawned every player inside its first pit
+## because the importer thickened a 16-unit plane 48 units under the start room into a
+## 192-unit slab reaching up through the floor; `tools/bsp_import.py` `inflate_pit` is the
+## fix and this is the check that fails without it. `_test_stands_where_it_sends_you`
+## could not see it: it teleports a bot to each arrival and measures how far it FELL,
+## and a bot the pit put back at a higher spawn has fallen a negative distance.
+func _test_arrivals_miss_the_pits() -> void:
+	print("arrivals")
+	var zones := game.timers.zones
+	var inside := PackedStringArray()
+	if zones != null:
+		var pits := zones.of_kind(DotTimerZone.Kind.RESPAWN)
+		for zone: DotTimerZone in zones.zones:
+			var label := ""
+			match zone.kind:
+				DotTimerZone.Kind.SPAWN:
+					label = "%s spawn" % DotTimerTrack.short_name_of(zone.track)
+				DotTimerZone.Kind.STAGE:
+					label = "stage %d" % int(zone.number)
+				DotTimerZone.Kind.TELEPORT:
+					label = "door"
+				_:
+					continue
+			for pit: DotTimerZone in pits:
+				if pit.track == zone.track and pit.contains(zone.destination):
+					if not inside.has(label):
+						inside.append(label)
+					break
+	var known: Array = ARRIVES_IN_PIT.get(String(_map_id), [])
+	if known.is_empty():
+		_check(inside.is_empty(), "no spawn, stage or door puts a player inside a pit",
+			", ".join(inside))
+	else:
+		# Both ways: the listed ones still do, and nothing else does.
+		var listed := PackedStringArray(known)
+		_check(inside == listed,
+			"lands in a pit exactly where ARRIVES_IN_PIT says it does",
+			"listed %s, found %s" % [str(listed), str(inside)])
+
+
+## Walking through one of the map's doors does not end the run.
+##
+## [b]`doorways` in a map's zone file exists so that a door is a TELEPORT, which keeps
+## the run, rather than a RESPAWN, which ends it -- and the game's handler for TELEPORT
+## called `G2GPlayer.teleport`, which ends it.[/b] So every door the importer ever
+## made ended the run anyway, on surf_kitsune (the map the rule was written for), on
+## bhop_interloper's three parts, on bhop_badges_mini's hundred and eighty sections. The
+## zone list was exactly right and the only symptom was a timer that stopped at the
+## first door. Driven through the real handler: the manager's signal, which is what the
+## timer emits when a player walks in.
+func _test_a_door_keeps_the_run() -> void:
+	print("doors")
+	var zones := game.timers.zones
+	var door: DotTimerZone = null
+	var start: DotTimerZone = null
+	if zones != null:
+		door = zones.first_of_kind(DotTimerZone.Kind.TELEPORT, DotTimerTrack.MAIN)
+		start = zones.first_of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN)
+	if door == null or start == null:
+		_check(true, "a door keeps the run", "no door on the main track")
+		return
+
+	var bot: G2GPlayer = game.players.get(&"bot")
+	if bot == null:
+		bot = game.add_player(&"bot", "Bot", true)
+		bot.sampler = null
+	var timer := bot.timer
+	if timer == null:
+		_check(false, "a door keeps the run", "the bot has no timer")
+		return
+	timer.stop()
+
+	# Leave the start line, so there is a run to lose. Synchronously, inside one frame,
+	# so the game's own tick cannot feed the timer the bot's real position in between.
+	var sample := DotTimerSample.new()
+	sample.grounded = true
+	var away := start.centre() + Vector3(0.0, start.size().y + 8.0, 0.0)
+	for point in [start.centre(), start.centre(), away]:
+		sample.previous_position = sample.position
+		sample.position = point
+		timer.tick(sample)
+	var was_running := timer.run.is_running()
+
+	game.timers.effect_requested.emit(&"bot", door)
+
+	var moved := bot.global_position.distance_to(door.destination) < 0.01
+	_check(was_running and moved and timer.run.is_running(), "a door keeps the run",
+		"running before %s, moved %s, running after %s"
+		% [was_running, moved, timer.run.is_running()])
+	timer.stop()

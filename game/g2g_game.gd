@@ -1049,7 +1049,11 @@ func _on_effect_requested(player_id: StringName, zone: DotTimerZone) -> void:
 		DotTimerZone.Kind.RESPAWN, DotTimerZone.Kind.SLAY:
 			spawn_player(player_id)
 		DotTimerZone.Kind.TELEPORT:
-			player.teleport(zone.destination, zone.destination_yaw)
+			# A door, and a door keeps the run: this is how a staged map joins one
+			# section to the next. It stopped the run for as long as the importer has
+			# been making doors, so surf_kitsune -- the map `doorways` was written for
+			# -- could not be timed past its first section, and nothing said so.
+			player.teleport(zone.destination, zone.destination_yaw, true)
 		_:
 			pass
 

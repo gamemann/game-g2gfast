@@ -1,0 +1,11 @@
+{
+ "id": "bhop_lego2",
+ "notes": "No finish, on purpose: a section-chain map whose end is not labelled (see README.md and NOT_COURSES in examples/headless_imported.gd). This file exists only for its conditional teleports: 185 of the map's 409 teleports sit on its blocks behind `filter_activator`, the anti-standing trap, and 184 trigger_multiples pulse the name that filter passes.",
+ "conditional_teleports": {
+  "filters": [
+   "filter_activator"
+  ],
+  "note": "the map's anti-standing trap: a trigger_multiple on each block sets the player's name to the one this filter passes after a delay and resets it after another, so the teleport only fires on a player who stood on a block too long. This game does not run the map's outputs, so imported unconditionally it fired on every landing. Dropped; standing still is allowed here and costs the player time instead"
+ },
+ "zones": []
+}

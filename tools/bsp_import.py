@@ -592,7 +592,13 @@ def build_collision(bsp, notes):
     # run of <point count><points>, the way the surface blocks above are bare arrays.
     blob = bytearray()
     clips = 0
+    # Each hull's box, in Hammer coordinates, for the zone rules: a pit is grown AWAY
+    # from anything a player stands on (see Zoner.add), and this is the one place that
+    # has already solved every brush into its corners.
+    solids = []
     for pts, off, contents in hulls:
+        solids.append(([min(p[a] for p in pts) + off[a] for a in range(3)],
+                       [max(p[a] for p in pts) + off[a] for a in range(3)]))
         if contents & CONTENTS_PLAYERCLIP:
             clips += 1
         blob += struct.pack("<I", len(pts))
@@ -633,7 +639,7 @@ def build_collision(bsp, notes):
         "displacement_index_count": len(tris),
         "playerclip_hulls": clips,
     }
-    return bytes(blob), info, skipped
+    return bytes(blob), info, skipped, solids
 
 
 # -------------------------------------------------------------------- zones ---
@@ -648,6 +654,52 @@ def inflate(lo, hi, minimum):
             lo[i], hi[i] = centre - minimum * 0.5, centre + minimum * 0.5
             grown = True
     return lo, hi, grown
+
+
+def stands_between(solids, box, bottom, top):
+    """Whether any solid's top face lies in (bottom, top] over the footprint of `box`.
+
+    A top face is somewhere a player stands. Strictly inside the footprint on both
+    horizontal axes, because a pit drawn up against the side of a block shares an
+    edge with it and that is not the block being over the pit.
+    """
+    (x0, y0, _), (x1, y1, _) = box
+    for (a, b) in solids:
+        if a[0] >= x1 or b[0] <= x0 or a[1] >= y1 or b[1] <= y0:
+            continue
+        if bottom < b[2] <= top:
+            return True
+    return False
+
+
+def inflate_pit(lo, hi, minimum, solids):
+    """A pit thickened the way `inflate` does, unless that would swallow a floor.
+
+    [b]Centred is right until the pit is closer to the route than half the slab.[/b]
+    `MIN_ZONE_THICKNESS` explains why a thin pit is grown at all and why centred was
+    the choice: downward is wrong for a boundary trigger above the play space. But a
+    bhop map draws its pit a block's height under the blocks -- 48 units on
+    bhop_evolve -- and a 192-unit slab centred on that reaches 48 units ABOVE the
+    block tops, so a player standing on a block is standing in the pit. 52 of that
+    map's 82 pits did it, the start room of bhop_pandora2_fix sat inside one, and
+    nothing about it reads as wrong from anywhere but a player's feet: the zone is in
+    the right place, the right size, and respawns people who landed perfectly.
+
+    So when the upper half of the centred slab has somewhere to stand in it, the slab
+    hangs from the plane the mapper drew instead: its top stays where Source's
+    trigger was and all the thickness goes downward, which is the side a falling
+    player arrives from. A pit under open air stays centred, which keeps the old
+    answer for every map it was already right on.
+    """
+    top = hi[2]
+    lo, hi, grown = inflate(lo, hi, minimum)
+    # Only the vertical axis can swallow a floor; a slab grown sideways is a wall.
+    if not grown or top >= hi[2]:
+        return lo, hi, grown, "centred" if grown else ""
+    if not stands_between(solids, (lo, hi), top, hi[2]):
+        return lo, hi, grown, "centred"
+    lo[2], hi[2] = top - minimum, top
+    return lo, hi, grown, "hung"
 
 
 def entity_origin(e):
@@ -805,9 +857,10 @@ class Zoner:
     that something already decided what it was.
     """
 
-    def __init__(self, bsp, min_thickness=MIN_ZONE_THICKNESS):
+    def __init__(self, bsp, min_thickness=MIN_ZONE_THICKNESS, solids=None):
         self.bsp = bsp
         self.min_thickness = min_thickness
+        self.solids = solids or []
         self.claimed = set()
         self.zones = []
         self.notes = []
@@ -855,7 +908,12 @@ class Zoner:
         if number:
             zone["number"] = float(number)
         if box is not None:
-            lo, hi, grown = inflate(box[0], box[1], self.min_thickness)
+            if kind == "RESPAWN":
+                lo, hi, grown, how = inflate_pit(box[0], box[1], self.min_thickness, self.solids)
+                if how == "hung":
+                    zone["hung"] = True
+            else:
+                lo, hi, grown = inflate(box[0], box[1], self.min_thickness)
             zone["min"], zone["max"] = lo, hi
             zone["original_min"], zone["original_max"] = list(box[0]), list(box[1])
             zone["inflated"] = grown
@@ -1281,7 +1339,138 @@ def doorway_teleports(z, rule):
     return made
 
 
-def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None):
+def brush_boxes(bsp, e):
+    """A brush entity's volume as one box PER BRUSH, in world (Hammer) coordinates.
+
+    [b]A trigger is the union of its brushes, and the box around that union is not.[/b]
+    A pit a mapper drew as an L, or as thirty-eight strips under thirty-eight gaps, has a
+    bounding box that covers every block between them -- and dot-timer's zones are
+    boxes, so a respawn zone built from [method brush_box] respawned players on the
+    blocks. bhop_tesquo_v2 put three of its own stage arrivals inside one.
+
+    Falls back to nothing, and the caller to [method brush_box], for a model whose tree
+    reaches no brush with a hull.
+    """
+    model = e.get("model", "")
+    if not model.startswith("*"):
+        return []
+    index = int(model[1:])
+    if not 0 < index < len(bsp.models):
+        return []
+    o = entity_origin(e)
+    out = []
+    for i in sorted(bsp.model_brushes(index)):
+        pts = bsp.brush_hull(i)
+        if len(pts) < 4:
+            continue
+        out.append(([min(p[a] for p in pts) + o[a] for a in range(3)],
+                    [max(p[a] for p in pts) + o[a] for a in range(3)]))
+    return out
+
+
+def conditional_teleports(z, rule):
+    """Drop the teleports that only fire for a player the map has renamed.
+
+    [b]A filtered `trigger_teleport` is a condition, and this game does not run the
+    map's logic.[/b] Source fires one only for an activator its `filter_activator_*`
+    passes, and the name a filter tests for is one the map's own outputs gave the
+    player -- `AddOutput targetname bhop` on landing, `looking` while a `trigger_look`
+    sees you, `fcp7` on reaching a checkpoint. Nothing here ever sets a name, so an
+    unconditional translation fires them on everybody: bhop_badges_mini has 252 flat
+    pads on its blocks that punish standing still, and every landing respawned.
+
+    Opted into per map, by name, because the same mechanism is also how a checkpoint
+    pit is built -- one teleport per checkpoint name over the same drop, each aimed at
+    its own section -- and THOSE are pits and must stay RESPAWN. Which a map means is
+    in its entity logic, so the map's own file says which filters are conditions, and
+    why. A name is either the filter entity's own targetname (what the teleport's
+    `filtername` key holds) or the activator name that filter passes; a listed name
+    that matches no teleport stops the import, because a stale list is how a trap
+    comes back.
+    """
+    names = [str(n).strip().lower() for n in rule.get("filters", [])]
+    passes = {}
+    for e in z.bsp.entities:
+        if e.get("classname", "").startswith("filter_"):
+            passes[e.get("targetname", "").strip().lower()] = \
+                e.get("filtername", "").strip().lower()
+    used = collections.Counter()
+    dropped = 0
+    for i, e in list(z.entities("trigger_teleport")):
+        own = e.get("filtername", "").strip().lower()
+        if not own:
+            continue
+        for n in names:
+            if n == own or n == passes.get(own):
+                z.claimed.add(i)
+                used[n] += 1
+                dropped += 1
+                break
+    stale = [n for n in names if not used[n]]
+    if stale:
+        raise ValueError("conditional_teleports names filters no teleport uses: %s"
+                         % ", ".join(stale))
+    z.notes.append("%d conditional teleports dropped (%s)"
+                   % (dropped, ", ".join("%s x%d" % kv for kv in sorted(used.items()))))
+    return dropped
+
+
+def clear_arrivals(zone, arrivals):
+    """Trim a thickened pit back off any arrival its thickening swallowed.
+
+    [b]The thickness is ours; the trigger is the mapper's.[/b] A grown slab that takes
+    in a spawn, a stage or the far side of a door respawns every player the moment they
+    arrive, and neither growth direction is always safe: bhop_pandora2_fix puts stage 4
+    between two checkpoint pits 136 units apart, so the lower one grown up and the upper
+    one grown down each reach it. The importer knows every arrival it made, so the slab
+    stops one unit short of one -- on the vertical axis, which is the only one a pit is
+    thin on. An arrival inside the mapper's OWN trigger is left alone: that is the map,
+    and `headless_imported` reports it rather than this hiding it.
+    """
+    if not zone.get("inflated"):
+        return
+    lo, hi = zone["min"], zone["max"]
+    olo, ohi = zone["original_min"], zone["original_max"]
+    for p in arrivals:
+        if not all(lo[a] <= p[a] < hi[a] for a in range(3)):
+            continue
+        if all(olo[a] <= p[a] <= ohi[a] for a in range(3)):
+            continue
+        if p[2] < olo[2]:
+            lo[2] = max(lo[2], p[2] + 1.0)
+        elif p[2] > ohi[2]:
+            hi[2] = min(hi[2], p[2] - 1.0)
+        zone["cleared"] = True
+
+
+def dead_teleports(z):
+    """Drop the teleports whose filter can never pass a player. Not opt-in: a fact.
+
+    A `filter_activator_class` that is not negated passes an activator whose classname
+    is its `filterclass`, and a player's is `player`. bhop_tesquo_v2 has seven teleports
+    behind four class filters naming classes `filter1`..`filter4`, which nothing in the
+    game is, so in Source they never fire for anybody -- and imported as pits they sat
+    in a section's start. Unlike [method conditional_teleports] there is nothing to
+    decide here: the map's own file says the teleport is inert.
+    """
+    dead = set()
+    for e in z.bsp.entities:
+        if e.get("classname", "") != "filter_activator_class":
+            continue
+        negated = e.get("Negated", "0").strip().lower() in ("1", "filter out entities that match criteria")
+        if not negated and e.get("filterclass", "").strip().lower() != "player":
+            dead.add(e.get("targetname", "").strip().lower())
+    dropped = 0
+    for i, e in list(z.entities("trigger_teleport")):
+        if e.get("filtername", "").strip().lower() in dead:
+            z.claimed.add(i)
+            dropped += 1
+    if dropped:
+        z.notes.append("%d teleports dropped whose class filter no player passes" % dropped)
+    return dropped
+
+
+def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None):
     """Spawns, and every volume a timer cares about.
 
     Three passes, in the order of how much they know: what the map labelled, what a
@@ -1289,7 +1478,7 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None):
     which is the pit, and always was.
     """
     doc = doc or {}
-    z = Zoner(bsp, min_thickness)
+    z = Zoner(bsp, min_thickness, solids)
 
     spawns = []
     for e in bsp.entities:
@@ -1305,6 +1494,11 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None):
 
     label_zones(z)
     resolve_overrides(z, doc)
+    # After the overrides, which may name a filtered teleport on purpose -- bhop_pit's
+    # finish is the one only a player who reached the last checkpoint is sent through.
+    dead_teleports(z)
+    if "conditional_teleports" in doc:
+        conditional_teleports(z, doc["conditional_teleports"])
     if "doorways" in doc:
         doorway_teleports(z, doc["doorways"])
     implied_zones(z)
@@ -1326,17 +1520,28 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None):
 
     # What is left of the teleports is the pit: the volume that catches a player who
     # fell off the ride, which is what RESPAWN is and always was the reliable half.
+    arrivals = [[zz["destination"][0], zz["destination"][1],
+                 zz["destination"][2] + DESTINATION_LIFT]
+                for zz in z.zones
+                if zz.get("destination") is not None and zz["kind"] in ("SPAWN", "STAGE", "TELEPORT")]
     respawn = []
     for i, e in z.entities("trigger_teleport"):
-        box = brush_box(bsp, e)
-        if box is None:
-            continue
+        boxes = brush_boxes(bsp, e)
+        if not boxes:
+            box = brush_box(bsp, e)
+            if box is None:
+                continue
+            boxes = [box]
         z.claimed.add(i)
-        zone = z.add("RESPAWN", 0, box=box)
-        respawn.append({"min": zone["min"], "max": zone["max"],
-                        "inflated": zone["inflated"],
-                        "original_min": zone["original_min"],
-                        "original_max": zone["original_max"]})
+        for box in boxes:
+            zone = z.add("RESPAWN", 0, box=box)
+            clear_arrivals(zone, arrivals)
+            respawn.append({"min": zone["min"], "max": zone["max"],
+                            "inflated": zone["inflated"],
+                            "hung": bool(zone.get("hung")),
+                            "cleared": bool(zone.get("cleared")),
+                            "original_min": zone["original_min"],
+                            "original_max": zone["original_max"]})
 
     return z, spawns, respawn, push, other, dropped
 
@@ -1555,7 +1760,7 @@ def main(argv=None):
         s["texture"] = None if s["prototype"] else png
         s["translucent"] = translucent and not s["prototype"]
 
-    collision_blob, collision, skipped_entities = build_collision(bsp, notes)
+    collision_blob, collision, skipped_entities, solids = build_collision(bsp, notes)
     # The collision block lives in the same .bin, after the mesh, so a map is still the
     # four files it was. Its offsets are written relative to its own block and shifted
     # here, which keeps build_collision independent of what precedes it.
@@ -1566,7 +1771,7 @@ def main(argv=None):
         fh.write(collision_blob)
 
     z, spawns, respawn, push, other, dropped = classify_zones(
-        bsp, a.min_zone_thickness, doc)
+        bsp, a.min_zone_thickness, doc, solids)
     zones = emit_zones(z)
     for s in spawns:
         s.pop("origin_src", None)
@@ -1628,8 +1833,12 @@ def main(argv=None):
     print("  lightmap %dx%d, %d lit faces, %.1f%% of luxels clipped to white"
           % (lm_w, lm_h, len(place), lm_clipped))
     inflated = sum(1 for v in respawn if v.get("inflated"))
-    print("  %d spawns, %d respawn volumes (%d thickened to %g units), %d push, %d other"
-          % (len(spawns), len(respawn), inflated, a.min_zone_thickness, len(push), len(other)))
+    hung = sum(1 for v in respawn if v.get("hung"))
+    cleared = sum(1 for v in respawn if v.get("cleared"))
+    print("  %d spawns, %d respawn volumes (%d thickened to %g units, %d of them hung "
+          "below a floor, %d trimmed off an arrival), %d push, %d other"
+          % (len(spawns), len(respawn), inflated, a.min_zone_thickness, hung, cleared,
+             len(push), len(other)))
     for track in sorted({x["track"] for x in zones}):
         kinds = [x["kind"] for x in zones if x["track"] == track]
         stages = max([int(x.get("number", 0)) for x in zones

@@ -75,7 +75,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
 examples/           headless_run (160), headless_net (90), dedicated (135),
-                    headless_imported (26 per map, plus one per track and stage),
+                    headless_imported (28 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -467,7 +467,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
 godot --headless --path . res://examples/dedicated.tscn      # 135 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 26 per map, +1 per stage
+godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1468,6 +1468,20 @@ The probes that read `World` alone (`collision_probe`, `surf_probe`, `bhop_probe
 ## A trigger is one tick's input
 
 `G2GCombat.tick` read the fire command with `get_meta("g2g_fire", null)`. A null default is the engine's *no default*, so every armed player who had not yet sent a command was an engine ERROR with a backtrace, every tick — 1,146 of them in one `dedicated` run, on a suite that reported 0 failed. And the command was never cleared: dot-net skips `_net_apply_input` for a tick whose packet never arrived, so the last trigger was replayed until the next packet — exactly the held trigger surviving a dropped packet that `G2GPlayerNet.last_attack` says does not happen. It is `has_meta` and consumed on read now; `previous` is left alone on a starved tick so a trigger really held across the gap is not read as a fresh press either. Both weapons are semi-automatic today, so the replay had no visible cost yet — it would have had one the day an automatic weapon was added.
+
+## The second batch of imports, and three ways a pit was catching the wrong people
+
+Eight bhop maps from `inspirations/bsp-maps/` were imported on 2026-09-23 — `bhop_badges_mini`, `bhop_evolve`, `bhop_grove`, `bhop_interloper`, `bhop_pandora2_fix`, `bhop_pit`, `bhop_supernova` and `bhop_tesquo_v2` — each with a `maps/zones/<id>.json` that carries an `attribution` block (author, the page it came from, the archive, the date) as well as its zones, because the credit is only ever written down in the archive and on its download page. Two were not imported and are not a gap in the importer: `bhop_zelda_final` is a puzzle map whose route runs through moving doors, keys and a quest counter, which is the map's entity logic and not geometry; and `bhop_grove_backwards` is `bhop_grove` plus a `trigger_look` that punishes facing forward, which is also logic. Without the logic the first cannot be finished and the second is a copy of grove.
+
+Importing them found three faults in how a `trigger_teleport` becomes a RESPAWN zone, and **every one of them was already in maps that had been shipping** — the new maps only made them loud.
+
+- **A filtered teleport is a condition, and it was imported as a pit.** The bhop genre's anti-standing trap is a `trigger_multiple` on each block that renames the player after a delay and renames them back after another, and a teleport on the block that only fires for the first name. This game does not run the map's outputs, so imported unconditionally every one of those fired on every landing: 258 on `bhop_mario_fxd`, 144 on `bhop_badges`, 185 on `bhop_lego2`, 124 on `bhop_arcane_v2`, all imported months ago. `"conditional_teleports": {"filters": [...]}` in a map's file drops them, **opt-in and by name**, because the same mechanism with a name that STAYS set is how a checkpoint pit is built (`bhop_pandora2_fix`'s `fcpN`), and those are real pits. The evidence that tells the two apart is in the entity lump — a trap's name is set and reset by the same trigger, a checkpoint's is set and left — and each file says which it saw. A teleport behind a `filter_activator_class` naming a class no player is (`filter1`..`filter4` on `bhop_tesquo_v2`) never fires in Source either, and that one is dropped automatically: there is nothing to decide.
+- **A thickened pit swallowed the floor above it.** `MIN_ZONE_THICKNESS` grows a thin pit into a 192-unit slab centred on the plane, and a bhop map draws its pit a block's height under the blocks — so the slab reached up through them and standing on a block was standing in the pit. `inflate_pit` hangs the slab from the mapper's plane instead when the upper half has a solid top in it (19 of `bhop_aztec`'s 20 pits, 111 of `bhop_monster_jam`'s), and `clear_arrivals` trims any grown slab back off a spawn, stage or door it would contain, which is what fixed `bhop_pandora2_fix`'s stage 4 between two checkpoint planes 136 units apart and `surf_aquaflow`'s stage 2. A pit is also one zone **per brush** now rather than one box around a multi-brush trigger, because dot-timer's zones are boxes and the box around an L covers the elbow.
+- **A door ended the run.** `doorways` makes a door a `TELEPORT` precisely so it keeps the run, and `G2GGame._on_effect_requested` handled `TELEPORT` with `G2GPlayer.teleport`, which stops the timer. So `surf_kitsune` — the map `doorways` was written for — could not be timed past its first section, and nothing said so. `teleport(..., keep_run)` is the fix and the handler is its only caller that passes true.
+
+`headless_imported` asks both halves of it on every map now: *no spawn, stage or door lands inside a pit on its own track*, and *a door keeps the run*, driven through the real handler. The first failed on the old imports of `surf_interference` (its main spawn) and `surf_greensway`, and the second on three maps with the fix reverted. Three arrivals are still inside the mapper's OWN trigger rather than inside anything this importer added, and `ARRIVES_IN_PIT` lists them — asserted both ways, like `NOT_COURSES`.
+
+The size check assumed every map is more than 1,000 units along X. `bhop_grove` is one corridor 704 units across and 32,192 long; it asks the longest side now.
 
 ## Things deliberately not here
 

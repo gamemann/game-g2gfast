@@ -184,7 +184,15 @@ func set_style(movement: DotFpsStyle, ranking: DotTimerStyle) -> DotResult:
 	return result
 
 
-func teleport(to: Vector3, yaw: float = INF) -> void:
+## Puts the player somewhere, stopped. Ends their run unless [param keep_run].
+##
+## [b]Ending the run is right for everything that calls this except one.[/b] A respawn,
+## a `!s3`, a checkpoint load and an admin moving somebody are all a player leaving
+## the route, and a time that carried across one would not be a time. A map's own
+## door is the exception: a `TELEPORT` zone is how a staged map joins one section to
+## the next, and it is PART of the route. `G2GGame._on_effect_requested` is the only
+## caller that passes true.
+func teleport(to: Vector3, yaw: float = INF, keep_run: bool = false) -> void:
 	controller.state.position = to
 	controller.state.velocity = Vector3.ZERO
 
@@ -196,7 +204,7 @@ func teleport(to: Vector3, yaw: float = INF) -> void:
 
 	global_position = to
 
-	if timer != null:
+	if timer != null and not keep_run:
 		timer.stop(DotTimer.REASON_TELEPORT)
 
 
