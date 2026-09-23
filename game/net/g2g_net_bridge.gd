@@ -174,12 +174,12 @@ func _broadcast(kind: int, body: PackedByteArray) -> void:
 	if net == null or not net.is_server:
 		return
 	for peer_id in _ready_peers.keys():
-		net.send(G2GEvent.of(kind, body), int(peer_id))
+		net.send(G2GEvent.new(kind, body), int(peer_id))
 
 
 func _tell(peer_id: int, kind: int, body: PackedByteArray) -> void:
 	if net != null and net.is_server and peer_id > 0:
-		net.send(G2GEvent.of(kind, body), peer_id)
+		net.send(G2GEvent.new(kind, body), peer_id)
 
 
 # --- Membership (server) ---------------------------------------------------
@@ -631,7 +631,7 @@ func publish_avatar(avatar: DotAvatar) -> void:
 
 func _ask(kind: int, body: PackedByteArray) -> void:
 	if net != null and not net.is_server:
-		net.send(G2GRequest.of(kind, body), 1)
+		net.send(G2GRequest.new(kind, body), 1)
 
 
 # --- Server: answering ------------------------------------------------------

@@ -75,7 +75,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (170), headless_net (90), dedicated (135),
+examples/           headless_run (170), headless_net (90), dedicated (137),
                     headless_imported (28 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -466,7 +466,7 @@ godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
-godot --headless --path . res://examples/dedicated.tscn      # 135 checks
+godot --headless --path . res://examples/dedicated.tscn      # 137 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
@@ -1483,6 +1483,14 @@ Importing them found three faults in how a `trigger_teleport` becomes a RESPAWN 
 `headless_imported` asks both halves of it on every map now: *no spawn, stage or door lands inside a pit on its own track*, and *a door keeps the run*, driven through the real handler. The first failed on the old imports of `surf_interference` (its main spawn) and `surf_greensway`, and the second on three maps with the fix reverted. Three arrivals are still inside the mapper's OWN trigger rather than inside anything this importer added, and `ARRIVES_IN_PIT` lists them — asserted both ways, like `NOT_COURSES`.
 
 The size check assumed every map is more than 1,000 units along X. `bhop_grove` is one corridor 704 units across and 32,192 long; it asks the longest side now.
+
+## No message preloads itself
+
+`g2g_event.gd` and `g2g_request.gd` each began by preloading themselves, for a typed `of()` factory. mg-buses-from-hell measured that line (8ed866c) as enough to leak the whole script graph at exit on Godot 4.7.2: a script that `extends DotNetMessage` and preloads ITSELF, first loaded by a module inside a running `DotServer` — which is how every deployed server loads a game. Both are built with `new(kind, body)` now, an `_init` whose arguments default because dot-net's registry decodes with a bare `new()`.
+
+`dedicated`'s last section, **exiting clean**, reads every `DotNetMessage` script under `game/` as text and fails on a self-preload. It is on the source deliberately: the leak is printed by the engine after `quit()`, where no assertion can reach.
+
+**Here it was not the cause, and the leak is still open.** `dedicated` exits with 407 ObjectDB instances, 303 resources, a VariantPools page and six dummy material, shader and texture RIDs — exactly as many before the change as after (2026-09-23). `--verbose` shows the same "every script still loaded" shape buses had (324 `GDScript`s, 55 native class wrappers), so something else is holding the graph up. The one self-preload this game has that buses does not is `g2g_browser.gd` (`extends Node`); it has not been tried.
 
 ## Things deliberately not here
 
