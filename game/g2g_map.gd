@@ -20,6 +20,43 @@ const G2GUnits := preload("g2g_units.gd")
 @export_range(1, 10, 1) var tier: int = 1
 
 
+## A line of bodies a player is meant to jump along, in order, and which reach it is
+## meant to be jumped with. See [G2GReach] for the two, and [method add_course].
+class Course:
+	extends RefCounted
+
+	var name: String = ""
+	var track: int = 0
+	var kind: int = 0
+	var bodies: Array = []
+
+
+## Every course this map asks a player to jump, as [method _build] declared them.
+##
+## [b]Always appended through [method add_course], never written by hand.[/b] Filled by
+## [method _build], so it describes the geometry that was actually built.
+var courses: Array[Course] = []
+
+
+## Declares that [param bodies] are jumped in order on [param track], with the reach
+## [param kind] ([code]G2GReach.Kind.RUN[/code] or [code].CHAIN[/code]).
+##
+## [b]The only hand-written part is which bodies are a route and which reach it is
+## sized for.[/b] The rise, the gap and the landing room are read off the bodies'
+## transforms and shapes by [G2GReach], so moving a block moves the route and
+## `headless_run` re-decides it — game-arena's `climbs` pattern, for a genre with two
+## reaches rather than one. A map is content and content does not assert; the question
+## is asked in the suite, where failing is useful.
+func add_course(of_name: String, track: int, kind: int, bodies: Array) -> Course:
+	var course := Course.new()
+	course.name = of_name
+	course.track = track
+	course.kind = kind
+	course.bodies = bodies.duplicate()
+	courses.append(course)
+	return course
+
+
 func _ready() -> void:
 	_build()
 

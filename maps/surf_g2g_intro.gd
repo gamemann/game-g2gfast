@@ -16,6 +16,12 @@ const G2GGeometry := preload("../game/g2g_geometry.gd")
 ## That is measured rather than suspected — `headless_run` prints how much of the route
 ## a bot actually rides — and `the fall line`, bonus 3, is the route on this map where
 ## the answer is the ramp. See the constants below it.
+##
+## [b]It declares no course (`G2GMap.add_course`), and that is an answer rather than an
+## omission.[/b] Every way from one surface to the next here is a drop onto something
+## below — a pad onto a bank, a bank onto a bank, a bank's end onto a finish — and the
+## question a drop asks is whether the thing below is there, which only riding it
+## answers. `headless_run` drives a bot down all four, and two of them to the finish.
 
 const START_Z := 0.0
 const END_Z := -8192.0
@@ -25,6 +31,41 @@ const VALLEY_HALF_WIDTH := 96.0
 const RAMP_WIDTH := 1024.0
 const RAMP_ANGLE := 60.0
 const RAMP_THICKNESS := 32.0
+
+# --- Bonus 1: the single bank ----------------------------------------------
+#
+# Named rather than written into `_build`, and every value is the one the bonus has
+# always had: `headless_run` drives a bot down it and reads its line off these, so moving
+# the bank moves the bot with it.
+const BONUS_X := 1536.0                       ## the pad's centre, and the finish pad's
+const BONUS_BANK_X := BONUS_X + 256.0
+const BONUS_BANK_Y := START_Y - 200.0
+const BONUS_BANK_Z := START_Z - 800.0
+const BONUS_BANK_WIDTH := 768.0
+const BONUS_BANK_LENGTH := 2048.0
+const BONUS_FINISH_Y := START_Y - 1200.0
+const BONUS_FINISH_Z := START_Z - 2200.0
+const BONUS_FINISH_SIZE := 512.0
+
+
+## X of the bank's low lip. `-RAMP_ANGLE` about `Vector3.FORWARD` is a positive turn
+## about +Z, so its +X edge is the high one and a rider is thrown toward -X: off this
+## edge. Only the strip of bank between here and the finish pad's far edge lies over
+## the pad, and a rider who leaves the bank higher up than that misses the finish.
+static func bonus_bank_lip_x() -> float:
+	return BONUS_BANK_X - cos(deg_to_rad(RAMP_ANGLE)) * BONUS_BANK_WIDTH * 0.5
+
+
+## Z of the bank's far end, where a rider leaves it for the finish pad.
+static func bonus_bank_end_z() -> float:
+	return BONUS_BANK_Z - BONUS_BANK_LENGTH * 0.5
+
+
+## Height of the bank's riding surface at [param x], units: what a rider's feet are on.
+static func bonus_bank_surface_y(x: float) -> float:
+	var angle := deg_to_rad(RAMP_ANGLE)
+	return BONUS_BANK_Y + (x - BONUS_BANK_X) * tan(angle) + RAMP_THICKNESS * 0.5 / cos(angle)
+
 
 # --- Bonus 3: the fall line ------------------------------------------------
 #
@@ -119,12 +160,13 @@ func _build() -> void:
 		Vector3(768.0, 32.0, 640.0), G2GGeometry.COLOUR_END)
 
 	# Bonus: a single short ramp beside the start.
-	G2GGeometry.box(self, Vector3(1536.0, START_Y - 16.0, START_Z + 256.0),
+	G2GGeometry.box(self, Vector3(BONUS_X, START_Y - 16.0, START_Z + 256.0),
 		Vector3(384.0, 32.0, 384.0), G2GGeometry.COLOUR_BONUS)
-	G2GGeometry.ramp(self, Vector3(1536.0 + 256.0, START_Y - 200.0, START_Z - 800.0),
-		Vector3(768.0, RAMP_THICKNESS, 2048.0), -RAMP_ANGLE, Vector3.FORWARD, G2GGeometry.COLOUR_BONUS)
-	G2GGeometry.box(self, Vector3(1536.0, START_Y - 1200.0 - 16.0, START_Z - 2200.0),
-		Vector3(512.0, 32.0, 512.0), G2GGeometry.COLOUR_END)
+	G2GGeometry.ramp(self, Vector3(BONUS_BANK_X, BONUS_BANK_Y, BONUS_BANK_Z),
+		Vector3(BONUS_BANK_WIDTH, RAMP_THICKNESS, BONUS_BANK_LENGTH), -RAMP_ANGLE,
+		Vector3.FORWARD, G2GGeometry.COLOUR_BONUS)
+	G2GGeometry.box(self, Vector3(BONUS_X, BONUS_FINISH_Y - 16.0, BONUS_FINISH_Z),
+		Vector3(BONUS_FINISH_SIZE, 32.0, BONUS_FINISH_SIZE), G2GGeometry.COLOUR_END)
 
 	# Bonus 2: the transfer, on the other side of the start.
 	#

@@ -13,6 +13,7 @@ const G2GReplays := preload("../game/g2g_replays.gd")
 const G2GRig := preload("../game/g2g_rig.gd")
 const G2GStats := preload("../game/g2g_stats.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
+const G2GReach := preload("../game/g2g_reach.gd")
 
 ## Runs g2gfast headless: units, the genre field of view, a stock avatar on a rig,
 ## first and third person, auto-bhop gated by the config, and a bot down both maps.
@@ -24,7 +25,7 @@ const G2GUnits := preload("../game/g2g_units.gd")
 const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 
-const CHECKS := 160
+const CHECKS := 170
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -52,6 +53,7 @@ func _run() -> void:
 	await _test_cameras()
 	await _test_auto_bhop_gate()
 	await _test_zone_files_match()
+	_test_reach()
 	await _test_bhop_run()
 	await _test_needle_bonus()
 	await _test_surf_run()
@@ -555,6 +557,190 @@ func _hand_written_map_ids() -> Array:
 	return out
 
 
+# --- What the movement can reach --------------------------------------------
+
+## Every jump a hand-written map declares, against what the movement can do.
+##
+## [b]`[reach-1]`, asked of this game.[/b] game-playground's jump course was
+## unfinishable past platform three and game-arena's three maps had routes nothing had
+## ever climbed, and every check over all of them passed, because a box count and a
+## zone file cannot tell a platform from a wall. Each map here says which of its bodies
+## are a route and which reach a route is sized for (`G2GMap.add_course`); the rise and
+## the gap are read off the geometry by [G2GReach], and the reach is read off the
+## tunables the server applies. Nothing in this function is a number about a map.
+func _test_reach() -> void:
+	print("what the movement can reach")
+
+	var t := G2GMovement.tunables_for(game.config)
+	var sweep := reach_sweep(t, game.tick_rate)
+
+	# The one number here that is written down, and it is the genre's rather than a
+	# map's: 301.99 u/s against 800 must peak at 57, or the units crossed wrongly.
+	_near(G2GReach.apex(t), 57.0, 0.5, "a jump peaks at the 57 units the genre's players know")
+
+	for line in sweep["lines"]:
+		print(line)
+
+	_check(
+		(sweep["undeclared"] as Array).is_empty(),
+		"every bhop map declares the courses it asks a player to jump",
+		", ".join(sweep["undeclared"])
+	)
+	_check(
+		(sweep["refused"] as Array).is_empty(),
+		"and every body a course names is a level box a route can be read off",
+		", ".join(sweep["refused"])
+	)
+	_check(
+		(sweep["too_high"] as Array).is_empty(),
+		"no route rises past what a jump climbs",
+		"; ".join(sweep["too_high"])
+	)
+	_check(
+		(sweep["too_far"] as Array).is_empty(),
+		"no RUN route is wider than a jump from the lip at run speed",
+		"; ".join(sweep["too_far"])
+	)
+	_check(
+		(sweep["unchainable"] as Array).is_empty(),
+		"and no CHAIN is out of reach from its start line even strafing perfectly",
+		"; ".join(sweep["unchainable"])
+	)
+
+	# [b]The check can say no, and the cvar is why it matters.[/b] With
+	# `sv_enablebunnyhopping 0` the landing cap trims every take-off to 275 u/s, so a
+	# chain can only ever add one hop's strafing to that — and bhop_g2g_intro's main
+	# route asks for a period no such hop spans. That is a property of the map a server
+	# operator needs to know before turning the cvar off, and it is also the proof that
+	# the chain arithmetic refuses something rather than approving everything.
+	var capped_config: G2GConfig = game.config.duplicate()
+	capped_config.enable_bunnyhopping = false
+	var capped := G2GMovement.tunables_for(capped_config)
+	var intro := _built_map("bhop_g2g_intro")
+	var main_routes := G2GReach.measure((intro.courses[0] as Object).get("bodies"))
+	var verdict := G2GReach.chain(main_routes, capped, game.tick_rate, 1.0)
+	print("  ..    with sv_enablebunnyhopping 0, bhop_g2g_intro's main line falls at %s (%.0f u short)"
+		% [(main_routes[int(verdict["at"])] as G2GReach.Route).name if not verdict["ok"] else "nothing", float(verdict["short"])])
+	_check(
+		not bool(verdict["ok"]),
+		"and with the landing cap on, bhop_g2g_intro's main line is not a route at all",
+		"it chained to the end at %.0f u/s" % float(verdict["top"])
+	)
+	intro.free()
+
+
+## A hand-written map's script, built but never added to the tree: [method G2GMap._build]
+## makes the bodies and declares the courses, and nothing else is needed to read them.
+func _built_map(id: String) -> Node3D:
+	var map: Node3D = (load("res://maps/%s.gd" % id) as GDScript).new()
+	map.call("_build")
+	return map
+
+
+## Every declared course on every hand-written map, decided. Separate from the checks
+## so the numbers can be printed whether or not anything fails — a detail line only
+## shows on a failure, and the widths and the strafe a chain needs are the measurement.
+func reach_sweep(t: DotFpsTunables, tick_rate: int) -> Dictionary:
+	var out := {
+		"lines": [], "undeclared": [], "refused": [], "too_high": [], "too_far": [],
+		"unchainable": [], "restarts": [],
+	}
+
+	out["lines"].append(
+		"  ..    a jump peaks at %.1f u, climbs %.1f; from the lip at %.0f u/s it clears %.0f flat, %.0f onto +24, %.0f down 48; a perfect strafe adds %.0f u/s a tick"
+		% [G2GReach.apex(t), G2GReach.climb_limit(t), G2GReach.run_speed(t),
+			G2GReach.run_reach(0.0, t), G2GReach.run_reach(24.0, t), G2GReach.run_reach(-48.0, t),
+			G2GReach.strafe_gain(t, tick_rate)]
+	)
+
+	for id in _hand_written_map_ids():
+		var map := _built_map(id)
+		var zones: DotTimerZoneSet = (load("res://maps/%s.gd" % id) as GDScript).build_zones()
+		var courses: Array = map.get("courses")
+
+		if courses.is_empty():
+			out["lines"].append("  ..    %s declares no course" % id)
+			if id.begins_with("bhop_"):
+				out["undeclared"].append(id)
+
+		for course: Object in courses:
+			var refused: Array = []
+			var routes := G2GReach.measure(course.get("bodies"), refused)
+			var label := "%s %s" % [id, course.get("name")]
+
+			for index in refused:
+				out["refused"].append("%s body %d" % [label, index])
+
+			var widest := 0.0
+
+			for route: G2GReach.Route in routes:
+				widest = maxf(widest, route.gap)
+
+				if G2GReach.walked(route, t):
+					continue
+
+				if route.rise > G2GReach.climb_limit(t):
+					out["too_high"].append("%s %s rises %.0f u" % [label, route.name, route.rise])
+					continue
+
+				if int(course.get("kind")) == G2GReach.Kind.RUN:
+					var reach := G2GReach.run_reach(route.rise, t)
+					if route.gap > reach:
+						out["too_far"].append("%s %s is %.0f u against %.0f" % [label, route.name, route.gap, reach])
+
+			if int(course.get("kind")) == G2GReach.Kind.RUN:
+				out["lines"].append("  ..    %s: RUN, %d jumps, widest %.0f u against a standing jump's %.0f"
+					% [label, routes.size(), widest, G2GReach.run_reach(0.0, t)])
+				continue
+
+			var needed := G2GReach.strafe_needed(routes, t, tick_rate)
+			var from_start := G2GReach.chain(routes, t, tick_rate, 1.0)
+
+			if not bool(from_start["ok"]):
+				out["unchainable"].append("%s falls at %s, %.0f u short" % [
+					label, (routes[int(from_start["at"])] as G2GReach.Route).name, float(from_start["short"])
+				])
+
+			out["lines"].append("  ..    %s: CHAIN, %d hops, widest %.0f u, from the start line needs %s"
+				% [label, routes.size(), widest, _percent(needed)])
+
+			# `!s<n>` puts a player on a stage line at a standstill, so from there the
+			# chain begins again at run speed rather than at what the stages before it
+			# built. Found by the stage zone's own destination, not by an index.
+			for zone in zones.zones:
+				if zone.kind != DotTimerZone.Kind.STAGE or zone.track != int(course.get("track")):
+					continue
+
+				var at := G2GUnits.vector_to_units(zone.destination)
+				var from_index := -1
+
+				for i in range(routes.size()):
+					var landing := G2GReach.footprint((routes[i] as G2GReach.Route).to_body)
+					if Geometry2D.is_point_in_polygon(Vector2(at.x, at.z), landing["corners"]):
+						from_index = i + 1
+						break
+
+				var restart := G2GReach.strafe_needed(routes, t, tick_rate, from_index) if from_index >= 0 else 2.0
+				out["restarts"].append([label, int(zone.number), restart])
+				out["lines"].append("  ..      !s%d from a standstill%s: needs %s" % [
+					int(zone.number),
+					"" if from_index >= 0 else " (its destination is on no body of the course)",
+					_percent(restart),
+				])
+
+		map.free()
+
+	return out
+
+
+static func _percent(fraction: float) -> String:
+	if fraction > 1.0:
+		return "more than a perfect strafe — nobody can"
+	if fraction <= 0.0:
+		return "no strafe at all"
+	return "%d%% of a perfect strafe" % int(ceil(fraction * 100.0))
+
+
 # --- Runs ------------------------------------------------------------------
 
 func _test_bhop_run() -> void:
@@ -657,7 +843,7 @@ func _needle_jumps_at(z_units: float) -> bool:
 ## `bhop_g2g_intro`'s main route is exactly such a gap by its tenth block, and the surf
 ## bonuses need a strafe to stay on a bank at all.
 ##
-## The needle keeps its gap at a constant 160 units, which a player at run speed clears
+## The needle keeps its gap at a constant 96 units, which a player at run speed clears
 ## without gaining anything, and puts the difficulty in the landing instead. That makes
 ## it hard for a person and possible for a bot — and a route a bot can run is a route
 ## whose geometry, zones, stage splits and finish are all checked by something other
@@ -896,9 +1082,143 @@ func _test_bonus_track() -> void:
 	_check(bot.global_position.distance_to(spawn) < 1.0, "and spawns at the bonus's own spawn")
 	_check(bot.timer.track == DotTimerTrack.of_bonus(1), "and their timer is on it")
 
+	await _test_single_bank()
 	await _test_transfer_bonus()
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+
+
+## Bonus 1 on the surf map, driven from its pad into its finish.
+##
+## [b]A bank ridden by holding into it, which is the one surf skill a scripted bot has.[/b]
+## The bank is level along its length, so nothing but the entry speed carries a rider
+## down it, and gravity pulls them toward the low lip the whole way; holding strafe INTO
+## the bank (+X) pushes them back up it. So the bot holds right while it is below a line
+## on the bank and lets go above it, and never touches forward: forward-and-right is a
+## real strafe, it gains speed, and a rider going much over 500 u/s leaves the end of this
+## bank above the finish pad's height and lands past it (see below).
+##
+## The line is read off the map. Only the strip of bank between its low lip and the far
+## edge of the finish pad lies over the pad, and the bot rides one hull width up from
+## the lip — inside that strip, and where the motor carries it (see the freeze below).
+##
+## [b]What this decides, and what it deliberately does not.[/b] It fails if the bot falls
+## off the route (the respawn zone fires), if it never reaches the end of the bank, or
+## if it reaches the end and does not finish — every one of which is the geometry being
+## wrong. Unlike the transfer below, it asserts NOTHING about a bot that was put back,
+## because a check that passes on the respawn is the one `[bonus-run-2]` found passing
+## loudest in exactly the case it was written for.
+func _test_single_bank() -> void:
+	var bot: G2GPlayer = game.players[&"bot"]
+	var bonus := DotTimerTrack.of_bonus(1)
+
+	game.config.air_accelerate = 150.0
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var lip := SurfIntro.bonus_bank_lip_x()
+	var line := lip + G2GUnits.PLAYER_HALF_WIDTH * 2.0
+	var end_z := SurfIntro.bonus_bank_end_z()
+
+	var started: Array[bool] = [false]
+	var finished: Array[bool] = [false]
+	var reset: Array[bool] = [false]
+	var on_start := func(_run: DotTimerRun) -> void: started[0] = true
+	var on_finish := func(run: DotTimerRun) -> void: finished[0] = run.track == bonus
+	var on_reset := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+
+	bot.timer.run_started.connect(on_start)
+	bot.timer.run_finished.connect(on_finish)
+	game.timers.effect_requested.connect(on_reset)
+
+	var ticks := 0
+	var rode_to := 0.0
+	var ride_y_top := -INF
+	var ride_y_low := INF
+	var top := 0.0
+	var still := 0
+	var last := bot.global_position
+	var duplicates_before := bot.controller.motor.duplicate_plane_ticks
+
+	for i in range(2600):
+		var at := G2GUnits.vector_to_units(bot.global_position)
+		var c := DotFpsCommand.new()
+		c.yaw = 0.0
+
+		if bot.controller.state.is_grounded() and at.y > SurfIntro.START_Y - 64.0:
+			# On the pad: across to the line first, then straight off the front, so the
+			# bot arrives on the bank already over the strip it is going to ride.
+			c.move = Vector2(1.0, 0.0) if at.x < line else Vector2(0.0, 1.0)
+		else:
+			c.move = Vector2(1.0 if at.x < line else 0.0, 0.0)
+
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+		ticks = i + 1
+
+		at = G2GUnits.vector_to_units(bot.global_position)
+
+		# On the bank: over its length, and with its feet on its face rather than above
+		# it — the pad's front lies over the bank's near end, and so does the fall off
+		# its far one.
+		if at.z >= end_z - 32.0 and absf(at.y - SurfIntro.bonus_bank_surface_y(at.x)) < 32.0:
+			rode_to = minf(rode_to, at.z)
+			ride_y_top = maxf(ride_y_top, at.y)
+			ride_y_low = minf(ride_y_low, at.y)
+			top = maxf(top, -G2GUnits.to_units(bot.controller.state.velocity.z))
+
+		# A rider who has not moved in a second and a half is not riding. See the
+		# freeze in CLAUDE.md: it keeps its velocity and covers no ground.
+		still = still + 1 if bot.global_position.distance_to(last) < 0.001 else 0
+		last = bot.global_position
+
+		if finished[0] or reset[0] or still > 192:
+			break
+
+	# Read before the movement is rebuilt, which starts the counters again.
+	var duplicates := bot.controller.motor.duplicate_plane_ticks - duplicates_before
+
+	bot.timer.run_started.disconnect(on_start)
+	bot.timer.run_finished.disconnect(on_finish)
+	game.timers.effect_requested.disconnect(on_reset)
+	game.config.air_accelerate = 1000.0
+	game.apply_movement()
+
+	# The `[surf-ramp-1]` answer for this route, printed beside the ride: the bank is
+	# level along its length, so the height a rider loses on it is only what holding the
+	# line costs, and the descent of the route is the fall off its far end.
+	print(
+		"        the single bank: rode x %.0f to z %.0f of %.0f, %.0f u of height on the bank, "
+		% [line, rode_to, end_z, ride_y_top - ride_y_low]
+		+ "forward at up to %.0f u/s, then a %.0f u fall to the pad; %d ticks, %d of them a stalled slide"
+		% [top, ride_y_low - SurfIntro.BONUS_FINISH_Y, ticks, duplicates]
+	)
+
+	_check(started[0], "leaving its pad starts a run on the single bank's track")
+	_check(
+		rode_to <= end_z + 32.0,
+		"and a bot holding into the bank rides it to its far end",
+		"left it at z %.0f of %.0f%s" % [
+			rode_to, end_z,
+			", frozen in place with %.0f u/s on the clock" % G2GUnits.to_units(bot.speed()) if still > 192 else "",
+		]
+	)
+	_check(
+		finished[0] and not reset[0],
+		"and lands in the finish, on the bonus's own track, without being put back",
+		"%s at %s after %d ticks" % [
+			"put back by the respawn zone" if reset[0]
+				else ("frozen on the bank" if still > 192 else "did not finish"),
+			str(G2GUnits.vector_to_units(bot.global_position).round()),
+			ticks,
+		]
+	)
+
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
 
 
 ## Bonus 2 on the surf map: two ramps banked opposite ways, with a gap.

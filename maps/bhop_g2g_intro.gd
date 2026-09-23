@@ -1,6 +1,7 @@
 extends "../game/g2g_map.gd"
 
 const G2GGeometry := preload("../game/g2g_geometry.gd")
+const G2GReach := preload("../game/g2g_reach.gd")
 
 ## `bhop_g2g_intro` — sixteen blocks with widening gaps, three stages, and a bonus.
 ##
@@ -63,62 +64,77 @@ func _build() -> void:
 	fallback_spawn_units = Vector3(0.0, FLOOR_Y + 8.0, START_Z + 320.0)
 
 	# The start pad, long enough to build speed on.
-	G2GGeometry.box(
+	var main: Array = [G2GGeometry.box(
 		self, Vector3(0.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + 256.0),
 		Vector3(BLOCK_WIDTH, BLOCK_THICKNESS, 512.0), G2GGeometry.COLOUR_START
-	)
+	)]
 
 	var z := START_Z
 
 	for i in range(BLOCKS):
-		G2GGeometry.box(
+		main.append(G2GGeometry.box(
 			self,
 			Vector3(0.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, z - BLOCK_LENGTH * 0.5),
 			Vector3(BLOCK_WIDTH, BLOCK_THICKNESS, BLOCK_LENGTH),
 			G2GGeometry.COLOUR_PLATFORM
-		)
+		))
 		z -= BLOCK_LENGTH + gap_at(i)
 
 	# The finish pad.
-	G2GGeometry.box(
+	main.append(G2GGeometry.box(
 		self, Vector3(0.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, z - 192.0),
 		Vector3(BLOCK_WIDTH, BLOCK_THICKNESS, 384.0), G2GGeometry.COLOUR_END
-	)
+	))
+
+	# [b]A CHAIN, and the map's own sentence says why.[/b] From the ninth gap on (198
+	# units) nothing crosses without speed a standing jump does not have, so the whole
+	# line is sized for hops carried at course speed — see G2GReach.
+	add_course("main", DotTimerTrack.MAIN, G2GReach.Kind.CHAIN, main)
 
 	# The bonus: off to the right of the start pad, three big platforms and a pad.
+	var warm_up: Array = []
+
 	for i in range(3):
-		G2GGeometry.box(
+		warm_up.append(G2GGeometry.box(
 			self,
 			Vector3(640.0 + float(i) * 320.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + 256.0),
 			Vector3(192.0, BLOCK_THICKNESS, 192.0), G2GGeometry.COLOUR_BONUS
-		)
+		))
 
-	G2GGeometry.box(
+	warm_up.append(G2GGeometry.box(
 		self, Vector3(1600.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + 256.0),
 		Vector3(256.0, BLOCK_THICKNESS, 256.0), G2GGeometry.COLOUR_END
-	)
+	))
+
+	# A warm-up is a RUN course: every gap in it is a jump from the lip at run speed,
+	# which is what "a warm-up" has to mean for a player who cannot chain yet.
+	add_course("warm-up", DotTimerTrack.of_bonus(1), G2GReach.Kind.RUN, warm_up)
 
 	# Bonus 2, `the needle`. Its own start pad west of the main one, then ten blocks at a
-	# constant 160-unit gap whose width closes from 192 to 48, and a finish wide enough
+	# constant 96-unit gap whose width closes from 192 to 48, and a finish wide enough
 	# to land on after the last of them.
-	G2GGeometry.box(
+	var needle: Array = [G2GGeometry.box(
 		self, Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + 256.0),
 		Vector3(256.0, BLOCK_THICKNESS, 512.0), G2GGeometry.COLOUR_START
-	)
+	)]
 
 	for i in range(NEEDLE_BLOCKS):
-		G2GGeometry.box(
+		needle.append(G2GGeometry.box(
 			self,
 			Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, needle_z(i) - BLOCK_LENGTH * 0.5),
 			Vector3(needle_width(i), BLOCK_THICKNESS, BLOCK_LENGTH),
 			G2GGeometry.COLOUR_BONUS
-		)
+		))
 
-	G2GGeometry.box(
+	needle.append(G2GGeometry.box(
 		self,
 		Vector3(NEEDLE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, needle_end_z() - 192.0),
 		Vector3(256.0, BLOCK_THICKNESS, 384.0), G2GGeometry.COLOUR_END
-	)
+	))
+
+	# RUN, and it is the whole design of the route: "no hop on it is ever about carrying
+	# speed", which is what makes it the one a scripted bot finishes.
+	add_course("the needle", DotTimerTrack.of_bonus(2), G2GReach.Kind.RUN, needle)
 
 
 static func gap_at(index: int) -> float:
@@ -185,6 +201,12 @@ static func build_zones() -> DotTimerZoneSet:
 	# Each carries the spot `!s<n>` puts a player: the block the stage line is drawn
 	# on, a little above it. Without a destination the request succeeds and drops them
 	# at the world origin, which on this map is in the sky over the start pad.
+	#
+	# [b]`!s2` and `!s3` put a player where the next gap cannot be crossed from a
+	# standstill, by anybody.[/b] A restart is a chain that begins at run speed, and from
+	# blocks 10 and 14 the gaps ahead need more than even a perfect strafe adds in the
+	# hops available; `!s1` needs 78% of one. `headless_run` prints all three. Not moved,
+	# because they are the same three destinations `[stage-yaw-1]` is waiting on.
 	var stage_blocks := [5, 10, 14]
 	for i in range(stage_blocks.size()):
 		var bz := block_z(stage_blocks[i])

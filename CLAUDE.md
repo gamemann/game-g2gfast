@@ -40,7 +40,8 @@ game/
     g2g_events.gd      every event and request body, and the movement config's wire
     g2g_event.gd, g2g_request.gd  the two DotNetMessages: a kind and a body
   g2g_geometry.gd   boxes and ramps, in units
-  g2g_map.gd        base for the built-in maps
+  g2g_map.gd        base for the built-in maps; a map declares its jumps here
+  g2g_reach.gd      what a jump reaches, from the tunables; every declared jump, measured
   g2g_bsp_map.gd    base for an IMPORTED map: mesh, materials and zones from a
                     manifest. See Decision 11
   g2g_bsp_lightmapped.gdshader  albedo x the lighting the map's own compiler baked
@@ -74,7 +75,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (160), headless_net (90), dedicated (135),
+examples/           headless_run (170), headless_net (90), dedicated (135),
                     headless_imported (28 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -462,7 +463,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 160 checks
+godot --headless --path . res://examples/headless_run.tscn   # 170 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
 godot --headless --path . res://examples/dedicated.tscn      # 135 checks
@@ -1554,3 +1555,41 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
 
 `surf_g2g_intro` was given per-bonus respawn zones when its second bonus was added, and `headless_run.zones_have_respawn_on_bonuses` was written at the same time — **asked on the surf map only.** So the guard existed, passed, and was never once pointed at the map that was broken. It is asked on this map now too. Same shape as the stale copied list this tree has had in `setup.sh`, both check scripts, both bootstraps and `tools/export_zones.gd`: the fix went to one place and the question was never asked of the others.
+
+## What a jump reaches, asked of the three hand-written maps
+
+`[reach-1]` asked this of game-playground and game-arena and both were wrong: a jump course unfinishable past platform three, and three maps of routes nothing had ever climbed, under suites that passed throughout. Asked here, **every jump the three maps declare is inside reach** — and the question found two things the maps' own comments never said.
+
+**This genre has two reaches, and a gap is sized for one of them.** `G2GReach` holds both, read off the `DotFpsTunables` the server applies rather than off copied constants, so `sv_gravity` and `sv_enablebunnyhopping` move every answer with no second number to update:
+
+- **RUN** is a jump from the lip at run speed. Ground acceleration gets a player back to 250 u/s in about thirty units, so anybody who lands anywhere on a block can run to its edge and take it however badly the last hop went. It clears **189 units flat, 166 onto a 24-unit step, 222 down 48** — the landing height is the whole point, because the airtime everybody writes down is the time back to the height you left.
+- **CHAIN** is a hop inside a run of auto-hops, and it is a different quantity rather than a longer one. With the key held there is no grounded tick to walk to the lip on, so a hop takes off where the last one landed and the hops have to average a whole block period — the gap *and* the block. Speed is what makes a period, and strafing is the only thing that makes speed, so a chain is judged by simulating it with a perfect strafe every tick (`v² + 30²` a tick, which is `DotFpsMotor.accelerate`'s own arithmetic). **That is an upper bound on purpose**: a chain it refuses is one nobody can run, and how much of a perfect strafe a chain needs is printed rather than asserted, because that is the number that says how hard it is and no threshold on it would be anything but a guess.
+
+**A map declares which bodies are a route and which reach it is for, and nothing else.** `G2GMap.add_course(name, track, kind, bodies)` is called from `_build` with the bodies `G2GGeometry.box` just returned; the rise, the clear air and the landing depth are read off their transforms and box shapes. That is game-arena's `climbs` pattern, and it cannot drift from the geometry because it IS the geometry — widening the needle's gap to 200 fails nine routes, and a 60-unit climb step fails seven. The clear air is the least distance between the two footprints, not game-arena's larger axis gap, because the stages map's zigzag is 80 units across as well as the gap along and the player flies the diagonal. No hull credit is spent anywhere: the capsule can stand about eleven units past a lip on this slope limit, and that is the margin.
+
+What `headless_run` prints, all passing:
+
+| course | reach | widest | needs |
+| --- | --- | --- | --- |
+| `bhop_g2g_intro` main | CHAIN, 17 hops | 288 | 44% of a perfect strafe |
+| `bhop_g2g_intro` warm-up | RUN, 3 | 128 | inside 189 |
+| `bhop_g2g_intro` the needle | RUN, 11 | 96 | inside 189 |
+| `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
+
+`surf_g2g_intro` declares nothing, and says why in its header: every way from one surface to the next on it is a drop onto something below, and only riding it answers whether the thing below is there.
+
+**`!s2` and `!s3` on `bhop_g2g_intro` put a player where nobody can continue.** A stage restart is a chain that begins at run speed rather than at whatever the stages before it built, and from blocks 10 and 14 the gaps ahead need more than even a perfect strafe adds in the hops available — from 14, the next gap is 275 units and a perfect single hop from 250 u/s covers 245. `!s1` needs 78%; the stages map's four restarts need 49% to 81%. The restarts are printed and **not** asserted: they are the same three destinations `[stage-yaw-1]` is already waiting on Christian for, and the only fixes are moving a stage line on a scored track or putting `!s3` somewhere that is not stage 3.
+
+**And with `sv_enablebunnyhopping 0`, neither bhop map's main route exists.** The landing cap trims every take-off to 275 u/s, one hop of strafing cannot span the period, and `bhop_g2g_intro` falls at its sixth gap and `bhop_g2g_stages` at its fourth. That is asserted, which is also the proof the chain arithmetic refuses something rather than approving everything. An operator turning the cvar off is turning these two maps into the needle and the warm-up.
+
+## `surf_g2g_intro`'s single bank, driven from its pad into its finish
+
+Bonus 1 is now run end to end, which closes this repository's half of `[bonus-run-2]`. The bank is level along its length, so nothing but the entry speed carries a rider down it and gravity pulls them toward its low lip the whole way; `_test_single_bank` holds strafe into the bank while the bot is below a line and lets go above it, and never touches forward. The line is read off the map — `bonus_bank_lip_x()` plus a hull width — which is why bonus 1's numbers are named constants now rather than literals in `_build`. It asserts the run starts, the bot reaches the bank's far end, and it lands in the finish **without being put back**; nothing in it can pass on a respawn, which is the failure `[bonus-run-2]` found the transfer's check committing. Shortening the bank fails two of the three.
+
+**The `[surf-ramp-1]` answer for this route is the same as the main run's.** The bot loses under 150 units of height on the bank — the drop onto it and the line it holds — and then falls 753 onto the pad. The descent of this route is the fall off the end of the bank, not the bank.
+
+Two things driving it found, and neither is fixed here:
+
+- **A surfer holding into a bank can freeze in mid-air with its speed intact.** With the bot's line one hull width up from the lip it finishes; at several other lines it stops dead within a few hundred ticks and never moves again — position fixed to the unit, `velocity` still reading 222 u/s, `is_grounded()` false, `stuck_ticks` 0, and `DotFpsMotor.duplicate_plane_ticks` rising by one every tick. It is the duplicate-plane early-out this file's Decision 11 already measured on imported ramps, taken to its limit on a flat hand-built one: a velocity lying exactly in the plane the capsule rests on meets that plane again at fraction zero, the slide stops the move, and the next tick is the same tick. Even on the line that works, 697 of 1,786 ticks end that way. It is dot-player-controller's, it is predicted against by the netcode, and it is the reason the bot's line is where it is.
+- **The finish only catches a slow rider.** Only the strip of bank between its lip and the pad's far edge lies over the pad, and the end zone is 512 units deep and tops out 455 units under the line the bot rides — so a rider leaving the bank faster than about 470 to 590 u/s, depending on where on that strip, passes over the whole zone and lands in the pit. A bot holding forward-and-right, which is a real strafe, left the bank at 866 u/s and was put back from 1,578 units past the pad's far edge. On a surf route, going well is what fails it. Not changed: it is a scored track, and the two fixes — a longer pad and zone, or a taller zone — respectively leave every existing time comparable and make every future one faster than it, which is Christian's call.
+

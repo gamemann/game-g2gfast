@@ -1,6 +1,7 @@
 extends "../game/g2g_map.gd"
 
 const G2GGeometry := preload("../game/g2g_geometry.gd")
+const G2GReach := preload("../game/g2g_reach.gd")
 
 ## `bhop_g2g_stages` — five stages, a bonus, and a different idea in each stage.
 ##
@@ -89,14 +90,14 @@ func _build() -> void:
 	# The start pad. Long, because this genre's runs begin with a prestrafe: a player
 	# holding jump from a standstill creeps at the air cap for ever, so the pad has to
 	# be long enough to walk up to speed on before crossing the line.
-	G2GGeometry.box(
+	var bodies: Array = [G2GGeometry.box(
 		self, Vector3(0.0, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z),
 		Vector3(BLOCK_WIDTH + 128.0, BLOCK_THICKNESS, 640.0),
 		G2GGeometry.ROLE_START
-	)
+	)]
 
 	for block: Dictionary in course:
-		G2GGeometry.box(
+		bodies.append(G2GGeometry.box(
 			self,
 			Vector3(
 				float(block["x"]),
@@ -109,7 +110,7 @@ func _build() -> void:
 			# A stage line the player cannot see is a split they cannot aim at.
 			G2GGeometry.ROLE_END if bool(block["stage_end"]) else G2GGeometry.ROLE_PLATFORM,
 			Basis(Vector3.UP, deg_to_rad(float(block["yaw"])))
-		)
+		))
 
 	var last: Dictionary = course[course.size() - 1]
 
@@ -128,13 +129,22 @@ func _build() -> void:
 	# blocks -- applied to the one place that was still doing the arithmetic twice.
 	var end_at := _pad_centre(last)
 
-	G2GGeometry.box(
+	bodies.append(G2GGeometry.box(
 		self,
 		Vector3(end_at.x, end_at.y - BLOCK_THICKNESS * 0.5, end_at.z),
 		Vector3(BLOCK_WIDTH + 128.0, BLOCK_THICKNESS, 512.0),
 		G2GGeometry.ROLE_END,
 		Basis(Vector3.UP, deg_to_rad(float(last["yaw"])))
-	)
+	))
+
+	# [b]One CHAIN, start pad to finish pad.[/b] Every stage's idea is a way of keeping
+	# speed — "keep the speed", "strafe through it", "height costs speed" — and the
+	# widest gaps in stages 1, 3 and 4 are past what a standing jump crosses, so the line
+	# is sized for hops carried at course speed. `headless_run` also runs the chain from
+	# every `!s<n>` destination, because a stage a player restarts from a standstill is
+	# a chain that begins at run speed rather than at whatever the stages before it
+	# built. The surf bonus declares nothing: it is a drop onto a bank, not a jump.
+	add_course("main", DotTimerTrack.MAIN, G2GReach.Kind.CHAIN, bodies)
 
 	_build_bonus()
 
