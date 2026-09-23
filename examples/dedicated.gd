@@ -54,6 +54,7 @@ func _run() -> void:
 		await _test_browser()
 		_test_vote()
 		_test_modes()
+		await _test_live_tools()
 		await _test_unload()
 		_test_no_message_preloads_itself()
 	print("")
@@ -895,6 +896,93 @@ func _test_browser() -> void:
 
 	servers.queue_free()
 	remove_child(servers)
+
+
+## The moderator's live tools on a timer server, where the product is a time.
+##
+## Driven through the console, as an operator types them, against a player with a session
+## the way a real one has. What is asserted is the TIMER: noclip abandons the run it
+## interrupts, a run begun while noclipped or on a speed step is marked assisted and
+## refused a record, and one begun after is clean. Runs are begun by hand because this
+## suite's map is the intro course and walking out of its start is not what is under test.
+func _test_live_tools() -> void:
+	print("the moderator's live tools, and the timer")
+
+	_check(
+		server.console.find_command("noclip") != null and server.console.find_command("slay") != null,
+		"the live tools' commands are on the console"
+	)
+
+	var session := DotClientSession.new()
+	session.peer_id = 9001
+	session.userid = 1
+	session.display_name = "One"
+	var _adopted := server.adopt_session(session)
+
+	var player: G2GPlayer = game.players[&"u1"]
+	var stopped: Array[StringName] = []
+	var on_stop := func(_r: DotTimerRun, why: StringName) -> void: stopped.append(why)
+	player.timer.run_stopped.connect(on_stop)
+
+	player.timer.run.begin(0.0)
+	var _on := await _run_command_later("noclip One")
+	_check(DotFpsAdminModifiers.is_noclipped(player.controller), "`noclip One` puts them in noclip")
+	_check(
+		stopped.has(&"noclip") and not player.timer.run.is_active(),
+		"and abandons the run they were on", str(stopped)
+	)
+
+	player.timer.run.begin(0.0)
+	for _i in range(4):
+		await get_tree().physics_frame
+	_check(player.timer.run.tainted, "a run begun while noclipped is marked assisted")
+	var refused := player.timer.can_record(_finished_copy(player.timer.run))
+	_check(not refused.ok and refused.error.message.contains("assisted"),
+		"and would be refused a record", str(refused.error))
+
+	var _off := await _run_command_later("noclip One off")
+	player.timer.run.begin(0.0)
+	for _i in range(4):
+		await get_tree().physics_frame
+	_check(not player.timer.run.tainted, "once it is off, a new run is clean")
+
+	var _fast := await _run_command_later("speed One 2")
+	for _i in range(4):
+		await get_tree().physics_frame
+	_check(player.timer.run.tainted, "a speed step is help on the ground, and taints the run too")
+	var _normal := await _run_command_later("speed One 1")
+
+	var described := await _run_command_later("modtools")
+	_check(_said(described, "abilities") and _said(described, "burn (there is no fire"),
+		"`modtools` lists what a timer server supports and why it refuses the rest")
+
+	player.timer.run_stopped.disconnect(on_stop)
+	player.timer.stop()
+	var _released := server.release_session(session.peer_id)
+
+
+## A finished copy of [param run], for asking `can_record` without finishing the real one.
+func _finished_copy(run: DotTimerRun) -> DotTimerRun:
+	var copy := DotTimerRun.make(run.track, run.style_id, 0.01)
+	copy.begin(0.0)
+	copy.tainted = run.tainted
+	copy.used_checkpoints = run.used_checkpoints
+	for _i in range(6000):
+		copy.advance(1.0)
+	copy.finish(0.0)
+	return copy
+
+
+## [method _run_command] for a coroutine handler: the live tools record each action on a
+## punishment store, which may be remote, so the reply can land a frame late.
+func _run_command_later(line: String) -> PackedStringArray:
+	var captured: Array[String] = []
+	var template := DotCmdContext.console("", PackedStringArray())
+	template.reply_sink = func(text: String) -> void: captured.append(text)
+	server.console.execute(line, template)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	return PackedStringArray(captured)
 
 
 func _test_unload() -> void:

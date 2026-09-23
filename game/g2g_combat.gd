@@ -456,6 +456,12 @@ static func _add_hitboxes(set_node: DotHitboxSet) -> void:
 	set_node.add_child(legs)
 
 
+## A player's arsenal, or null when they are not armed. For the admin tools' give and
+## strip; [method health_of] and [method entity_for] already answer the rest.
+func arsenal_of(player_id: StringName) -> DotWeaponArsenal:
+	return (_kit.get(player_id, {}) as Dictionary).get("arsenal") as DotWeaponArsenal
+
+
 func _disarm(player_id: StringName) -> void:
 	if not _kit.has(player_id):
 		return

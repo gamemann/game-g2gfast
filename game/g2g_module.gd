@@ -8,6 +8,7 @@ const G2GConfig := preload("g2g_config.gd")
 const G2GGame := preload("g2g_game.gd")
 const G2GHunters := preload("g2g_hunters.gd")
 const G2GIdentity := preload("g2g_identity.gd")
+const G2GModTools := preload("g2g_mod_tools.gd")
 const G2GNetBridge := preload("net/g2g_net_bridge.gd")
 const G2GPlayer := preload("g2g_player.gd")
 const G2GProps := preload("g2g_props.gd")
@@ -35,6 +36,9 @@ var bridge: G2GNetBridge = null
 
 ## Chat, voice and moderation. See [G2GServices].
 var services: G2GServices = null
+
+## The live tools' commands. See [method _build_services].
+var mod_commands: DotModToolCommands = null
 
 ## Content, profiles, avatars and admission. See [G2GIdentity].
 var identity: G2GIdentity = null
@@ -334,6 +338,16 @@ func _build_services() -> DotResult:
 		bridge.voice_relay_fn = services.relay_voice
 
 	services.command_entered.connect(_on_chat_command)
+
+	# noclip, slay, bring and the rest. On this module, so they go when it unloads.
+	if services.mod_tools != null:
+		mod_commands = DotModToolCommands.install(self, services.mod_tools, server)
+		mod_commands.items_fn = func() -> PackedStringArray:
+			var out := PackedStringArray()
+			if game.combat != null:
+				for id in game.combat.catalogue().ids():
+					out.append(String(id))
+			return out
 
 	return DotResult.success(services)
 
@@ -820,6 +834,10 @@ func _on_client_disconnected(session: DotClientSession, _reason: String = "") ->
 
 	if services != null:
 		services.remove_peer(session.peer_id)
+
+		# Their noclip, and who gave it them. The next player with this userid starts clean.
+		if services.mod_tools != null:
+			services.mod_tools.forget(StringName(str(session.userid)))
 
 	if vote != null:
 		# Their rock-the-vote and their nominations. `rtv_forgets_leavers` decides

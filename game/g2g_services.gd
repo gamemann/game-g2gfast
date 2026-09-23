@@ -2,6 +2,7 @@ extends Node
 
 const G2GGame := preload("g2g_game.gd")
 const G2GPlayer := preload("g2g_player.gd")
+const G2GModTools := preload("g2g_mod_tools.gd")
 
 ## Chat, voice and moderation on a dedicated timer server.
 ##
@@ -74,6 +75,9 @@ var link: Node = null
 var chat: DotChatRouter = null
 var voice: DotVoiceRouter = null
 var moderation: DotModerationManager = null
+
+## dot-moderation's live tools with this game's verbs. See `G2GModTools`.
+var mod_tools: DotModTools = null
 ## The website chat relay, when one is configured. See [method _build_relay].
 var relay: DotChatRelay = null
 
@@ -116,6 +120,8 @@ func setup(p_server: DotServer, p_game: G2GGame, p_link: Node) -> DotResult:
 
 	if not moderated.ok:
 		return moderated
+
+	_build_mod_tools()
 
 	var chatted := _build_chat()
 
@@ -165,6 +171,30 @@ func _build_moderation() -> DotResult:
 		})
 
 	return DotResult.success(moderation)
+
+
+func _build_mod_tools() -> void:
+	mod_tools = DotModTools.new()
+	mod_tools.name = "ModTools"
+	mod_tools.register_service = false
+	mod_tools.manager = moderation
+	mod_tools.immunity_fn = func(id: StringName) -> int:
+		var session := server.session_by_userid(String(id).to_int()) if String(id).is_valid_int() else null
+		return session.immunity if session != null else 0
+	mod_tools.position_fn = func(id: StringName) -> Variant:
+		return G2GModTools.position_of(game, id)
+	mod_tools.teleport_fn = func(id: StringName, to: Variant) -> void:
+		G2GModTools.teleport(game, id, to)
+
+	var table := G2GModTools.handlers(game)
+	for action: Variant in table:
+		mod_tools.handlers[action] = table[action]
+
+	var refusals := G2GModTools.unsupported()
+	for action: Variant in refusals:
+		mod_tools.unsupported_reasons[action] = refusals[action]
+
+	add_child(mod_tools)
 
 
 # --- Chat ------------------------------------------------------------------

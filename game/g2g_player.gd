@@ -96,6 +96,9 @@ func _ready() -> void:
 	# just produced. See game-playground's CLAUDE.md for the ordering argument.
 	controller.drive = DotFpsController.Drive.EXTERNAL
 	controller.tunables = base_tunables
+	# Every player, both ends: an admin's noclip is a modifier whose index travels on the
+	# wire. See dot-player-controller's DotFpsAdminModifiers.
+	controller.admin_abilities = true
 	base_tunables.collision_mask = collision_mask
 	# body_ref left unset so it resolves to this node. `of_self()` would resolve to
 	# the CONTROLLER, a plain Node, and setup() would refuse — the player would then
@@ -261,6 +264,20 @@ func _on_simulated(_tick: int, state: DotFpsState) -> void:
 
 	if timer == null:
 		return
+
+	# [b]An admin's help makes a run assisted, every tick it is on.[/b] Noclip abandons the
+	# run it interrupts (`G2GModTools`), but a noclipped player can fly into a start zone
+	# and out again and begin a new one — and a speed or gravity step is help on the
+	# ground. `taint` is dot-timer's own "assisted" mark, which `can_record` refuses, so
+	# the run still finishes and still shows and is simply never filed. Every tick rather
+	# than at the moment it is granted, because a run started afterwards has to carry it
+	# too. Freeze is not here: it can only cost a runner time.
+	if (
+		DotFpsAdminModifiers.is_noclipped(controller)
+		or not is_equal_approx(DotFpsAdminModifiers.speed_of(controller), 1.0)
+		or not is_equal_approx(DotFpsAdminModifiers.gravity_of(controller), 1.0)
+	):
+		timer.taint()
 
 	if (
 		movement_style != null

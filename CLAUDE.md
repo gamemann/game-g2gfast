@@ -14,6 +14,13 @@ game-playground is a sandbox that happens to have a surf ramp. This is the *time
 server*: the thing one of those communities would actually migrate to. Everything it
 adds over the addons is one of four decisions, and the decisions are the file.
 
+
+## An admin's help can never make a time
+
+dot-moderation's live tools are here (`G2GModTools`, built in `G2GServices`, commands on the module), and on a timer server the first rule about them is the product's: **no admin tool can help a run.** Noclip abandons the run it interrupts; `G2GPlayer._on_simulated` taints any run while a noclip, a speed step or a gravity step is on the player — every tick, because a noclipped player can fly into a start zone and out again and begin a new run; an admin's teleport ends the run like every teleport here. Taint is dot-timer's own "assisted" mark, so the run still finishes and shows and `can_record` refuses to file it. Freeze is deliberately not a taint: it can only cost a runner time.
+
+Health, weapons and god mode exist only while `sv_deathmatch` is on, so god, buddha, hp, slay, give and strip answer "not running its deathmatch" rather than being absent — whether they mean anything is a cvar, not a build. `dedicated`'s live-tools section asserts the timer half: abandoned, tainted, refused a record, clean once it is off, and tainted by a speed step too.
+
 ## Layout
 
 ```
@@ -75,7 +82,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (170), headless_net (90), dedicated (137),
+examples/           headless_run (170), headless_net (90), dedicated (145),
                     headless_imported (28 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -466,7 +473,7 @@ godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
-godot --headless --path . res://examples/dedicated.tscn      # 137 checks
+godot --headless --path . res://examples/dedicated.tscn      # 145 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
