@@ -34,6 +34,10 @@ const G2GGame := preload("g2g_game.gd")
 
 const CHANNEL := "g2g.vote"
 
+## The key in the running game's descriptor metadata an operator's overrides are read
+## from — [code]metadata: map_vote:[/code] in a delivered game's [code]game.yml[/code].
+const METADATA_KEY := "map_vote"
+
 signal vote_opened(options: Array, seconds: float)
 signal vote_closed(result: DotVoteResult)
 signal rocked(voter: StringName, votes: int, needed: int)
@@ -46,6 +50,32 @@ signal change_due(id: StringName, choice: DotVoteChoice)
 ## Off on a client, which mirrors a vote so it can draw the ballot and must never
 ## change its own map.
 @export var authoritative: bool = true
+
+## The file a server owner configures this game's map vote in. Empty skips it.
+##
+## [b]The rules in [method _rules] are this game's DEFAULTS, not its configuration.[/b]
+## They layer the way every [DotConfig] in the family does, so an owner changes a
+## number without touching code:
+##
+## [codeblock]
+## _rules()  <  game.yml metadata: map_vote:  <  this file  <  DOT_VOTE_*  <  --vote-*
+## [/codeblock]
+##
+## The file is JSON, keyed exactly as [DotVoteRules] is, enums by name. The end-of-map
+## vote and its extend option, which is what an owner usually wants to change:
+##
+## [codeblock]
+## {
+##     "end_vote": true,          "vote_lead_sec": 120,
+##     "include_extend": true,    "extend_seconds": 600,    "max_extends": 3
+## }
+## [/codeblock]
+##
+## [code]DOT_VOTE_EXTEND_SECONDS=900[/code] or [code]--vote-include-extend=false[/code]
+## do the same for one run. [code]duration_sec[/code] set here wins over
+## [code]map_seconds[/code], which is only the default's source. A result that does not
+## validate is refused whole and the defaults stand, with the reason in the log.
+@export var config_path: String = "user://cfg/g2gfast_vote.json"
 
 var game: G2GGame = null
 
@@ -73,7 +103,7 @@ func setup() -> DotResult:
 
 	director = DotVoteDirector.new()
 	director.name = "VoteDirector"
-	director.rules = _rules()
+	director.rules = configured_rules()
 	director.source = source
 	director.auto_apply = authoritative
 	director.begin_on_apply = false
@@ -132,6 +162,25 @@ func setup() -> DotResult:
 		director.begin(game.maps.current.id)
 
 	return DotResult.success(self)
+
+
+## [method _rules], with the server owner's layers over it. See [member config_path].
+func configured_rules() -> DotVoteRules:
+	var rules := _rules()
+	var layered := rules.layer_over_defaults(
+		config_path, DotVoteGameSource.running_game_metadata(METADATA_KEY)
+	)
+
+	if not layered.ok:
+		# Loud and not fatal: a server that refused to start over its vote file would be
+		# one an operator cannot get back. This one runs on its tested defaults.
+		DotLog.error(CHANNEL, "the map vote configuration is not usable; using the defaults", {
+			"path": config_path,
+			"why": layered.error.message,
+			"detail": layered.error.detail,
+		})
+
+	return rules
 
 
 ## The rules a records server votes by.

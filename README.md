@@ -102,6 +102,18 @@ for pair in dot_core:dot-core dot_player_controller:dot-player-controller dot_ti
 done
 ```
 
+## Configuring the map vote
+
+The vote for the next map is [dot-vote](https://github.com/modcommunity/dot-vote), and the rules in `game/g2g_vote.gd` are only this game's defaults. A server owner overrides any of dot-vote's settings without touching code, in `user://cfg/g2gfast_vote.json`, then `DOT_VOTE_*`, then `--vote-*` — later wins — or, on a TMC server, under `metadata: map_vote:` in the game's `game.yml`. A file that does not validate is refused whole and the defaults stand, with the reason in the log.
+
+The end-of-map vote and the option to extend the current map:
+
+```json
+{ "end_vote": true, "vote_lead_sec": 120, "include_extend": true, "extend_seconds": 600, "max_extends": 3 }
+```
+
+`end_vote: false` turns the end-of-map ballot off (the map still ends, on the rotation); `include_extend: false` takes "extend" off the ballot; `extend_seconds` is how much one extension adds and `max_extends` how many there may be. Every setting is in dot-vote's README, and its `docs/parity.md` maps the long-standing community map-chooser plugins' settings onto them.
+
 ## Validating
 
 ```bash
