@@ -74,8 +74,8 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (160), headless_net (90), dedicated (134),
-                    headless_imported (25 per map, plus one per track and stage),
+examples/           headless_run (160), headless_net (90), dedicated (135),
+                    headless_imported (26 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -462,13 +462,13 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 135 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 56 checks
+godot --headless --path . res://examples/headless_run.tscn   # 160 checks
+godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
 godot --headless --path . res://examples/headless_net.tscn   # 90 checks
-godot --headless --path . res://examples/dedicated.tscn      # 134 checks
+godot --headless --path . res://examples/dedicated.tscn      # 135 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 25 per map, +1 per stage
-godot --headless --path . res://examples/headless_maps.tscn      # 24 checks
+godot --headless --path . res://examples/headless_imported.tscn  # 26 per map, +1 per stage
+godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
 
@@ -1451,13 +1451,23 @@ Migration is off: a time made of two machines' clocks is worse than no time at a
 
 **The exemption is asserted in both directions, which is what stops it being a mute button.** `NOT_COURSES` maps are checked for *not* having a runnable main track: if one grows a finish, the list has gone stale and the failure is how anybody finds out. `NO_PIT` is a separate list of one for the same reason at a smaller scale — `bhop_eazy` and `bhop_lego2` do have pits and are still checked for them, and folding the two lists together would stop asking two maps a question they currently answer correctly. Armed by listing a real course in `NOT_COURSES`; it fails with both checks naming the list.
 
-## One imported map loses 55 surfaces, and it is the renderer rather than the importer
+## One imported map lost 55 surfaces, and it was the renderer rather than the importer
 
-`bhop_monster_jam` has **311 surfaces** and Godot's per-mesh limit is 256, so the last 55 never reach the mesh — `Condition "surfaces.size() == RenderingServerEnums::MAX_MESH_SURFACES" is true`, 55 times, at load. It is the only one of the eighteen over the cap; the next largest is `bhop_mario_fxd` at 153.
+`bhop_monster_jam` has **311 surfaces** and Godot's per-mesh limit is 256 (`RenderingServer.MAX_MESH_SURFACES`), so while `G2GBspMap` built one mesh the last 55 never reached it — `Condition "surfaces.size() == RenderingServerEnums::MAX_MESH_SURFACES" is true`, 55 times, at every load. It is the only one of the eighteen over the cap; the next largest is `bhop_mario_fxd` at 153.
 
-**It costs rendering and not play.** Collision is built by `_build_collision` out of the manifest's own convex-per-brush block rather than out of the drawn geometry — a decision made for a different reason, and the reason this is a cosmetic bug instead of a map with holes you fall through. Every collision and stands-on-it check passes on that map.
+**It cost rendering and not play**, because collision is built by `_build_collision` out of the manifest's convex-per-brush block rather than out of the drawn geometry — which is also why every collision and stands-on-it check passed on that map throughout.
 
-The fix is to split a manifest's surfaces across more than one `MeshInstance3D` when there are more than 256 of them, in `G2GBspMap`, and it is not done. What is written down is the number, so the next person who sees 55 identical engine errors knows which map, how many, and that the player cannot feel it.
+`G2GBspMap` now starts a new `MeshInstance3D` every 256 surfaces. The first keeps the name `World`, which the suite and the probes look up; the rest are `World2`, `World3`. Each drawn surface also carries the index of the manifest surface it came from, because the materials used to be assigned by position in a second loop — the same index only while no surface is skipped, and one empty surface would have given every surface after it its neighbour's texture. `headless_imported` asserts that every surface a manifest lists is drawn, which fails on this map with the one-mesh build (256 of 311).
+
+The probes that read `World` alone (`collision_probe`, `surf_probe`, `bhop_probe`) still see only the first 256 surfaces of this one map. They sample, so that is a smaller sample rather than a wrong answer.
+
+## The timer's sounds were reachable from the suite and from nothing else
+
+`G2GPresentation.on_run_started`, `on_split` and `on_run_finished` were written, catalogued with priority 100 because "they ARE the game", tested in `headless_presentation` by calling them directly — and never called by the client. Every run on every build started, split and finished in silence. `follow_runs` listens to the client's own `DotTimerManager` now, which is fed on a netted client too (`G2GGame.tick_timers_only`), so the start sounds on the tick the local prediction crosses the line rather than a round trip later. The personal-best fanfare is `record_accepted`, which only fires where records are filed: offline it plays, and a netted client — which is told a rank, not whether it beat its own time — plays the finish without it rather than guessing. The suite drives the timer's signals rather than the methods now, and a probe of the real offline client heard `timer_start` and `timer_finish` with the fix and neither without it.
+
+## A trigger is one tick's input
+
+`G2GCombat.tick` read the fire command with `get_meta("g2g_fire", null)`. A null default is the engine's *no default*, so every armed player who had not yet sent a command was an engine ERROR with a backtrace, every tick — 1,146 of them in one `dedicated` run, on a suite that reported 0 failed. And the command was never cleared: dot-net skips `_net_apply_input` for a tick whose packet never arrived, so the last trigger was replayed until the next packet — exactly the held trigger surviving a dropped packet that `G2GPlayerNet.last_attack` says does not happen. It is `has_meta` and consumed on read now; `previous` is left alone on a starved tick so a trigger really held across the gap is not read as a fresh press either. Both weapons are semi-automatic today, so the replay had no visible cost yet — it would have had one the day an automatic weapon was added.
 
 ## Things deliberately not here
 

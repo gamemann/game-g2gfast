@@ -659,8 +659,11 @@ func _test_modes() -> void:
 			# behaviour every shooter deliberately does not have.
 			#
 			# So: hold nothing until the switch has finished, then press.
+			#
+			# [b]Once a tick, as the wire delivers it.[/b] A command is consumed by the
+			# tick that reads it, so one set before a loop is one tick's input, not a
+			# second's — see the starved-tick check below.
 			var idle := DotWeaponCommand.new()
-			game.combat.set_fire_command(&"u4242", idle)
 
 			# [b]`tick_once`, not `combat.tick`.[/b] Every duration in dot-weapon is
 			# measured in ticks, so a loop that advances time without advancing
@@ -668,11 +671,11 @@ func _test_modes() -> void:
 			# which is what this test used to do, and it got away with it only because
 			# the old arsenal measured its deploy differently.
 			for _deploy in range(game.tick_rate):
+				game.combat.set_fire_command(&"u4242", idle)
 				game.tick_once(game.current_tick() + 1)
 
 			var fire := DotWeaponCommand.new()
 			fire.set_button(DotWeaponCommand.BUTTON_ATTACK, true)
-			game.combat.set_fire_command(&"u4242", fire)
 
 			# [b]An Array, not an int.[/b] A GDScript lambda captures locals by
 			# VALUE, so a counter incremented inside a signal handler stays zero
@@ -687,6 +690,7 @@ func _test_modes() -> void:
 			# Enough ticks for the deagle's 160 rpm to come round. A weapon that fired
 			# on the first tick would be a weapon with no rate of fire.
 			for _step in range(game.tick_rate):
+				game.combat.set_fire_command(&"u4242", fire)
 				game.tick_once(game.current_tick() + 1)
 
 			_check(
@@ -701,6 +705,19 @@ func _test_modes() -> void:
 				shots.size() < 10,
 				"at its rate of fire rather than once a tick",
 				"%d shots in a second" % shots.size()
+			)
+
+			# [b]A tick whose input never arrived is not the last trigger again.[/b]
+			# dot-net skips `_net_apply_input` for a starved tick, so a command left on
+			# the player would be replayed for as long as packets are lost — the held
+			# trigger `G2GPlayerNet.last_attack` says does not survive a hiccup.
+			game.combat.set_fire_command(&"u4242", fire)
+			game.tick_once(game.current_tick() + 1)
+			game.tick_once(game.current_tick() + 1)
+			var shooter: G2GPlayer = game.players.get(&"u4242")
+			_check(
+				shooter != null and not shooter.has_meta("g2g_fire"),
+				"and a trigger is read once, so a lost packet is not a held trigger"
 			)
 
 			game.remove_player(&"u4242")

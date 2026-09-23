@@ -505,7 +505,22 @@ func tick(delta: float) -> void:
 		health.tick(game.current_tick(), delta)
 		manager.set_authoritative_origin(int(kit["entity"]), player.eye_position())
 
-		var command: DotWeaponCommand = player.get_meta("g2g_fire", null)
+		# [b]`has_meta` first, never `get_meta(key, null)`.[/b] A null default is the
+		# engine's "no default", so a missing key is an ERROR with a backtrace rather
+		# than a null — once a tick for every armed player who has not sent a command
+		# yet, which was 1,146 of them in one `dedicated` run.
+		#
+		# [b]And consumed, so a tick with no fresh input does not fire.[/b] dot-net
+		# skips `_net_apply_input` for a tick whose packet never arrived, so a command
+		# left in place is the last trigger replayed until the next packet — which is
+		# exactly the held trigger surviving a dropped packet that `G2GPlayerNet`
+		# promises it does not. `previous` is left alone on such a tick, so a trigger
+		# that really was held across the gap is not read as a fresh press either.
+		if not player.has_meta("g2g_fire"):
+			continue
+
+		var command: DotWeaponCommand = player.get_meta("g2g_fire")
+		player.remove_meta("g2g_fire")
 
 		if command == null:
 			continue
@@ -527,7 +542,8 @@ func tick(delta: float) -> void:
 		ctx.crouched = state.is_crouched()
 		ctx.authority = game.authoritative
 
-		var previous: DotWeaponCommand = player.get_meta("g2g_fire_previous", null)
+		var previous: DotWeaponCommand = player.get_meta("g2g_fire_previous") \
+			if player.has_meta("g2g_fire_previous") else null
 		var outcome := arsenal.simulate_tick(command, ctx, previous)
 		player.set_meta("g2g_fire_previous", command.duplicate_command())
 
@@ -546,6 +562,10 @@ func tick(delta: float) -> void:
 ## command, or a test. Held as metadata rather than as a field on [G2GPlayer] because
 ## a player on a server with no deathmatch has no weapon and should carry no state
 ## about one.
+##
+## [b]One tick's input.[/b] [method tick] consumes it, so a caller sets it every tick —
+## which the bridge does, from `_net_apply_input` — and a tick nobody set it for fires
+## nothing.
 func set_fire_command(player_id: StringName, command: DotWeaponCommand) -> void:
 	var player: G2GPlayer = game.players.get(player_id)
 

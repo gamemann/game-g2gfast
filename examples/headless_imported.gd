@@ -55,7 +55,7 @@ const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2"]
 const NO_PIT := ["buses_from_hell_fixed"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 25
+const CHECKS_PER_MAP := 26
 
 ## A script error inside a test aborts THAT TEST and not the run, so a suite that has
 ## quietly lost two checks still prints "0 failed" — which is what happened while this
@@ -168,6 +168,19 @@ func _test_geometry() -> void:
 	var mesh := mi.mesh
 	_check(mesh.get_surface_count() > 1, "with a surface per material",
 		"%d surfaces" % mesh.get_surface_count())
+
+	# Every surface the manifest lists is drawn, across however many instances it took.
+	# A mesh holds 256 and `bhop_monster_jam` has 311: in one mesh the last 55 were
+	# refused by the engine and the map was drawn with holes in it while every
+	# collision and standing check passed, because collision is built from the brushes.
+	var drawn := 0
+	for child in node.get_children():
+		if child is MeshInstance3D and String(child.name).begins_with("World") \
+				and (child as MeshInstance3D).mesh != null:
+			drawn += (child as MeshInstance3D).mesh.get_surface_count()
+	var listed: int = (node as G2GBspMap).manifest.get("surfaces", []).size()
+	_check(drawn == listed, "and every surface the manifest lists is drawn",
+		"%d of %d" % [drawn, listed])
 
 	var verts := 0
 	var has_uv2 := true

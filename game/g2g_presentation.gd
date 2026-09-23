@@ -44,6 +44,13 @@ var _chat_layer: CanvasLayer = null
 var _chat_relayed: bool = false
 var _was_grounded := true
 
+## Where the local player's feet were on the last frame, for the gate effects.
+var _last_at := Vector3.ZERO
+
+## The timers [method follow_runs] is listening to, and whose runs it plays.
+var _followed_timers: DotTimerManager = null
+var _followed_id: StringName = &""
+
 
 func setup() -> DotResult:
 	var settled := _build_settings()
@@ -559,6 +566,67 @@ func watch_movement(grounded: bool, speed: float, at: Vector3) -> void:
 	elif _was_grounded and not grounded:
 		audio.play(&"jump")
 	_was_grounded = grounded
+	_last_at = at
+
+
+## Plays the timer's start, splits and finish for one player.
+##
+## [b]The four sounds that ARE the game were reachable from the suite and from nothing
+## else.[/b] `on_run_started`, `on_split` and `on_run_finished` were written, tested with
+## a null sink, and never called by the client — so a run started, split and finished in
+## silence on every build. Listened for on the client's OWN [DotTimerManager], which is
+## fed on a netted client too (`G2GGame.tick_timers_only`), so the start is heard on the
+## tick the local prediction crosses the line rather than a round trip later.
+##
+## A personal best is [signal DotTimerManager.record_accepted], which only fires where
+## records are filed — offline, here. A netted client is told a rank, not whether it beat
+## its own time, and plays the finish without the fanfare rather than guessing.
+##
+## Called again whenever the followed player changes; connects once per manager.
+func follow_runs(timers: DotTimerManager, player_id: StringName) -> void:
+	_followed_id = player_id
+
+	if timers == _followed_timers:
+		return
+
+	if _followed_timers != null and is_instance_valid(_followed_timers):
+		_followed_timers.player_started.disconnect(_on_followed_started)
+		_followed_timers.player_staged.disconnect(_on_followed_staged)
+		_followed_timers.player_finished.disconnect(_on_followed_finished)
+		_followed_timers.record_accepted.disconnect(_on_followed_record)
+
+	_followed_timers = timers
+
+	if timers == null:
+		return
+
+	timers.player_started.connect(_on_followed_started)
+	timers.player_staged.connect(_on_followed_staged)
+	timers.player_finished.connect(_on_followed_finished)
+	timers.record_accepted.connect(_on_followed_record)
+
+
+func _on_followed_started(id: StringName, _run: DotTimerRun) -> void:
+	if id == _followed_id:
+		on_run_started(_last_at)
+
+
+func _on_followed_staged(id: StringName, _number: int, _split: float) -> void:
+	if id == _followed_id:
+		on_split()
+
+
+func _on_followed_finished(id: StringName, _run: DotTimerRun) -> void:
+	if id == _followed_id:
+		on_run_finished(_last_at, false)
+
+
+func _on_followed_record(record: DotTimerRecord, previous: DotTimerRecord, _rank: int) -> void:
+	if record == null or record.player_id != _followed_id:
+		return
+
+	if previous == null or record.beats(previous):
+		on_personal_best()
 
 
 func on_run_started(at: Vector3) -> void:
@@ -578,9 +646,15 @@ func on_run_finished(at: Vector3, personal_best: bool) -> void:
 	audio.play(&"timer_finish")
 	fx.spawn(&"finish_gate", t)
 	if personal_best:
-		audio.play(&"personal_best")
-		# Refused unless the player asked for flashes, which they have not by default.
-		fx.flash(&"personal_best")
+		on_personal_best()
+
+
+## Separate from the finish because it is known later: the record is filed after the run
+## ends, so the finish sounds on the tick and the fanfare when the store says so.
+func on_personal_best() -> void:
+	audio.play(&"personal_best")
+	# Refused unless the player asked for flashes, which they have not by default.
+	fx.flash(&"personal_best")
 
 
 func on_teleported() -> void:

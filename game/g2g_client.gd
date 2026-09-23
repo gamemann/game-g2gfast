@@ -102,6 +102,10 @@ func _ready() -> void:
 	DotLog.result("g2g.client", "the presentation layer", presentation.setup())
 	_wire_chat_window()
 
+	# Every effect drawn is somewhere on the map that just went away, and the landing
+	# watcher would otherwise read the first frame on the new one as a fall.
+	game.map_ready.connect(func(_map: DotMapDef) -> void: presentation.on_map_changed())
+
 	if _offline:
 		for _i in range(60):
 			await get_tree().process_frame
@@ -210,6 +214,10 @@ func _watch(id: StringName) -> void:
 		add_child(hud)
 	hud.bind(game, id)
 	_say_click_to_play()
+
+	# By id, like the HUD, and for the same reason: HELLO names us before JOIN makes us.
+	if presentation != null:
+		presentation.follow_runs(game.timers, id)
 
 
 ## The player we are waiting for has been created. Fires for every player; ours is one.

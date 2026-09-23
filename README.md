@@ -107,9 +107,9 @@ done
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 91 checks
-godot --headless --path . res://examples/headless_net.tscn   # 81 checks, server + client in one process
-godot --headless --path . res://examples/dedicated.tscn      # 52 checks
+godot --headless --path . res://examples/headless_run.tscn   # 160 checks
+godot --headless --path . res://examples/headless_net.tscn   # 90 checks, server + client in one process
+godot --headless --path . res://examples/dedicated.tscn      # 135 checks
 godot --headless --path . res://examples/headless_imported.tscn   # every imported map
 ```
 

@@ -28,6 +28,11 @@ const G2GTextures := preload("g2g_textures.gd")
 ## pass over a [PackedByteArray] and keeps this repository's own convention: maps are
 ## made in code.
 
+## An imported map is content an operator dropped in, so what goes wrong loading one is
+## theirs to read: DotLog, not `push_error`, which reaches stderr and the editor's dock and
+## neither the log file nor anything shipping it.
+const CHANNEL := "g2g.bsp"
+
 const VERTEX_FLOATS := 10          # position 3, normal 3, uv 2, uv2 2
 
 ## Zone kinds by the name the manifest writes, which is [enum DotTimerZone.Kind]'s.
@@ -100,7 +105,7 @@ func build_from(map: DotMapDef) -> bool:
 		return false
 	var path := str(map.meta.get("manifest", ""))
 	if path.is_empty():
-		push_error("G2GBspMap: %s has no manifest in its catalogue entry" % String(map.id))
+		DotLog.error(CHANNEL, "the catalogue entry names no manifest", {"map": String(map.id)})
 		return false
 	return build_from_path(path)
 
@@ -121,11 +126,11 @@ func _construct() -> void:
 		return
 	var text := FileAccess.get_file_as_string(manifest_path)
 	if text.is_empty():
-		push_error("G2GBspMap: cannot read %s" % manifest_path)
+		DotLog.error(CHANNEL, "cannot read the manifest", {"path": manifest_path})
 		return
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
-		push_error("G2GBspMap: %s is not a manifest" % manifest_path)
+		DotLog.error(CHANNEL, "not a manifest", {"path": manifest_path})
 		return
 	manifest = parsed
 
@@ -147,32 +152,50 @@ func _construct() -> void:
 
 	var blob := FileAccess.get_file_as_bytes(dir.path_join("%s.bin" % manifest.get("id", "")))
 	if blob.is_empty():
-		push_error("G2GBspMap: the mesh binary is missing or empty")
+		DotLog.error(CHANNEL, "the mesh binary is missing or empty", {
+			"path": dir.path_join("%s.bin" % manifest.get("id", "")),
+		})
 		return
 
-	var mesh := ArrayMesh.new()
+	# [b]One MeshInstance3D per 256 surfaces, because that is the engine's cap on a mesh.[/b]
+	# Past it `add_surface_from_arrays` refuses with an engine error and the surface is
+	# simply not drawn: `bhop_monster_jam` has 311 and lost the last 55, one error each,
+	# at every load. Collision was never affected — it is built from the brushes below,
+	# not from these — which is why nothing but the picture and the log could say so.
+	#
+	# The first instance keeps the name `World`, which the suite and the probes look up.
+	#
+	# [b]And each drawn surface remembers which manifest surface it came from.[/b] The
+	# materials used to be assigned by position in a second loop, which is only the same
+	# index while no surface is skipped; one empty surface would have given every surface
+	# after it its neighbour's texture.
 	var surfaces: Array = manifest.get("surfaces", [])
+	var drawn: Array[MeshInstance3D] = []
+	var mesh: ArrayMesh = null
+	var sources := PackedInt32Array()
+
 	for i in range(surfaces.size()):
 		var s: Dictionary = surfaces[i]
 		var arrays := _surface_arrays(blob, s)
 		if arrays.is_empty():
 			continue
+		if mesh == null or mesh.get_surface_count() >= RenderingServer.MAX_MESH_SURFACES:
+			if mesh != null:
+				drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap, drawn.size()))
+			mesh = ArrayMesh.new()
+			sources = PackedInt32Array()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_name(mesh.get_surface_count() - 1, str(s.get("material", "?")))
+		sources.append(i)
 
-	var mi := MeshInstance3D.new()
-	mi.name = "World"
-	mi.mesh = mesh
-	add_child(mi)
+	if mesh != null:
+		drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap, drawn.size()))
 
 	var written := 0
-	for i in range(surfaces.size()):
-		if i >= mesh.get_surface_count():
-			break
-		mi.set_surface_override_material(i, _material_for(surfaces[i], dir, lightmap))
-		written += 1
+	for mi in drawn:
+		written += mi.mesh.get_surface_count()
 
-	var solids := _build_collision(mi, blob)
+	var solids := _build_collision(drawn, blob)
 
 	# [b]The map's own lighting, not this game's.[/b] `G2GGeometry.sun` puts one
 	# hardcoded sun at (-55, -35) over a flat blue-grey background, which is right for the
@@ -180,10 +203,27 @@ func _construct() -> void:
 	# carries its own sun angle, sun colour, ambient colour, fog range and sky name, and
 	# not one of them had ever been read. See [G2GLighting].
 	G2GLighting.apply(self, manifest.get("lighting", {}))
-	print("[bsp] %s: %d surfaces, %d verts, %d materials, %d collision shapes" % [
-		manifest.get("id", "?"), mesh.get_surface_count(),
-		mesh.surface_get_array_len(0) if mesh.get_surface_count() > 0 else 0,
-		written, solids])
+	DotLog.info(CHANNEL, "imported map built", {
+		"map": str(manifest.get("id", "?")),
+		"surfaces": written,
+		"surfaces_in_manifest": surfaces.size(),
+		"mesh_instances": drawn.size(),
+		"collision_shapes": solids,
+	})
+
+
+## One drawn chunk of the map: its mesh, and the material each surface's source asks for.
+func _mesh_instance(
+	mesh: ArrayMesh, sources: PackedInt32Array, surfaces: Array, dir: String,
+	lightmap: Texture2D, index: int
+) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = "World" if index == 0 else "World%d" % (index + 1)
+	mi.mesh = mesh
+	add_child(mi)
+	for at in range(sources.size()):
+		mi.set_surface_override_material(at, _material_for(surfaces[sources[at]], dir, lightmap))
+	return mi
 
 
 ## The map's solid volume: one convex shape per brush, plus the displacements.
@@ -210,11 +250,12 @@ func _construct() -> void:
 ## before there was one -- `user://maps` is full of those the moment anybody downloads a
 ## map -- and falls back to the old trimesh, which is wrong in the way described above
 ## but is still a map somebody can walk around.
-func _build_collision(mi: MeshInstance3D, blob: PackedByteArray) -> int:
+func _build_collision(drawn: Array[MeshInstance3D], blob: PackedByteArray) -> int:
 	var info: Dictionary = manifest.get("collision", {})
 	if info.is_empty():
-		mi.create_trimesh_collision()
-		return 1
+		for mi in drawn:
+			mi.create_trimesh_collision()
+		return drawn.size()
 
 	var body := StaticBody3D.new()
 	body.name = "Solid"

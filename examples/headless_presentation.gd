@@ -17,7 +17,7 @@ const G2GCamera := preload("../game/g2g_camera.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 63
+const CHECKS := 71
 
 var _passed := 0
 var _failed := 0
@@ -39,6 +39,7 @@ func _run() -> void:
 
 	_test_a_runner_is_not_shaken()
 	_test_the_sounds_are_the_run()
+	_test_the_sounds_follow_the_timer()
 	_test_the_landing_is_a_speedometer()
 	_test_console_is_prefixed()
 	_test_a_party_run_is_tainted()
@@ -131,6 +132,64 @@ func _test_a_runner_is_not_shaken() -> void:
 		"the effect budget is small, because a frame here is a tick and a tick is 7.8 ms "
 		+ "of somebody's run"
 	)
+	p.queue_free()
+	_done()
+
+
+# --- 1b ---------------------------------------------------------------------
+
+## The four sounds above, reached from a timer rather than called by hand.
+##
+## [b]Section 2 called `on_run_started` and friends directly, and so did nothing else.[/b]
+## The client never did, so every run on every build started, split and finished in
+## silence while this suite reported the sounds present and outranking everything. What
+## the client does now is `follow_runs`, so that is what is driven here — through the
+## timer manager's own signals, which are what a crossing emits.
+func _test_the_sounds_follow_the_timer() -> void:
+	_section("The timer's own signals are what make the timer's sounds")
+
+	var p := _make()
+	var sink := p.audio.sink as DotAudioSinkNull
+	var timers := DotTimerManager.new()
+
+	p.follow_runs(timers, &"me")
+	# Twice, as a client does when it is told who it is and then who it is again. A
+	# second connection would play every sound twice.
+	p.follow_runs(timers, &"me")
+	sink.forget()
+
+	timers.player_started.emit(&"me", DotTimerRun.new())
+	_check(sink.count_of(&"timer_start") == 1, "crossing the start line makes the start sound, once")
+
+	timers.player_started.emit(&"someone_else", DotTimerRun.new())
+	_check(sink.count_of(&"timer_start") == 1, "and somebody else's start does not")
+
+	timers.player_staged.emit(&"me", 2, 12.5)
+	_check(sink.count_of(&"timer_split") == 1, "a stage line makes the split sound")
+
+	timers.player_finished.emit(&"me", DotTimerRun.new())
+	_check(sink.count_of(&"timer_finish") == 1, "the end zone makes the finish sound")
+	_check(sink.count_of(&"personal_best") == 0, "and not the fanfare, which waits for the record")
+
+	var mine := DotTimerRecord.new()
+	mine.player_id = &"me"
+	mine.time = 30.0
+	var better := DotTimerRecord.new()
+	better.player_id = &"me"
+	better.time = 20.0
+
+	timers.record_accepted.emit(mine, better, 3)
+	_check(sink.count_of(&"personal_best") == 0, "a filed run slower than your best is not a personal best")
+
+	timers.record_accepted.emit(better, mine, 1)
+	_check(sink.count_of(&"personal_best") == 1, "a faster one is")
+
+	p.follow_runs(null, &"")
+	sink.forget()
+	timers.player_started.emit(&"me", DotTimerRun.new())
+	_check(sink.count_of(&"timer_start") == 0, "and following nothing hears nothing")
+
+	timers.free()
 	p.queue_free()
 	_done()
 
