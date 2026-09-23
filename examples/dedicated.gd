@@ -536,6 +536,12 @@ func _test_vote() -> void:
 		]
 	)
 
+	# What the module forwards to the wire as a VOTE event, heard at the vote's edge.
+	var heard: Array = []
+	var probe := func(cue: StringName, seconds_left: int, _runoff: bool) -> void:
+		heard.append([String(cue), seconds_left])
+	vote.cue_due.connect(probe)
+
 	var opened := vote.director.open_vote(DotVoteClock.REASON_MANUAL)
 	_check(
 		opened.ok or opened.error != null,
@@ -547,6 +553,60 @@ func _test_vote() -> void:
 		_check(vote.is_voting(), "and the ballot opens")
 		vote.director.close_vote()
 		_check(not vote.is_voting(), "and closes again")
+		_check(
+			heard.has([String(G2GVote.CUE_START), 0]) and heard.has([String(G2GVote.CUE_END), 0]),
+			"and its start and end cues are handed on for the wire (%s)" % str(heard)
+		)
+
+	vote.cue_due.disconnect(probe)
+
+	# dot-vote's commands, which this game never installed: its own `rtv`, `nominate`,
+	# `nextmap` and `timeleft` stood in for four of them and the operator's four did not
+	# exist.
+	var absent := PackedStringArray()
+	for name in [
+		"rtv", "unrtv", "nominate", "vote", "timeleft", "nextmap",
+		"setnextmap", "nominate_addmap", "forcertv", "votereload",
+	]:
+		if server.console.find_command(name) == null:
+			absent.append(name)
+	_check(absent.is_empty(), "dot-vote's commands are on the console", ", ".join(absent))
+
+	# One rock-the-vote. The console `rtv` went to the map session's time limit and `!rtv`
+	# in chat to this director — two votes under one name. The director's refusal names
+	# its delay; the map session's tally answers "N of M", so the reply says which one ran.
+	var session := DotClientSession.new()
+	session.peer_id = 4343
+	session.userid = 43
+	session.display_name = "Rocker"
+	var _adopted := server.adopt_session(session)
+	var replies: Array[String] = []
+	var ctx := session.make_context(
+		"rtv", PackedStringArray(), DotCmdContext.Source.CHAT,
+		func(line: String) -> void: replies.append(line)
+	)
+	server.console.execute("rtv", ctx)
+	_check(
+		replies.size() == 1 and replies[0].contains("rock the vote in"),
+		"`!rtv` is the ballot's rock-the-vote, with the ballot's own delay (%s)" % str(replies)
+	)
+	replies.clear()
+	server.console.execute("g2g_rtv", ctx)
+	_check(
+		replies.size() == 1 and replies[0].contains("rock the vote in"),
+		"and so is `g2g_rtv` (%s)" % str(replies)
+	)
+	var _released := server.release_session(session.peer_id)
+
+	var bridge: Object = module.get("bridge") if module != null else null
+	_check(
+		bridge != null and (bridge.get("rtv_fn") as Callable).is_valid(),
+		"and a client's RTV request goes to the ballot too, not to the map session"
+	)
+	_check(
+		not game.rotation_ends_maps,
+		"and the map session's own clock no longer ends a map the vote may have extended"
+	)
 
 
 ## The three modes, and the cvars that flip them.

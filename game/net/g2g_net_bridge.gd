@@ -44,6 +44,8 @@ signal roster_changed(player_id: int)
 ## A finish announced by the authority. [param rank] 0 means it was not filed.
 signal finish_received(player_id: int, time: float, rank: int)
 signal notice_received(player_id: int, text: String)
+## The map vote's cue and countdown second, from [method G2GEvents.read_vote]. Client side.
+signal vote_received(info: Dictionary)
 
 var game: G2GGame = null
 var net: DotNetManager = null
@@ -61,6 +63,13 @@ var voice_in_fn: Callable = Callable()
 ## client's captured audio goes on a server. [G2GServices] points it at
 ## `DotVoiceRouter.relay`.
 var voice_relay_fn: Callable = Callable()
+
+## [code]func(player_id: StringName) -> void[/code]. What a client's RTV request does on
+## the server. Empty falls back to [method G2GGame.rock_the_vote], which is the map
+## session's own time limit — right on a server with no vote and wrong on one with a
+## ballot, where the module points this at the vote so a request off the wire and a
+## `!rtv` typed in chat are one vote rather than two.
+var rtv_fn: Callable = Callable()
 
 ## Which session this process is. Zero on a server.
 var local_player_id: int = 0
@@ -175,6 +184,11 @@ func _broadcast(kind: int, body: PackedByteArray) -> void:
 		return
 	for peer_id in _ready_peers.keys():
 		net.send(G2GEvent.new(kind, body), int(peer_id))
+
+
+## The map vote's cue or countdown second, to every ready peer. Server side.
+func broadcast_vote(cue: StringName, seconds_left: int, runoff: bool) -> void:
+	_broadcast(G2GEvents.Kind.VOTE, G2GEvents.write_vote(String(cue), seconds_left, runoff))
 
 
 func _tell(peer_id: int, kind: int, body: PackedByteArray) -> void:
@@ -670,7 +684,10 @@ func _on_request(message: DotNetMessage) -> void:
 		G2GEvents.Ask.RESTART:
 			game.spawn_player(id)
 		G2GEvents.Ask.RTV:
-			game.rock_the_vote(id)
+			if rtv_fn.is_valid():
+				rtv_fn.call(id)
+			else:
+				game.rock_the_vote(id)
 		G2GEvents.Ask.CHECKPOINT:
 			_checkpoint(id, G2GEvents.read_int(reader))
 
@@ -731,6 +748,10 @@ func _on_event(message: DotNetMessage) -> void:
 		G2GEvents.Kind.RECORD, G2GEvents.Kind.NOTICE:
 			var text := G2GEvents.read_text(reader)
 			notice_received.emit(int(text["player_id"]), str(text["text"]))
+		G2GEvents.Kind.VOTE:
+			var voted := G2GEvents.read_vote(reader)
+			if bool(voted["ok"]):
+				vote_received.emit(voted)
 
 
 func _apply_hello(reader: DotNetReader) -> void:

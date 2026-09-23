@@ -318,6 +318,17 @@ func _build_netcode() -> DotResult:
 		if hud != null:
 			hud.notice(text)
 	)
+	# The map vote's cue and countdown. The ballot itself arrives as chat; this is what
+	# chat cannot carry.
+	bridge.vote_received.connect(func(info: Dictionary) -> void:
+		var seconds_left := int(info.get("seconds_left", 0))
+		if seconds_left > 0 and hud != null:
+			hud.notice("%s in %d…" % [
+				"Runoff" if bool(info.get("runoff", false)) else "Map vote", seconds_left
+			])
+		if presentation != null:
+			presentation.on_vote_cue(StringName(str(info.get("cue", ""))))
+	)
 
 	_sampler = DotFpsSampler.new(game.tunables)
 	DotFpsSampler.register_default_actions(_sampler)

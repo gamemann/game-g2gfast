@@ -95,6 +95,14 @@ var _fetching_content_maps: bool = false
 var authoritative: bool = true
 
 var maps: DotMapSession = null
+
+## Whether the map session's own clock running out changes to the rotation's next map.
+##
+## On for a server with no vote, where that clock is the only thing that ever ends a map.
+## Off once [code]G2GModule[/code] has a ballot: the vote's clock is then the one that
+## ends a map, and both acting was a map the players voted to extend being ended on the
+## old clock, by a rotation nobody asked.
+var rotation_ends_maps: bool = true
 var timers: DotTimerManager = null
 var boards: DotLeaderboardManager = null
 var world: Node3D = null
@@ -1023,6 +1031,10 @@ func _on_map_changed(map: DotMapDef, loaded: Node) -> void:
 
 
 func _on_map_over(_map: DotMapDef, reason: StringName) -> void:
+	if not rotation_ends_maps:
+		DotLog.debug(CHANNEL, "the map clock ran out; the vote decides", {"reason": String(reason)})
+		return
+
 	var next := maps.rotation.choose(players.size())
 	if next == null:
 		return

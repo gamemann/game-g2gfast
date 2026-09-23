@@ -38,10 +38,26 @@ const CHANNEL := "g2g.vote"
 ## from — [code]metadata: map_vote:[/code] in a delivered game's [code]game.yml[/code].
 const METADATA_KEY := "map_vote"
 
+## The vote's sound cues, as ids in [code]G2GPresentation.sound_catalogue()[/code]. One
+## copy: the rules name them and the catalogue defines them, both from here.
+const CUE_START := &"vote_start"
+const CUE_END := &"vote_end"
+const CUE_WARNING := &"vote_warning"
+const CUE_COUNT := &"vote_count"
+
+## What dot-vote's commands are called here. `vote` rather than dot-vote's `votefor`,
+## because `!vote 2` is what this game's chat has always answered.
+const COMMAND_NAMES := {"vote": "vote"}
+
 signal vote_opened(options: Array, seconds: float)
 signal vote_closed(result: DotVoteResult)
 signal rocked(voter: StringName, votes: int, needed: int)
 signal change_due(id: StringName, choice: DotVoteChoice)
+
+## Something for every client to hear or count: a [code]cue_*[/code] id, or a second of
+## the countdown before a ballot. One of the two is empty or zero. The module puts it on
+## the wire as [constant G2GEvents.Kind].VOTE.
+signal cue_due(cue: StringName, seconds_left: int, runoff: bool)
 
 @export_group("Wiring")
 
@@ -81,6 +97,7 @@ var game: G2GGame = null
 
 var director: DotVoteDirector = null
 var source: DotVoteMapSource = null
+var commands: DotVoteCommands = null
 
 var announce_fn: Callable = Callable()
 var is_admin_fn: Callable = Callable()
@@ -153,6 +170,17 @@ func setup() -> DotResult:
 	director.change_due.connect(
 		func(id: StringName, choice: DotVoteChoice) -> void:
 			change_due.emit(id, choice)
+	)
+
+	# Two signals, two messages: dot-vote emits a countdown second and that second's cue
+	# separately, and merging them here would be this file deciding which cue belongs to
+	# which second.
+	director.cue.connect(
+		func(id: StringName) -> void: cue_due.emit(id, 0, false)
+	)
+	director.countdown_tick.connect(
+		func(seconds_left: int, runoff: bool) -> void:
+			cue_due.emit(&"", seconds_left, runoff)
 	)
 
 	# Whatever the server booted on, so the clock starts and the history has an entry.
@@ -232,6 +260,16 @@ func _rules() -> DotVoteRules:
 	# not leave nothing to offer. dot-vote applies it; naming it here is what makes it
 	# a decision rather than a default nobody read.
 	rules.cooldown_max_fraction = 0.5
+
+	# The ids G2GPresentation's catalogue plays. dot-vote ships every cue empty and names
+	# no audio class; this game has a catalogue, so it has something to name. No
+	# countdown before the ballot: a runner is not in a fight, and a ballot that waits ten
+	# seconds is ten seconds off a two-minute lead for nothing.
+	rules.cue_vote_start = String(CUE_START)
+	rules.cue_vote_end = String(CUE_END)
+	rules.cue_warning = String(CUE_WARNING)
+	rules.cue_runoff_warning = String(CUE_WARNING)
+	rules.cue_countdown = String(CUE_COUNT)
 
 	return rules
 
@@ -314,6 +352,26 @@ func next_map() -> String:
 
 	var pending := director.pending_id()
 	return String(pending) if pending != &"" else String(director.next_in_rotation())
+
+
+## dot-vote's commands, on [param host] — the module, so they go when it does.
+##
+## [b]The only vote commands here, and that is the point.[/b] This game registered its
+## own `rtv`, `nominate`, `nextmap` and `timeleft`, answered `!rtv` and `!vote` again in
+## the chat handler, and had none of dot-vote's operator commands — `setnextmap`,
+## `nominate_addmap`, `forcertv`, `votereload`. Worse, its console `rtv` went to the map
+## session's own time limit, not to this director at all, so `rtv` typed at the console
+## and `!rtv` typed in chat were two different votes. Voters are `u<userid>`, which is
+## dot-vote's default and this game's player id.
+func install_commands(host: Object) -> DotResult:
+	if director == null:
+		return DotResult.fail(DotError.CODE_STATE, "There is no vote to command.")
+
+	commands = DotVoteCommands.new()
+	commands.director = director
+	commands.names = COMMAND_NAMES
+
+	return commands.bind(host)
 
 
 func describe_lines() -> PackedStringArray:

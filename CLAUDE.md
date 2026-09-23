@@ -471,9 +471,9 @@ work either way; where it is drawn is the half a game is supposed to decide.
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 71 checks
-godot --headless --path . res://examples/headless_net.tscn   # 90 checks
-godot --headless --path . res://examples/dedicated.tscn      # 145 checks
+godot --headless --path . res://examples/headless_presentation.tscn  # 74 checks
+godot --headless --path . res://examples/headless_net.tscn   # 93 checks
+godot --headless --path . res://examples/dedicated.tscn      # 151 checks
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
@@ -1490,6 +1490,18 @@ Importing them found three faults in how a `trigger_teleport` becomes a RESPAWN 
 `headless_imported` asks both halves of it on every map now: *no spawn, stage or door lands inside a pit on its own track*, and *a door keeps the run*, driven through the real handler. The first failed on the old imports of `surf_interference` (its main spawn) and `surf_greensway`, and the second on three maps with the fix reverted. Three arrivals are still inside the mapper's OWN trigger rather than inside anything this importer added, and `ARRIVES_IN_PIT` lists them — asserted both ways, like `NOT_COURSES`.
 
 The size check assumed every map is more than 1,000 units along X. `bhop_grove` is one corridor 704 units across and 32,192 long; it asks the longest side now.
+
+## One rock-the-vote, not three
+
+This game had three: the console's `rtv` and `g2g_rtv` went to the map session's own `DotMapTimeLimit`, `!rtv` in chat was claimed by the module and went to the ballot, and a client's `Ask.RTV` went to the map session again. A player who typed `rtv` at the console and one who typed `!rtv` in chat were voting in two different votes. And none of dot-vote's operator commands — `setnextmap`, `nominate_addmap`, `forcertv`, `votereload` — existed here; the module's own `nominate`, `nextmap` and `timeleft` stood in for three of the players' ones.
+
+`G2GVote.install_commands` puts `DotVoteCommands` on the module, `vote` keeping its name so `!vote 2` still works. The chat handler claims `!rtv` and `!vote` only when the vote failed to load, so an unclaimed line reaches the console's — one path. `g2g_rtv` is the ballot's rock-the-vote too, and `G2GNetBridge.rtv_fn` sends a client's request there. Without a vote, `rtv` is registered as the map session's tally, which is then the only rock-the-vote there is.
+
+**The map session's clock no longer ends a map when there is a vote.** It ran beside the vote's at the same length, and on expiry changed to the rotation's next map — so a map the players had voted to *extend* was ended on the old clock anyway. `G2GGame.rotation_ends_maps` is off once the module has a ballot; the session's clock still counts, for the HUD, and decides nothing.
+
+**The vote's cues reach the client.** `G2GVote.cue_due` carries each `cue` and countdown second, the module broadcasts it as `G2GEvents.Kind.VOTE`, and the client plays it through `G2GPresentation`'s catalogue — on voices the run does not use, and below the timer's four in priority, because a ballot opening must never cost a runner the sound of their own split. No countdown before a ballot here: a runner is not in a fight. `dedicated` asserts the reply to `!rtv` and `g2g_rtv` is the ballot's (its delay) rather than the session's (a tally), and `headless_net` sends a cue, a second and an RTV request across the link.
+
+A timer server has no leading score, so nothing here calls `note_score`; `trigger: score_limit` is a setting this game has no use for.
 
 ## No message preloads itself
 

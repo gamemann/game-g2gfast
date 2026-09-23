@@ -197,7 +197,6 @@ func _module_load() -> DotResult:
 	add_command("top", _cmd_top, "Fastest times here (alias)", "").with_chat()
 	add_command("style", _cmd_style, "List styles, or switch (alias)", "").with_chat()
 	add_command("track", _cmd_track, "main, or bonus <n> (alias)", "").with_chat()
-	add_command("rtv", _cmd_rtv, "Rock the vote (alias)", "").with_chat()
 	add_command("g2g_zone", _cmd_zone, "Draw a zone: g2g_zone <kind> [track] [number]", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_mark", _cmd_zone_mark, "Mark a corner where you stand", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_save", _cmd_zone_save, "Write the zones to disk", DotAdminFlags.CHANGEMAP)
@@ -377,17 +376,46 @@ func _build_vote() -> DotResult:
 		vote = null
 		return ready
 
+	# The cues and the countdown, to every ready client. Chat carries what the ballot
+	# says; a sound and a number a HUD counts are what it cannot carry.
+	vote.cue_due.connect(
+		func(cue: StringName, seconds_left: int, runoff: bool) -> void:
+			if bridge != null:
+				bridge.broadcast_vote(cue, seconds_left, runoff)
+	)
+
+	# A client's RTV request is this vote's rock-the-vote, not the map session's. See
+	# `G2GNetBridge.rtv_fn`.
+	if bridge != null:
+		bridge.rtv_fn = func(id: StringName) -> void:
+			var res := vote.rock_the_vote(id)
+			if not res.ok and services != null:
+				var peer := bridge.peer_for_player(G2GCombat.userid_of(id))
+				if peer > 0:
+					services.notice(peer, res.error.message)
+
+	# [b]One clock that ends a map, and it is the vote's.[/b] The map session's own time
+	# limit ran beside it at the same length and, on expiry, changed to the rotation's
+	# next map — so a map the players voted to EXTEND was ended on the old clock anyway,
+	# by a rotation nobody asked. The session's clock still counts for the HUD; with a
+	# vote it no longer decides anything.
+	game.rotation_ends_maps = false
+
 	return DotResult.success(vote)
 
 
 ## The commands that only exist once the optional halves loaded.
 func _add_server_commands() -> void:
 	if vote != null:
-		add_command("nominate", _cmd_nominate,
-			"Nominate a map: !nominate <id>", "").with_chat()
-		add_command("nextmap", _cmd_nextmap, "What plays next", "").with_chat()
-		add_command("timeleft", _cmd_timeleft, "How long this map has", "").with_chat()
+		# dot-vote's own: `rtv`, `nominate`, `vote`, `nextmap`, `timeleft` and the
+		# operator's four, on the one director. See `G2GVote.install_commands`.
+		var commanded := vote.install_commands(self)
+		DotLog.result(CHANNEL, "the vote's commands", commanded)
 		add_command("g2g_vote", _cmd_open_vote, "Open a vote now", DotAdminFlags.VOTE)
+	else:
+		# No ballot, so `rtv` is the map session's own tally — the one rock-the-vote this
+		# server has, under the name players type.
+		add_command("rtv", _cmd_rtv, "Rock the vote (alias)", "").with_chat()
 
 	if services != null:
 		add_command("g2g_services", _cmd_services,
@@ -415,23 +443,6 @@ func _add_server_commands() -> void:
 		add_command("g2g_nudge", _cmd_nudge,
 			"Grab the block you are looking at, or drop the one you hold",
 			DotAdminFlags.CHANGEMAP)
-
-
-func _cmd_nominate(ctx: DotCmdContext) -> void:
-	if ctx.args.is_empty():
-		ctx.reply("Usage: !nominate <map>")
-		return
-
-	var res := vote.nominate(_caller_id(ctx), StringName(ctx.args[0]))
-	ctx.reply("Nominated." if res.ok else res.error.message)
-
-
-func _cmd_nextmap(ctx: DotCmdContext) -> void:
-	ctx.reply("Next: %s" % vote.next_map())
-
-
-func _cmd_timeleft(ctx: DotCmdContext) -> void:
-	ctx.reply(vote.timeleft_line())
 
 
 func _cmd_open_vote(ctx: DotCmdContext) -> void:
@@ -571,15 +582,11 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 
 	var voter := _player_id(session)
 
+	# [b]`!rtv` and `!vote` are not answered here.[/b] They are dot-vote's console
+	# commands, registered `.with_chat()`, and an unclaimed `!` line carries on to the
+	# console — one path. This handler answered both itself once, beside a console `rtv`
+	# that went to the map session's time limit instead: two votes under one name.
 	match command:
-		"rtv":
-			if vote == null:
-				services.notice(peer, "There is no vote on this server.")
-			else:
-				var res := vote.rock_the_vote(voter)
-				services.notice(peer, "Rocked the vote." if res.ok else res.error.message)
-
-			services.claim_command()
 		"spec", "spectate":
 			if game.spectate == null:
 				services.notice(peer, "Spectating is not available here.")
@@ -622,15 +629,10 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 
 			services.claim_command()
 		"vote":
-			if args.is_empty():
-				services.notice(peer, "Usage: !vote <map>")
-			elif vote == null or not vote.is_voting():
-				services.notice(peer, "No vote is open.")
-			else:
-				var res := vote.cast_one(voter, StringName(args[0]))
-				services.notice(peer, "Counted." if res.ok else res.error.message)
-
-			services.claim_command()
+			# Only without a vote, so a player gets "no vote" rather than silence.
+			if vote == null:
+				services.notice(peer, "There is no vote on this server.")
+				services.claim_command()
 		_:
 			# Left for dot-server's own chat commands, which this game registers with
 			# `.with_chat()` — `!r`, `!wr`, `!top`, `!style`, `!track`.
@@ -1013,6 +1015,11 @@ func _cmd_rtv(ctx: DotCmdContext) -> void:
 	var id := _caller_id(ctx)
 	if id == &"":
 		ctx.reply("Only a player can rock the vote.")
+		return
+	# `g2g_rtv` with a ballot is the ballot's rock-the-vote, the same one `rtv` is.
+	if vote != null:
+		var res := vote.rock_the_vote(id)
+		ctx.reply("Rocked the vote." if res.ok else res.error.message)
 		return
 	if game.rock_the_vote(id):
 		ctx.reply("The vote passed.")

@@ -2,6 +2,7 @@ extends Node
 
 const G2GParty := preload("../game/g2g_party.gd")
 const G2GPresentation := preload("../game/g2g_presentation.gd")
+const G2GVote := preload("../game/g2g_vote.gd")
 const G2GRig := preload("../game/g2g_rig.gd")
 const G2GCamera := preload("../game/g2g_camera.gd")
 
@@ -17,7 +18,7 @@ const G2GCamera := preload("../game/g2g_camera.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 71
+const CHECKS := 74
 
 var _passed := 0
 var _failed := 0
@@ -47,6 +48,7 @@ func _run() -> void:
 	await _test_a_runner_does_not_see_their_own_head()
 
 	_test_every_sound_has_a_voice()
+	_test_the_vote_is_heard()
 
 	print("")
 	_check(
@@ -590,6 +592,40 @@ func _test_every_sound_has_a_voice() -> void:
 		"a jump and a landing are the rhythm a runner keeps time by, and two that sounded alike would be worse than silence"
 	)
 
+	_done()
+
+
+func _test_the_vote_is_heard() -> void:
+	_section("The map vote is heard, and under the run")
+
+	var p := _make()
+	var sink := p.audio.sink as DotAudioSinkNull
+
+	# G2GVote's constants are the one copy: its rules name them and this catalogue
+	# defines them, so a cue the server sends and the client lacks cannot be a typo.
+	var named: Array[StringName] = [
+		G2GVote.CUE_START, G2GVote.CUE_END, G2GVote.CUE_WARNING, G2GVote.CUE_COUNT
+	]
+	var missing: Array[String] = []
+	for id in named:
+		var d := p.audio.catalogue.find(id)
+		if d == null or d.priority >= 100:
+			missing.append(String(id))
+	_check(
+		missing.is_empty(),
+		"every vote cue is in the catalogue, below the timer's four (%s)" % str(missing)
+	)
+
+	sink.forget()
+	_check(p.on_vote_cue(G2GVote.CUE_START) != 0, "a ballot opening plays")
+	p.on_vote_cue(&"")
+	p.on_vote_cue(&"not_in_this_build")
+	_check(
+		sink.count_of(G2GVote.CUE_START) == 1 and sink.count_of(&"not_in_this_build") == 0,
+		"once, and an empty or unknown cue is silence"
+	)
+
+	p.queue_free()
 	_done()
 
 

@@ -29,7 +29,7 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 90
+const CHECKS := 93
 
 var _passed := 0
 var _failed := 0
@@ -72,6 +72,7 @@ func _run() -> void:
 		await _test_map_change()
 		_test_ghost()
 		_test_voice_wire()
+		_test_vote_wire()
 		_test_leave()
 	_report()
 
@@ -673,6 +674,48 @@ func _test_leave() -> void:
 ## putting it through would mean a message type per codec — or a schema that changes
 ## when the codec does, and the schema hash is what both ends check to agree they are
 ## speaking the same game. So it rides its own channel and its own two calls.
+## The map vote's cue and countdown, server to client, and a client's RTV request back.
+##
+## Before this there was no message for either direction's vote traffic worth the name:
+## the ballot went out as chat, a cue went nowhere, and an RTV request off the wire went
+## to the map session's tally rather than to the ballot.
+func _test_vote_wire() -> void:
+	_section("the map vote over the link")
+
+	var round_trip := G2GEvents.read_vote(DotNetReader.new(G2GEvents.write_vote("vote_count", 7, true)))
+	_check(
+		bool(round_trip["ok"]) and String(round_trip["cue"]) == "vote_count"
+			and int(round_trip["seconds_left"]) == 7 and bool(round_trip["runoff"]),
+		"a VOTE round-trips, with the cue, the second and the runoff flag"
+	)
+
+	var arrived: Array[Dictionary] = []
+	var on_vote := func(info: Dictionary) -> void: arrived.append(info)
+	_client_bridge.vote_received.connect(on_vote)
+	_server_bridge.broadcast_vote(&"vote_start", 0, false)
+	_server_bridge.broadcast_vote(&"", 3, false)
+	_flush()
+	_client_bridge.vote_received.disconnect(on_vote)
+
+	_check(
+		arrived.size() == 2
+			and String(arrived[0]["cue"]) == "vote_start"
+			and int(arrived[1]["seconds_left"]) == 3,
+		"a cue and a countdown second reach a ready client, in order (%s)" % str(arrived)
+	)
+
+	var rocked: Array[StringName] = []
+	_server_bridge.rtv_fn = func(id: StringName) -> void: rocked.append(id)
+	_client_bridge.ask_rtv()
+	_flush()
+	_server_bridge.rtv_fn = Callable()
+
+	_check(
+		rocked.size() == 1 and String(rocked[0]).begins_with("u"),
+		"and a client's RTV request reaches the server's rtv_fn, as a player id (%s)" % str(rocked)
+	)
+
+
 func _test_voice_wire() -> void:
 	_section("voice over the link")
 

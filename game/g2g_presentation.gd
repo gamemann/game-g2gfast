@@ -1,6 +1,7 @@
 extends Node
 
 const G2GPaths := preload("g2g_paths.gd")
+const G2GVote := preload("g2g_vote.gd")
 
 ## Settings, audio, effects and a console, on a client whose whole output is a number.
 ##
@@ -266,6 +267,20 @@ static func sound_catalogue() -> DotAudioCatalogue:
 		d.max_concurrent = 1
 		c.add(d)
 
+	# The map vote's cues. Flat, on the interface bus: a ballot is about the server, not
+	# about a place on the course. The ids are G2GVote's, which is also what its rules
+	# name — one copy.
+	for vote_id in [G2GVote.CUE_START, G2GVote.CUE_END, G2GVote.CUE_WARNING, G2GVote.CUE_COUNT]:
+		var cue := DotAudioDef.new()
+		cue.id = vote_id
+		cue.path = "%s/%s.ogg" % [SOUND_DIR, String(vote_id)]
+		cue.bus = &"UI"
+		cue.max_concurrent = 1
+		# Under the timer's four. A vote opening must never cost somebody the sound of
+		# their own split.
+		cue.priority = 60
+		c.add(cue)
+
 	var teleport := DotAudioDef.new()
 	teleport.id = &"teleport"
 	teleport.path = "%s/teleport.ogg" % SOUND_DIR
@@ -296,6 +311,14 @@ static func sound_recipes() -> Dictionary:
 		&"timer_finish": DotAudioSynth.Voice.PICKUP,
 		&"personal_best": DotAudioSynth.Voice.SPAWN,
 		&"teleport": DotAudioSynth.Voice.DENY,
+		# Only voices the run does not already use. Every one above is part of the input
+		# loop, and a ballot opening that sounded like a split — or a countdown tick that
+		# sounded like a jump — would be the vote talking over the rhythm this table exists
+		# to keep clear.
+		G2GVote.CUE_START: DotAudioSynth.Voice.SHOT_TIGHT,
+		G2GVote.CUE_END: DotAudioSynth.Voice.DIE,
+		G2GVote.CUE_WARNING: DotAudioSynth.Voice.BOOM,
+		G2GVote.CUE_COUNT: DotAudioSynth.Voice.SHOT,
 	}
 
 
@@ -661,6 +684,16 @@ func on_teleported() -> void:
 	audio.play(&"teleport")
 	# Everything drawn about where you were is about somewhere you are not.
 	fx.clear()
+
+
+## A map-vote cue from the server. Empty is silence, and an id this catalogue does not
+## have is dot-audio's silent refusal: a server with a sound set this client was not built
+## with should cost a noise, not a log line per second.
+func on_vote_cue(id: StringName) -> int:
+	if id == &"" or audio == null:
+		return 0
+
+	return audio.play(id)
 
 
 func on_map_changed() -> void:
