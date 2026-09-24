@@ -1,6 +1,10 @@
 extends Node
 
-const G2GBrowser := preload("g2g_browser.gd")
+# [b]No `const G2GBrowser := preload("g2g_browser.gd")` here, on purpose.[/b] It was
+# there so `lines()` could spell its own statics `G2GBrowser.game_field`, and a script
+# that preloads itself holds a reference to itself that nothing ever drops: `dedicated`
+# exited with this file and the fifteen objects it keeps alive in the ObjectDB leak
+# (411 -> 396, 2026-09-24). A static is reachable from its own script unqualified.
 
 ## The server browser: dot-browser's client half, for a records community.
 ##
@@ -159,11 +163,11 @@ func lines() -> PackedStringArray:
 	for entry in listing():
 		out.append("%-24s %-20s %2d/%-2d %4dms%s" % [
 			entry.name.substr(0, 24),
-			G2GBrowser.game_field(entry, "map", entry.map).substr(0, 20),
+			game_field(entry, "map", entry.map).substr(0, 20),
 			entry.players,
 			entry.max_players,
 			entry.ping_ms,
-			G2GBrowser.record_line(entry),
+			record_line(entry),
 		])
 
 	if out.is_empty():

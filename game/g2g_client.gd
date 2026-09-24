@@ -226,8 +226,29 @@ func _watch(id: StringName) -> void:
 
 ## The player we are waiting for has been created. Fires for every player; ours is one.
 func _on_player_added(added: G2GPlayer) -> void:
+	_hear_beacon(added)
+
 	if player == null and added != null and added.player_id == _watch_id:
 		_adopt(added)
+
+
+## Plays a beacon's ping wherever its ripple goes out, for [param body] — every player,
+## this client's own included: somebody who has been beaconed should hear it too.
+##
+## Every player reaches this, because every player on a client — offline, the local one
+## and a ghost; online, everybody the server sends — is made by `G2GGame.add_player`,
+## which emits `player_added` after this client has connected to it. Guarded anyway,
+## because a second connection would be every ping played twice.
+func _hear_beacon(body: G2GPlayer) -> void:
+	if body == null or body.beacon_pulsed.is_connected(_on_beacon_pulsed):
+		return
+
+	body.beacon_pulsed.connect(_on_beacon_pulsed)
+
+
+func _on_beacon_pulsed(at: Vector3) -> void:
+	if presentation != null:
+		var _voice := presentation.on_beacon(at)
 
 
 func _adopt(candidate: G2GPlayer) -> void:

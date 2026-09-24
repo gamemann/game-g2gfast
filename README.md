@@ -102,6 +102,10 @@ for pair in dot_core:dot-core dot_player_controller:dot-player-controller dot_ti
 done
 ```
 
+## The admin tools
+
+dot-moderation's live tools are on the server console and in chat (`!noclip`, `!freeze`, `!slay`, …), with one rule a timer server adds: no admin tool can help a run, so noclip abandons the run it interrupts and a noclip, speed or gravity step taints any run made under it. `blind <player> [on|off|seconds]` blacks out that player's own screen and nobody else's; `beacon <player> [on|off]` puts a pulsing ring, a column through walls and a positional ping on them for everybody. Neither taints a run — both can only cost a runner time — and both survive a respawn. `burn` is refused, because there is no fire on a course. `tools/screenshot_hud.sh` renders a beacon and a blind.
+
 ## Configuring the map vote
 
 The vote for the next map is [dot-vote](https://github.com/modcommunity/dot-vote), and the rules in `game/g2g_vote.gd` are only this game's defaults. A server owner overrides any of dot-vote's settings without touching code, in `user://cfg/g2gfast_vote.json`, then `DOT_VOTE_*`, then `--vote-*` — later wins — or, on a TMC server, under `metadata: map_vote:` in the game's `game.yml`. A file that does not validate is refused whole and the defaults stand, with the reason in the log.
@@ -120,9 +124,9 @@ The end-of-map vote and the option to extend the current map:
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
-godot --headless --path . res://examples/headless_net.tscn   # 103 checks, server + client in one process
-godot --headless --path . res://examples/dedicated.tscn      # 155 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 74 checks
+godot --headless --path . res://examples/headless_net.tscn   # 113 checks, server + client in one process
+godot --headless --path . res://examples/dedicated.tscn      # 168 checks over 15 sections
+godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_imported.tscn   # every imported map
 ```
 

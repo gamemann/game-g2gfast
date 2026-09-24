@@ -5,6 +5,11 @@ const G2GPresentation := preload("../game/g2g_presentation.gd")
 const G2GVote := preload("../game/g2g_vote.gd")
 const G2GRig := preload("../game/g2g_rig.gd")
 const G2GCamera := preload("../game/g2g_camera.gd")
+const G2GBeacon := preload("../game/g2g_beacon.gd")
+const G2GConfig := preload("../game/g2g_config.gd")
+const G2GGame := preload("../game/g2g_game.gd")
+const G2GHud := preload("../game/g2g_hud.gd")
+const G2GPlayer := preload("../game/g2g_player.gd")
 
 ## Settings, audio, effects, the console and the practice session.
 ##
@@ -18,7 +23,7 @@ const G2GCamera := preload("../game/g2g_camera.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 74
+const CHECKS := 85
 
 var _passed := 0
 var _failed := 0
@@ -49,6 +54,7 @@ func _run() -> void:
 
 	_test_every_sound_has_a_voice()
 	_test_the_vote_is_heard()
+	await _test_blind_and_beacon()
 
 	print("")
 	_check(
@@ -626,6 +632,107 @@ func _test_the_vote_is_heard() -> void:
 	)
 
 	p.queue_free()
+	_done()
+
+
+## What an administrator's blind and beacon look and sound like on a client: the HUD's
+## overlay and the marker, driven off the two flags exactly as a snapshot leaves them.
+## Who is TOLD is `headless_net`'s; what the server decides is `dedicated`'s; what it looks
+## like to a person is `tools/screenshot_hud.sh`'s `hud_beacon` and `hud_blind`.
+func _test_blind_and_beacon() -> void:
+	_section("A blind is the owner's screen, and a beacon is everybody's")
+
+	var config := G2GConfig.new()
+	config.records_directory = ""
+	config.initial_map = &"bhop_g2g_intro"
+	var game := G2GGame.new()
+	game.name = "BeaconGame"
+	game.config = config
+	add_child(game)
+	for _i in range(120):
+		await get_tree().process_frame
+		if game.maps != null and game.maps.current != null:
+			break
+
+	var ada: G2GPlayer = game.add_player(&"u1", "Ada")
+	var bea: G2GPlayer = game.add_player(&"u2", "Bea")
+
+	var hud := G2GHud.new()
+	add_child(hud)
+	hud.bind(game, &"u1")
+
+	_check(
+		hud.blind_overlay != null and hud.blind_overlay.get_index() == 0,
+		"the blind is the HUD's first child, so every widget draws over it"
+	)
+
+	ada.blinded = true
+	hud.present_blind(G2GHud.BLIND_FADE_SEC * 0.5)
+	var halfway := hud.blind_overlay.modulate.a
+	hud.present_blind(G2GHud.BLIND_FADE_SEC)
+	_check(
+		halfway > 0.2 and halfway < 0.8 and is_equal_approx(hud.blind_overlay.modulate.a, 1.0),
+		"a blind fades down over a quarter of a second rather than cutting (%.2f halfway)" % halfway
+	)
+
+	# Measured against the VIEWPORT, not the HUD. At 64 x 64 headless this cannot say
+	# anything about a real window's layout; it can say the rect is the viewport's and not
+	# the HUD's own or zero, which is the bug game-arena's first rendered frame showed.
+	var covered := hud.blind_overlay.get_global_rect()
+	var viewport := hud.get_viewport_rect()
+	_check(
+		covered.encloses(viewport) and viewport.size.x > 0.0,
+		"and it covers the whole viewport", "%s against %s" % [covered, viewport]
+	)
+
+	# The HUD follows Ada; Bea's blind is not this screen's business.
+	ada.blinded = false
+	bea.blinded = true
+	hud.present_blind(1.0)
+	_check(not hud.blind_overlay.visible, "somebody else's blind leaves this screen alone, and a lifted one lifts")
+
+	# The beacon: built from the flag, pinging on a period rather than on a frame.
+	var pings: Array[Vector3] = []
+	bea.beacon_pulsed.connect(func(at: Vector3) -> void: pings.append(at))
+	bea.beacon = true
+	for _i in range(120):
+		bea.present(1.0 / 60.0)
+	_check(bea.beacon_marker != null, "a beaconed player grows a marker")
+	_check(
+		pings.size() == 2 or pings.size() == 3,
+		"which pings once as it comes on and once a second after, not once a frame (%d in two seconds)" % pings.size()
+	)
+	_check(bea.beacon_marker.column_shown(), "with the column through walls, on somebody else")
+
+	var own := game.add_player(&"u3", "Cy", true)
+	own.sampler = null
+	own.beacon = true
+	own.present(1.0 / 60.0)
+	_check(
+		own.beacon_marker != null and not own.beacon_marker.column_shown(),
+		"and without it on your own, where the camera would be inside it"
+	)
+
+	bea.beacon = false
+	bea.present(1.0 / 60.0)
+	_check(bea.beacon_marker == null, "turning it off takes the marker away")
+
+	var p := _make()
+	var sink := p.audio.sink as DotAudioSinkNull
+	var def := p.audio.catalogue.find(G2GPresentation.BEACON_SOUND)
+	_check(
+		def != null and def.kind == DotAudioDef.Kind.POSITIONAL_3D and def.priority < 50,
+		"the ping is positional, and below every sound the run is made of"
+	)
+	sink.forget()
+	_check(
+		p.on_beacon(Vector3(3.0, 0.0, 4.0)) != 0 and sink.count_of(G2GPresentation.BEACON_SOUND) == 1,
+		"and a ripple plays it"
+	)
+
+	p.queue_free()
+	hud.queue_free()
+	game.queue_free()
 	_done()
 
 

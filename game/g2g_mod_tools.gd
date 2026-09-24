@@ -14,6 +14,14 @@ const G2GPlayer := preload("g2g_player.gd")
 ## Health exists only while the deathmatch is on (`sv_deathmatch`, `G2GCombat`), so god,
 ## buddha, hp, slay, give and strip answer "not on this server" when it is off rather than
 ## being absent — whether they mean anything is a cvar, not a build.
+##
+## Blind and beacon are the two that are about a SCREEN rather than a body, and each is one
+## flag on [G2GPlayer] that `G2GPlayerNet` replicates — the blind to its owner alone, the
+## beacon to everybody — and that the client draws: `G2GHud` blacks the owner's screen out,
+## `G2GBeacon` rings the runner on every screen and pings. Neither taints a run: a blind
+## can only cost a runner time, like a freeze, and a beacon changes nothing they can feel.
+## Both outlive a respawn without anything re-applying them, because a respawn here is a
+## teleport of the same player rather than a new body.
 
 ## Ids are the session userid as a string; this game's player key is `u<userid>`.
 static func key_of(id: StringName) -> StringName:
@@ -97,14 +105,29 @@ static func handlers(game: G2GGame) -> Dictionary:
 				return _no_health()
 			arsenal.clear()
 			return DotResult.success(null),
+
+		DotModTools.ACTION_BLIND: func(id: StringName, args: Dictionary) -> DotResult:
+			var p := _player(game, id)
+			if p == null:
+				return _absent(id)
+			# The screen and nothing else. A blinded runner still moves and their timer
+			# still counts; an admin who wants them to stop as well has freeze, and one
+			# verb that did both would be a verb nobody could use for only the first.
+			p.blinded = bool(args["on"])
+			return DotResult.success(p.blinded),
+
+		DotModTools.ACTION_BEACON: func(id: StringName, args: Dictionary) -> DotResult:
+			var p := _player(game, id)
+			if p == null:
+				return _absent(id)
+			p.beacon = bool(args["on"])
+			return DotResult.success(p.beacon),
 	}
 
 
 static func unsupported() -> Dictionary:
 	return {
 		DotModTools.ACTION_BURN: "there is no fire on a course",
-		DotModTools.ACTION_BLIND: "the client draws no overlay a server could turn on",
-		DotModTools.ACTION_BEACON: "the client draws no marker a server could turn on",
 	}
 
 

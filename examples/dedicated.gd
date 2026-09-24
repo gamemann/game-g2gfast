@@ -20,9 +20,19 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## godot --headless --path . res://examples/dedicated.tscn
 ## [/codeblock]
 
+## Sections entered against sections that ran to their last line, and the total number of
+## checks — the second being the one the first cannot be. A runtime error inside a section
+## aborts that function; the section counter sees it, and the checks it never reached are
+## what the total sees when the section had already announced itself. See
+## docs/testing.md: this suite had neither until 2026-09-24.
+const SECTIONS := 15
+const CHECKS := 168
+
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 ## The app's URL segment on the website, which is this game's code name.
 ##
 ## Unique and lowercase because the site already made it so. Display only — a
@@ -55,13 +65,41 @@ func _run() -> void:
 		_test_vote()
 		_test_modes()
 		await _test_live_tools()
+		await _test_blind_and_beacon()
 		await _test_unload()
 		_test_no_message_preloads_itself()
 	print("")
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
+		_passed, _failed, _completed, _entered
+	])
 	for line in _failures:
 		print("  FAIL  %s" % line)
+
+	if _entered != SECTIONS or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, SECTIONS
+		])
+		get_tree().quit(1)
+		return
+
+	if _passed + _failed != CHECKS:
+		print("ERROR: %d checks ran, %d expected. A section aborted part-way." % [
+			_passed + _failed, CHECKS
+		])
+		get_tree().quit(1)
+		return
+
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+func _section(title: String) -> void:
+	_entered += 1
+	print("")
+	print(title)
+
+
+func _done() -> void:
+	_completed += 1
 
 
 func _check(ok: bool, what: String, detail: String = "") -> void:
@@ -91,7 +129,7 @@ func _said(lines: PackedStringArray, text: String) -> bool:
 
 
 func _boot() -> void:
-	print("booting")
+	_section("booting")
 	# server.cfg, the way an operator sets it. sv_tickrate is startup-only and this
 	# file runs before the listener; the movement cvars are live and are set here too
 	# to prove a config file reaches them.
@@ -167,10 +205,11 @@ func _boot() -> void:
 	_check(server.console.find_cvar("sv_airaccelerate") != null, "and sv_airaccelerate")
 	_check(server.console.find_cvar("sv_tickrate") != null and server.console.find_cvar("g2g_tickrate") == null,
 		"and does not duplicate sv_tickrate")
+	_done()
 
 
 func _test_cvars_reach_the_movement() -> void:
-	print("cvars reach the movement")
+	_section("cvars reach the movement")
 	game.add_player(&"u1", "One")
 	var player: G2GPlayer = game.players[&"u1"]
 
@@ -189,10 +228,11 @@ func _test_cvars_reach_the_movement() -> void:
 
 	_run_command("sv_gravity 800")
 	_run_command("sv_airaccelerate 1000")
+	_done()
 
 
 func _test_autobhop_live() -> void:
-	print("sv_autobunnyhopping, live")
+	_section("sv_autobunnyhopping, live")
 	var player: G2GPlayer = game.players[&"u1"]
 	player.sampler = null
 
@@ -244,10 +284,11 @@ func _test_autobhop_live() -> void:
 
 	var status := _run_command("g2g_status")
 	_check(_said(status, "autobhop     on"), "g2g_status says so", str(status))
+	_done()
 
 
 func _test_thirdperson_cvar() -> void:
-	print("sv_allow_thirdperson")
+	_section("sv_allow_thirdperson")
 	var player: G2GPlayer = game.add_player(&"u2", "Two", true)
 	player.sampler = null
 	_check(player.camera.toggle(), "third person is allowed by default")
@@ -257,10 +298,11 @@ func _test_thirdperson_cvar() -> void:
 	_check(not player.camera.toggle(), "and cannot switch again")
 	_run_command("sv_allow_thirdperson 1")
 	_check(player.camera.toggle(), "until it is allowed again")
+	_done()
 
 
 func _test_commands() -> void:
-	print("commands")
+	_section("commands")
 	_check(_said(_run_command("g2g_map"), "bhop_g2g_intro"), "g2g_map lists the maps")
 	_check(_said(_run_command("g2g_style"), "sideways"), "g2g_style lists the styles")
 	_check(_said(_run_command("g2g_top"), "nobody"), "g2g_top answers with no records")
@@ -274,10 +316,11 @@ func _test_commands() -> void:
 	_check(_said(_run_command("g2g_zone_undo"), "removed"), "and undoes it")
 	var zone_cmd: DotConCommand = server.console.find_command("g2g_zone")
 	_check(zone_cmd != null and zone_cmd.permission == DotAdminFlags.CHANGEMAP, "zone drawing needs changemap")
+	_done()
 
 
 func _test_replay_bot_cvar() -> void:
-	print("the replay bot, from the console")
+	_section("the replay bot, from the console")
 	var replay := DotTimerReplay.new()
 	replay.map_id = game.maps.current.id
 	replay.tick_rate = game.tick_rate
@@ -302,10 +345,11 @@ func _test_replay_bot_cvar() -> void:
 	_run_command("sv_replay_bot 1")
 	_check(game.ghost() != null, "and 1 puts it back")
 	_check(_said(_run_command("g2g_ghost"), "Ghost"), "g2g_ghost names whose record it is running")
+	_done()
 
 
 func _test_query_and_chat() -> void:
-	print("what a server browser and a chat see")
+	_section("what a server browser and a chat see")
 	# The host's own reference, not server.query_source: dot-server holds that one
 	# as a plain Object because it must not name this addon, so nothing typed can
 	# be inferred from it. This project links dot-server-query, so it can.
@@ -369,6 +413,7 @@ func _test_query_and_chat() -> void:
 		server.console.find_command("mapinfo") != null,
 		"`mapinfo` answers what nextmap and timeleft would, without taking dot-vote's names"
 	)
+	_done()
 
 
 # --- The rest of the server -------------------------------------------------
@@ -381,8 +426,7 @@ func _test_query_and_chat() -> void:
 ## look up the registry name it publishes, because a router that started first would
 ## find nothing, warn once, and enforce no gag for the life of the server.
 func _test_services() -> void:
-	print("")
-	print("chat, voice and moderation")
+	_section("chat, voice and moderation")
 
 	var module := server.modules.get_module("g2gfast")
 	_check(module != null, "the module is there")
@@ -479,6 +523,7 @@ func _test_services() -> void:
 		identity.avatars != null and identity.avatars.schema.id == G2GAvatars.SCHEMA_ID,
 		"and the avatar manager validates against the game's own schema"
 	)
+	_done()
 
 
 ## dot-vote over this server's map catalogue.
@@ -488,8 +533,7 @@ func _test_services() -> void:
 ## and a tally. What a records community runs is a ballot — nominations, seconding, an
 ## instant runoff, a cooldown, an extend option — and that is dot-vote.
 func _test_vote() -> void:
-	print("")
-	print("the vote")
+	_section("the vote")
 
 	var module := server.modules.get_module("g2gfast")
 	var vote: G2GVote = module.get("vote") if module != null else null
@@ -609,6 +653,7 @@ func _test_vote() -> void:
 	)
 
 	_test_status_clock(vote)
+	_done()
 
 
 ## `g2g_status`'s "time left" is the vote's clock, and an extend moves it.
@@ -688,8 +733,7 @@ func _status_seconds(lines: PackedStringArray) -> int:
 ## which is where the interesting failures are — and it would have to be torn down
 ## again on the way back.
 func _test_modes() -> void:
-	print("")
-	print("deathmatch, hunters and blocks")
+	_section("deathmatch, hunters and blocks")
 
 	_check(game.combat != null, "the deathmatch layer is built")
 	_check(game.hunters != null, "the hunters are built")
@@ -918,6 +962,7 @@ func _test_modes() -> void:
 			not game.props.taints_records(),
 			"and records are rankable again once the course is clear"
 		)
+	_done()
 
 
 ## dot-browser asking a real [DotServer] — which nothing in this family had done.
@@ -931,8 +976,7 @@ func _test_modes() -> void:
 ## modes were added — whether deathmatch and the hunters are on. A player filtering a
 ## list for "surf DM" is filtering for exactly that.
 func _test_browser() -> void:
-	print("")
-	print("a browser asking this server")
+	_section("a browser asking this server")
 
 	var servers := G2GBrowser.new()
 	servers.name = "Servers"
@@ -1028,6 +1072,7 @@ func _test_browser() -> void:
 
 	servers.queue_free()
 	remove_child(servers)
+	_done()
 
 
 ## The moderator's live tools on a timer server, where the product is a time.
@@ -1038,7 +1083,7 @@ func _test_browser() -> void:
 ## refused a record, and one begun after is clean. Runs are begun by hand because this
 ## suite's map is the intro course and walking out of its start is not what is under test.
 func _test_live_tools() -> void:
-	print("the moderator's live tools, and the timer")
+	_section("the moderator's live tools, and the timer")
 
 	_check(
 		server.console.find_command("noclip") != null and server.console.find_command("slay") != null,
@@ -1091,6 +1136,95 @@ func _test_live_tools() -> void:
 	player.timer.run_stopped.disconnect(on_stop)
 	player.timer.stop()
 	var _released := server.release_session(session.peer_id)
+	_done()
+
+
+## The two that are about a screen. What is asserted is the flag on the player and on the
+## entity the netcode sends, because that is the whole of what the server decides; whether
+## the owner's client — and only the owner's — receives it is `headless_net`'s, and what it
+## looks like is `tools/screenshot_hud.sh`'s.
+func _test_blind_and_beacon() -> void:
+	_section("blind and beacon")
+
+	var session := DotClientSession.new()
+	session.peer_id = 9001
+	session.userid = 1
+	session.display_name = "One"
+	var _adopted := server.adopt_session(session)
+
+	var module: Object = server.modules.get_module("g2gfast")
+	var bridge: Object = module.get("bridge") if module != null else null
+	var tools: DotModTools = (module.get("services") as G2GServices).mod_tools if module != null else null
+	var player: G2GPlayer = game.players[&"u1"]
+	var net: Object = bridge.call("behaviour_for", 1) if bridge != null else null
+
+	var blinded := await _run_command_later("blind One")
+	_check(player.blinded, "`blind One` blacks their screen out", " / ".join(blinded))
+	await _physics(2)
+	_check(
+		net != null and net.get("net_blind") == true,
+		"and it is on the entity the netcode sends them"
+	)
+
+	# A blind is a screen, not help: the runner is slower for it, never faster, so the run
+	# they are on is still theirs to file — where a noclip or a speed step taints it.
+	player.timer.run.begin(0.0)
+	await _physics(4)
+	_check(not player.timer.run.tainted, "and a run made blind is not marked assisted")
+	player.timer.stop()
+
+	var _lift := await _run_command_later("blind One off")
+	_check(not player.blinded, "`blind One off` lifts it")
+	var _spell := await _run_command_later("blind One 0.2")
+	_check(player.blinded, "`blind One 0.2` blinds them for a fifth of a second")
+	await get_tree().create_timer(0.4).timeout
+	_check(not player.blinded, "and it lifts on its own when the time is up")
+
+	var lit := await _run_command_later("beacon One")
+	_check(player.beacon, "`beacon One` puts a beacon on them", " / ".join(lit))
+	await _physics(2)
+	_check(net != null and net.get("net_beacon") == true, "and it is on the entity everybody is sent")
+
+	# Both are about the person, not the body, and a respawn here is a teleport of the
+	# same player: nothing re-applies them, so what is checked is that nothing clears them.
+	var _dark := await _run_command_later("blind One")
+	var _back := await _run_command_later("respawn One")
+	_check(player.blinded and player.beacon, "a respawn keeps both")
+
+	var _dark_off := await _run_command_later("blind One off")
+	var _unlit := await _run_command_later("beacon One off")
+	await _physics(2)
+	var identity: DotNetIdentity = (net as DotNetBehaviour).identity if net != null else null
+	_check(
+		not player.beacon and net.get("net_beacon") == false,
+		"`beacon One off` takes it off the entity"
+	)
+	# The arena's beaconed player is made always-relevant and put back when it goes off.
+	# Every runner here is always-relevant already, so copying that would CUT everybody
+	# whose beacon was turned off — this is the check that says it was not copied.
+	_check(
+		identity != null and identity.always_relevant,
+		"and leaves them relevant to everybody, as every runner here is"
+	)
+	_check(
+		tools != null and not tools.is_active(&"1", DotModTools.ACTION_BEACON)
+		and not tools.is_active(&"1", DotModTools.ACTION_BLIND),
+		"and the tools' record agrees with the world"
+	)
+
+	var described := await _run_command_later("modtools")
+	_check(
+		not _said(described, "blind (") and not _said(described, "beacon ("),
+		"`modtools` no longer refuses blind or beacon", " / ".join(described)
+	)
+
+	var _released := server.release_session(session.peer_id)
+	_done()
+
+
+func _physics(frames: int) -> void:
+	for _i in range(frames):
+		await get_tree().physics_frame
 
 
 ## A finished copy of [param run], for asking `can_record` without finishing the real one.
@@ -1118,12 +1252,13 @@ func _run_command_later(line: String) -> PackedStringArray:
 
 
 func _test_unload() -> void:
-	print("unload")
+	_section("unload")
 	var unloaded := server.modules.unload_module("g2gfast")
 	_check(unloaded.ok, "the module unloads")
 	_check(server.console.find_cvar("sv_autobunnyhopping") == null, "and takes its cvars with it")
 	_check(game.players.is_empty(), "and the players it added")
 	await get_tree().process_frame
+	_done()
 
 
 ## [b]The one line that leaked mg-buses-from-hell's whole script graph at exit.[/b]
@@ -1138,7 +1273,7 @@ func _test_unload() -> void:
 ## as noise; an assertion here runs before any of it exists. So this checks the cause
 ## instead: every message script in `game/`, read as text.
 func _test_no_message_preloads_itself() -> void:
-	print("exiting clean")
+	_section("exiting clean")
 
 	var messages := PackedStringArray()
 	var offenders := PackedStringArray()
@@ -1175,6 +1310,7 @@ func _test_no_message_preloads_itself() -> void:
 		"and none of them preloads itself, which leaks every script at exit",
 		", ".join(offenders)
 	)
+	_done()
 
 
 func _extends_message(source: String) -> bool:

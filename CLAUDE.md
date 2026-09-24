@@ -21,6 +21,14 @@ dot-moderation's live tools are here (`G2GModTools`, built in `G2GServices`, com
 
 Health, weapons and god mode exist only while `sv_deathmatch` is on, so god, buddha, hp, slay, give and strip answer "not running its deathmatch" rather than being absent — whether they mean anything is a cvar, not a build. `dedicated`'s live-tools section asserts the timer half: abandoned, tainted, refused a record, clean once it is off, and tainted by a speed step too.
 
+**Blind and beacon were refused as "no client overlay" until 2026-09-24, and are two flags now**, on game-arena's pattern (0e818b3). `G2GPlayer.blinded` and `G2GPlayer.beacon` are set by the handlers and replicated in `G2GPlayerNet` after the movement specs — `net_blind` **owner-only**, because nobody else's screen changes and an opponent on the deathmatch layer who could read it would know when to go and find somebody; `net_beacon` to everybody. State rather than an event, so a joiner, a lost snapshot and a map change are corrected by the next snapshot. `G2GHud.blind_overlay` fades a near-black rect in over a quarter of a second, **under** the clock and the keys and sized to the viewport rather than to the HUD; `G2GBeacon` is a ring and a once-a-second ripple at the drawn position, sized to this game's 32-unit hull rather than the arena's, and a column through walls that the beaconed player's own camera does not draw; each ripple is `beacon_pulsed`, which `G2GClient` plays as `G2GPresentation.BEACON_SOUND` — the BLIP an octave under `timer_start`, positional, on SFX, and below the landing and the jump in priority so a ping can never take a voice from the rhythm. Three things differ from the arena on purpose:
+
+- **Neither taints a run.** A blind can only cost a runner time, like a freeze, and a beacon changes nothing the movement can feel. `dedicated` asserts a run made blind is not marked assisted.
+- **Nothing re-applies them on a respawn, because nothing has to.** A respawn here is `G2GGame.spawn_player`, a teleport of the same node, so both flags simply stay — and this game never calls `DotModTools.respawned`, so adding them to `persist_on_respawn` would be a setting nothing reads.
+- **A beacon changes no relevance.** Every player entity here is `always_relevant` already (`G2GNetBridge._build_entity`); copying the arena's `always_relevant = beacon` would CUT every runner the moment their beacon went off. `dedicated` and `headless_net` both assert it stays on, and both fired when the arena's line was put in (`headless_net` lost the ghost's replication with it).
+
+`headless_net`'s **who is told** adds a second player owned by another peer, blinds and beacons both over one-in-five loss, and asserts this client is told its own blind and not the other's, and both beacons; armed by dropping `to_owner_only()`, two fired. `headless_presentation` asserts the overlay is the HUD's first child, fades, covers the viewport (armed by removing the sizing), and that a beacon pings once a second rather than once a frame. `tools/screenshot_hud.sh` renders `hud_beacon` and `hud_blind`.
+
 ## Layout
 
 ```
@@ -33,7 +41,8 @@ game/
   g2g_rig.gd        the visible character: attachment nodes for the avatar slots
   g2g_avatars.gd    the stock schema, stock parts, and a player's own avatar
   g2g_camera.gd     first and third person, with the genre's field of view
-  g2g_hud.gd        clock, keys, speed in u/s, PRACTICE
+  g2g_hud.gd        clock, keys, speed in u/s, PRACTICE, and an admin's blind
+  g2g_beacon.gd     an admin's beacon: ring, ripple, a column through walls
   g2g_replays.gd    the best replay per map, track and style. What the ghost plays
   g2g_query.gd      what a server browser is told: map, tick rate, styles, the WR
   g2g_client.gd     one local player. Never loaded by a server
@@ -82,7 +91,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (170), headless_net (103), dedicated (155),
+examples/           headless_run (170), headless_net (113), dedicated (168),
                     headless_imported (28 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -471,9 +480,9 @@ work either way; where it is drawn is the half a game is supposed to decide.
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 74 checks
-godot --headless --path . res://examples/headless_net.tscn   # 103 checks
-godot --headless --path . res://examples/dedicated.tscn      # 155 checks
+godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
+godot --headless --path . res://examples/headless_net.tscn   # 113 checks
+godot --headless --path . res://examples/dedicated.tscn      # 168 checks, 15 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
@@ -522,6 +531,8 @@ starts.
 loopback: admission, prediction converging, the timer and a finish replicated to the
 sub-tick fraction, a cvar changed under a live client, styles, tracks, a published
 avatar, a map change, a bot, and leaving.
+
+`dedicated` counts its sections and its checks since 2026-09-24 — it had neither, the one suite here without a total — and exits 1 when either is off; armed by raising `CHECKS` by one.
 
 `dedicated` configures the server for **100** ticks in `server.cfg` — deliberately not
 the project's 128 — and checks the game and the timer count at 100, because a test
@@ -1514,6 +1525,10 @@ A timer server has no leading score, so nothing here calls `note_score`; `trigge
 `dedicated`'s last section, **exiting clean**, reads every `DotNetMessage` script under `game/` as text and fails on a self-preload. It is on the source deliberately: the leak is printed by the engine after `quit()`, where no assertion can reach.
 
 **Here it was not the cause, and the leak is still open.** `dedicated` exits with 407 ObjectDB instances, 303 resources, a VariantPools page and six dummy material, shader and texture RIDs — exactly as many before the change as after (2026-09-23). `--verbose` shows the same "every script still loaded" shape buses had (324 `GDScript`s, 55 native class wrappers), so something else is holding the graph up. The one self-preload this game has that buses does not is `g2g_browser.gd` (`extends Node`); it has not been tried.
+
+**`g2g_browser.gd`'s self-preload has been tried now (2026-09-24), and it was fifteen objects of it.** Removing it took `dedicated` from 411 to 396. The same run ruled three more out: `g2g_paths.gd`, `g2g_net_command.gd` and `g2g_net_link.gd` also preload themselves, and removing all three together moved the count by nothing. The rest of what holds the graph is not a self-preload.
+
+**What 9515974 added was two scripts, not two objects a Callable held.** `dedicated` went 409 → 411 with that commit. The game half (`clock_fn = vote.clock_state`) moves nothing — the new code under the old suite leaks 409 — and a `--verbose` diff of the two runs is exactly two more `GDScript` instances, `dot_vote_rules.gd` and `dot_vote_clock.gd`, which the new check's typed `vote.director.rules`/`.clock` and `DotVoteRules.Trigger` load for the first time. Every loaded script is in the graph that leaks, so any check that names a new type adds to the count; untyping the check would lower the number and fix nothing. The remaining non-script instances are the static caches — `G2GTextures._materials`, `_grid`, `_installed` and `G2GCombat._shared_catalogue`, which are the four material, one shader and one texture RID lines — and clearing them at exit takes 14 more off; they are process-lifetime caches by design and are left.
 
 ## Things deliberately not here
 

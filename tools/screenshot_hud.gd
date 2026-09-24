@@ -22,6 +22,8 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ## hud_notice     a filed time over the top, which is the widest text the HUD draws
 ## hud_clock      the time left as a server's vote describes it, after an extend
 ## hud_no_clock   a server whose vote has no clock: no time left drawn at all
+## hud_beacon     an admin's beacon on another runner four metres ahead: ring, column
+## hud_blind      the same view after an admin's blind: black, with the HUD still on it
 ## [/codeblock]
 ##
 ## Run through `tools/screenshot_hud.sh`. [b]Not `--headless`[/b]: that gives a null
@@ -38,6 +40,7 @@ const SETTLE := 4
 var _game: G2GGame = null
 var _hud: G2GHud = null
 var _player: G2GPlayer = null
+var _other: G2GPlayer = null
 var _shots: Array[Dictionary] = []
 var _at := 0
 var _wait := SETTLE
@@ -65,7 +68,7 @@ func _initialize() -> void:
 	root.add_child(_hud)
 
 
-func _process(_delta: float) -> bool:
+func _process(delta: float) -> bool:
 	if _done:
 		return true
 
@@ -83,6 +86,12 @@ func _process(_delta: float) -> bool:
 		_hud.bind(_game, &"local")
 		_stage()
 		return false
+
+	# Every player drawn every frame, as `G2GClient._process` does: the camera and the
+	# beacon are both placed by `present`, and a frame nobody presented is a camera at
+	# the origin and no marker at all.
+	for id in _game.players:
+		(_game.players[id] as G2GPlayer).present(delta)
 
 	if _at < _shots.size():
 		var shot: Dictionary = _shots[_at]
@@ -121,6 +130,8 @@ func _stage() -> void:
 		{"name": "hud_notice", "arrange": _arrange_notice, "arranged": false},
 		{"name": "hud_clock", "arrange": _arrange_clock, "arranged": false},
 		{"name": "hud_no_clock", "arrange": _arrange_no_clock, "arranged": false},
+		{"name": "hud_beacon", "arrange": _arrange_beacon, "arranged": false},
+		{"name": "hud_blind", "arrange": _arrange_blind, "arranged": false},
 	]
 
 
@@ -165,6 +176,26 @@ func _arrange_no_clock() -> void:
 	var view := DotVoteClockView.new()
 	view.adopt({"has_clock": false}, Time.get_ticks_msec() / 1000.0)
 	_hud.clock_view = view
+
+
+## Another runner four metres straight ahead of the camera, beaconed: the ring at their
+## feet, the ripple, and the column above them that the map cannot hide.
+func _arrange_beacon() -> void:
+	_player.controller.state.velocity = Vector3.ZERO
+	_player.controller.current_command = DotFpsCommand.new()
+	var here := _player.controller.state.position
+	var yaw := deg_to_rad(_player.controller.state.yaw)
+	var ahead := here + Vector3(-sin(yaw), 0.0, -cos(yaw)) * 4.0
+
+	_other = _game.add_player(&"u2", "Beaconed")
+	_other.controller.state.position = ahead
+	_other.global_position = ahead
+	_other.beacon = true
+
+
+## The same view, blinded: nothing of the course, and the clock and keys still drawn.
+func _arrange_blind() -> void:
+	_player.blinded = true
 
 
 func _capture(name: String) -> void:

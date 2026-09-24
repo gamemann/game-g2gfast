@@ -1,5 +1,6 @@
 extends Node3D
 
+const G2GBeacon := preload("g2g_beacon.gd")
 const G2GCamera := preload("g2g_camera.gd")
 const G2GConfig := preload("g2g_config.gd")
 const G2GMovement := preload("g2g_movement.gd")
@@ -24,6 +25,10 @@ const G2GUnits := preload("g2g_units.gd")
 const CHANNEL := "g2g.player"
 
 signal finished(run: DotTimerRun)
+
+## A beacon on this player sent out a ripple: once a second while it is on, and once the
+## moment it comes on. Client side, from [method present]; the client plays the ping here.
+signal beacon_pulsed(at: Vector3)
 
 @export var player_id: StringName = &"local"
 @export var display_name: String = "Player"
@@ -83,6 +88,25 @@ var base_tunables: DotFpsTunables = null
 var collision_mask: int = 1
 
 var tick_rate: int = 128
+
+## An administrator's `blind`: this player's own screen is blacked out.
+##
+## [b]Set on the server and replicated to the OWNER ONLY[/b] (`G2GPlayerNet.net_blind`).
+## Nobody else's screen changes, so nobody else needs to know. `G2GHud` draws it. It
+## changes nothing the simulation can see, so unlike noclip or a speed step it does not
+## taint a run: a blinded runner is being made slower, never faster.
+var blinded: bool = false
+
+## An administrator's `beacon`: a pulsing ring and a column over this player that every
+## client draws, and a ping every client hears, until it is turned off.
+##
+## Set on the server and replicated to everybody (`G2GPlayerNet.net_beacon`), who each
+## draw it in [method present].
+var beacon: bool = false
+
+## The marker [member beacon] draws, while it does. Client side; built and freed by
+## [method present].
+var beacon_marker: G2GBeacon = null
 
 
 func _ready() -> void:
@@ -346,6 +370,36 @@ func present(delta: float) -> void:
 		camera.look(state.pitch, delta)
 		_apply_own_body()
 
+	_present_beacon(delta, state.position)
+
+
+## Draws [member beacon], and says when it pings.
+##
+## Placed at the DRAWN position — the render state on the local player, the interpolated
+## one on a remote player — for the reason [G2GBeacon] is top level.
+##
+## [b]Not hidden on a death, where game-arena's is.[/b] A runner here has no death a
+## client can see: the deathmatch layer's health is the server's, a body that dies stays
+## where it fell until the respawn a moment later, and the respawn is a teleport of the
+## same node — so the flag and the marker simply follow it.
+func _present_beacon(delta: float, at: Vector3) -> void:
+	if not beacon:
+		if beacon_marker != null:
+			beacon_marker.queue_free()
+			beacon_marker = null
+		return
+
+	if beacon_marker == null:
+		beacon_marker = G2GBeacon.new()
+		beacon_marker.name = "Beacon"
+		add_child(beacon_marker)
+
+	beacon_marker.local_view = camera != null
+	beacon_marker.global_position = at
+
+	if beacon_marker.advance(delta):
+		beacon_pulsed.emit(at)
+
 
 ## Settles what the owner's own camera draws of their own rig.
 ##
@@ -392,4 +446,6 @@ func describe() -> Dictionary:
 		"speed": "%s u/s" % G2GUnits.format_speed(speed()),
 		"view": camera.describe()["mode"] if camera != null else "-",
 		"run": str(timer.run) if timer != null else "-",
+		"blinded": blinded,
+		"beacon": beacon,
 	}

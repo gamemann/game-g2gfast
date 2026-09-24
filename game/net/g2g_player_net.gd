@@ -4,7 +4,8 @@ const G2GNetBridge := preload("g2g_net_bridge.gd")
 const G2GNetCommand := preload("g2g_net_command.gd")
 const G2GPlayer := preload("../g2g_player.gd")
 
-## What a networked g2gfast player replicates: the movement state, and nothing else.
+## What a networked g2gfast player replicates: the movement state, and an
+## administrator's two marks on the player — `blind` and `beacon`.
 ##
 ## The timer is not replicated per tick. A client runs its own [DotTimer] over its own
 ## copy of the zones and reaches the same answer a tick earlier than any packet could,
@@ -21,6 +22,14 @@ var net_pitch: float = 0.0
 var net_crouch: float = 0.0
 var net_flags: int = 0
 var net_modifiers: int = 0
+
+# --- An administrator's marks, from G2GModTools ---
+
+## `G2GPlayer.blinded`. Owner only: see [method _register_net_vars].
+var net_blind: bool = false
+
+## `G2GPlayer.beacon`. Everybody's.
+var net_beacon: bool = false
 
 ## Retained, not cleared: a player whose packet was lost keeps moving in a straight
 ## line rather than stopping dead. The controller says the same of its own command.
@@ -46,6 +55,21 @@ func _register_net_vars() -> void:
 			declaration.interpolated()
 		if spec["property"] == &"net_crouch":
 			declaration.range_of(0.0, 1.0)
+
+	# [b]Per-player state rather than an event, and that is what makes both of these
+	# survive what an event does not.[/b] A client that joins after the admin typed
+	# `beacon`, a snapshot lost on the way, a map change: each is a baseline the next
+	# snapshot corrects, where an event sent once is simply missed. Two bits, and nothing
+	# at all on a tick where neither changed.
+	#
+	# The blind goes to its owner alone. Nobody else's screen changes, and a player who
+	# received it would know the moment somebody could not see — which on a server running
+	# its deathmatch layer is the moment to go and find them.
+	#
+	# Appended after the movement specs, never among them: the order of declaration is
+	# the order on the wire, and the movement's is DotFpsNetSync's to keep.
+	replicate(&"net_blind", DotNetVar.Type.BOOL).to_owner_only()
+	replicate(&"net_beacon", DotNetVar.Type.BOOL)
 
 
 func _net_apply_input(input: DotNetInput, _tick: int) -> void:
@@ -84,6 +108,14 @@ func _net_simulate(tick: int, delta: float) -> void:
 func pull() -> void:
 	if player != null:
 		DotFpsNetSync.pull(player.controller.state, self)
+		net_blind = player.blinded
+		net_beacon = player.beacon
+
+	# [b]No relevance to change for a beacon, unlike game-arena.[/b] Every player entity
+	# here is `always_relevant` already (`G2GNetBridge._build_entity`), so a beaconed
+	# runner reaches every client however far away they are — and switching relevance
+	# with the flag, as the arena does, would CUT every runner the moment their beacon
+	# went off. `headless_net` asserts it stays on.
 
 
 ## The server's answer, adopted wholesale. On the owner it is the rewind half of
@@ -93,6 +125,8 @@ func _net_state_applied(tick: int) -> void:
 		return
 	last_state_tick = tick
 	DotFpsNetSync.push(self, player.controller.state)
+	player.blinded = net_blind
+	player.beacon = net_beacon
 	# NOT the node, on a predicted entity: receive_snapshot calls this before the
 	# predictor reconciles, and reconcile's first act is to read the node as "what
 	# the client is showing". Moving it here makes the measured error the whole

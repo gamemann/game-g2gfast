@@ -11,6 +11,8 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
 const G2GVote := preload("../game/g2g_vote.gd")
 const G2GHud := preload("../game/g2g_hud.gd")
+const G2GModTools := preload("../game/g2g_mod_tools.gd")
+const G2GPlayerNet := preload("../game/net/g2g_player_net.gd")
 ## game-g2gfast's netcode, end to end, in one process.
 ##
 ## A server game and a client game, each with its own [DotNetManager] and
@@ -31,7 +33,7 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 103
+const CHECKS := 113
 
 var _passed := 0
 var _failed := 0
@@ -76,6 +78,7 @@ func _run() -> void:
 		_test_voice_wire()
 		_test_vote_wire()
 		_test_clock_wire()
+		_test_blind_and_beacon()
 		_test_leave()
 	_report()
 
@@ -646,6 +649,89 @@ func _test_ghost() -> void:
 	_exchange()
 	_check(_server_bridge.behaviour_for(G2GGame.GHOST_SESSION) == null, "removing it releases the entity")
 	_check(not _client_game.players.has(G2GGame.GHOST_ID), "and the client drops it")
+
+
+## An administrator's blind and beacon, through the real handlers, over the lossy link.
+##
+## [b]The audience is the whole point of both.[/b] This client owns Ada (session 7); Bea
+## (session 8) is another client's, on peer 3, whose traffic this loopback drops. A blind
+## is its owner's screen and nobody else's, so this client must be told Ada's and must NOT
+## be told Bea's — a player who could read it would know the moment somebody could not see.
+## A beacon is for everybody, so this client must be told both. Asserted on the client's
+## own copy of each player, which is what its HUD and its renderer read.
+func _test_blind_and_beacon() -> void:
+	_section("an admin's blind and beacon: who is told")
+
+	var handlers := G2GModTools.handlers(_server_game)
+	var blind: Callable = handlers[DotModTools.ACTION_BLIND]
+	var beacon: Callable = handlers[DotModTools.ACTION_BEACON]
+
+	var bea := _server_bridge.add_player(3, 8, "Bea")
+	_check(bea.ok, "a second player joins, owned by another client", str(bea.error) if not bea.ok else "")
+	_exchange()
+	_steps(4)
+
+	var ada_here: G2GPlayerNet = _client_bridge.behaviour_for(SESSION)
+	var bea_here: G2GPlayerNet = _client_bridge.behaviour_for(8)
+	_check(ada_here != null and bea_here != null, "and this client mirrors both")
+	if ada_here == null or bea_here == null:
+		return
+
+	_check(
+		ada_here.find_var(&"net_blind").audience == DotNetVar.Audience.OWNER
+		and ada_here.find_var(&"net_beacon").audience == DotNetVar.Audience.EVERYONE,
+		"the blind is declared owner-only and the beacon for everybody"
+	)
+
+	var results: Array[DotResult] = [
+		blind.call(&"7", {"on": true, "actor": "1"}),
+		blind.call(&"8", {"on": true, "actor": "1"}),
+		beacon.call(&"7", {"on": true, "actor": "1"}),
+		beacon.call(&"8", {"on": true, "actor": "1"}),
+	]
+	_check(results.all(func(r: DotResult) -> bool: return r.ok), "the server blinds and beacons both")
+
+	# Long enough for several snapshots through one-in-five loss.
+	_drop_every = 5
+	_steps(48)
+	_drop_every = 0
+
+	_check(_client_player().blinded, "this client blacks its own screen out")
+	_check(
+		not bea_here.player.blinded and not bea_here.net_blind,
+		"and is never told the other client's player is blind",
+		"received net_blind = %s" % str(bea_here.net_blind)
+	)
+	_check(
+		_client_player().beacon and bea_here.player.beacon,
+		"while it draws the beacon on both"
+	)
+	_check(
+		_server_bridge.behaviour_for(8).identity.always_relevant,
+		"a beaconed player is relevant to every peer, however far away"
+	)
+
+	var _off: Array[DotResult] = [
+		blind.call(&"7", {"on": false, "actor": "1"}),
+		blind.call(&"8", {"on": false, "actor": "1"}),
+		beacon.call(&"7", {"on": false, "actor": "1"}),
+		beacon.call(&"8", {"on": false, "actor": "1"}),
+	]
+	_steps(24)
+
+	_check(
+		not _client_player().blinded and not _client_player().beacon and not bea_here.player.beacon,
+		"and turning both off reaches this client"
+	)
+	# Every player here is always-relevant, so the arena's "relevant while beaconed" would
+	# cut Bea from everybody the moment her beacon went off.
+	_check(
+		_server_bridge.behaviour_for(8).identity.always_relevant,
+		"and leaves the player relevant, as every player here always is"
+	)
+
+	_server_bridge.remove_player(8)
+	_exchange()
 
 
 func _test_leave() -> void:

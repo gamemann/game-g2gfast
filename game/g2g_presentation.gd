@@ -25,6 +25,9 @@ const CHANNEL := "g2g.presentation"
 
 const SCHEMA_VERSION := 1
 const SOUND_DIR := "res://audio"
+
+## The ping an administrator's beacon makes. See [method sound_catalogue].
+const BEACON_SOUND := &"beacon"
 static var FX_DIR := G2GPaths.rebase("res://scenes/fx")
 
 var settings: DotSettingsManager = null
@@ -288,6 +291,32 @@ static func sound_catalogue() -> DotAudioCatalogue:
 	teleport.priority = 80
 	c.add(teleport)
 
+	# An administrator's beacon: a ping once a second from the beaconed runner, heard by
+	# everybody. Positional, because the beacon's whole job is to say WHERE somebody is and
+	# a flat ping would say only that somebody somewhere is beaconed; far-reaching, because
+	# surf maps are long and a beacon that went quiet at the far end of one would fail in
+	# the place it is used. SFX rather than UI, so it is never mistaken for the timer's.
+	#
+	# Below the timer's four, the landing and the jump in priority. A ping arriving once a second
+	# for as long as an admin leaves it on must never take a voice from the rhythm a runner
+	# keeps time by — dropping a ping costs a second's reminder, dropping a landing costs
+	# a hop.
+	var ping := DotAudioDef.new()
+	ping.id = BEACON_SOUND
+	ping.path = "%s/beacon.ogg" % SOUND_DIR
+	ping.kind = DotAudioDef.Kind.POSITIONAL_3D
+	ping.bus = &"SFX"
+	ping.unit_size = 20.0
+	ping.max_distance = 200.0
+	ping.max_concurrent = 4
+	ping.priority = 40
+	# An octave under `timer_start`, which is the same BLIP voice: the one tonal voice in
+	# the bank, and a ping has to be a tone to be heard as a place. Half the pitch and from
+	# somewhere else is the difference a runner hears; see `sound_recipes`.
+	ping.pitch_min = 0.5
+	ping.pitch_max = 0.5
+	c.add(ping)
+
 	return c
 
 
@@ -311,6 +340,12 @@ static func sound_recipes() -> Dictionary:
 		&"timer_finish": DotAudioSynth.Voice.PICKUP,
 		&"personal_best": DotAudioSynth.Voice.SPAWN,
 		&"teleport": DotAudioSynth.Voice.DENY,
+		# The one exception to "only voices the run does not use", and it is deliberate:
+		# BLIP is the only pure tone in the bank, and a beacon is a thing you locate by
+		# ear. It shares the voice with `timer_start` an octave down, positional and on the
+		# SFX bus, where the start is flat on UI — so it comes from somewhere and the start
+		# comes from nowhere, which is the difference that matters mid-run.
+		BEACON_SOUND: DotAudioSynth.Voice.BLIP,
 		# Only voices the run does not already use. Every one above is part of the input
 		# loop, and a ballot opening that sounded like a split — or a countdown tick that
 		# sounded like a jump — would be the vote talking over the rhythm this table exists
@@ -694,6 +729,15 @@ func on_vote_cue(id: StringName) -> int:
 		return 0
 
 	return audio.play(id)
+
+
+## A beacon's ripple went out from [param at]. `G2GPlayer.beacon_pulsed`, on every
+## client, for every beaconed player — the beaconed one included, who hears their own.
+func on_beacon(at: Vector3) -> int:
+	if audio == null:
+		return 0
+
+	return audio.play_at(BEACON_SOUND, at)
 
 
 func on_map_changed() -> void:

@@ -36,6 +36,24 @@ var clock_view: DotVoteClockView = null
 ## is inside it. This is that plus a gap, in one place, so moving the clock moves this.
 const NOTICE_CLEARANCE := 196.0
 
+## An administrator's `blind`, over the world and under the rest of the HUD.
+##
+## [b]Under the widgets, on purpose.[/b] A blind takes the course away, not the runner's
+## bearings: the clock still counts, the keys still light and the notice line still says
+## what happened, which is what makes it read as "an admin did this" rather than as a
+## client that stopped drawing. The chat box and the console are the presentation
+## layer's, above this HUD altogether, so a blinded runner can still ask why.
+##
+## Black rather than white. A white screen at full brightness is a thing a player can be
+## hurt by in a dark room, and taking the picture away is the whole of the point.
+var blind_overlay: ColorRect = null
+
+## Seconds a blind takes to come down and to lift. Short, so it is unmistakably on, and
+## not instant, so it reads as something done to the screen rather than a frame dropped.
+const BLIND_FADE_SEC := 0.25
+
+const BLIND_COLOUR := Color(0.01, 0.01, 0.015)
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -46,6 +64,20 @@ func _ready() -> void:
 	offset_right = 0.0
 	offset_bottom = 0.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# First, so every widget added below draws over it. See [member blind_overlay].
+	# Anchored to nothing and sized to the VIEWPORT in `present_blind`, not to this HUD's
+	# rect: game-arena's first rendered blind left a sixteen-pixel frame of the world
+	# round the edge because its HUD was inset by the safe area, and this one being the
+	# full rect today is a property of its parent that nothing here promises.
+	blind_overlay = ColorRect.new()
+	blind_overlay.name = "Blind"
+	blind_overlay.color = BLIND_COLOUR
+	blind_overlay.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	blind_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	blind_overlay.modulate.a = 0.0
+	blind_overlay.visible = false
+	add_child(blind_overlay)
 
 	# THE WHOLE RECT, not a box in the corner.
 	#
@@ -194,7 +226,9 @@ func notice(text: String) -> void:
 	_notice_until = Time.get_ticks_msec() / 1000.0 + 4.0
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	present_blind(delta)
+
 	if game == null:
 		return
 
@@ -254,6 +288,30 @@ func _process(_delta: float) -> void:
 		parts.append("ground")
 
 	_status.text = "   ·   ".join(parts)
+
+
+## Fades [member blind_overlay] toward whether the followed player is blinded.
+##
+## Read off the player rather than pushed by anybody, because the flag arrives in a
+## snapshot on a networked client and is set directly offline, and a HUD that had to be
+## told would need telling from two places. Public so a check can step it.
+func present_blind(delta: float) -> void:
+	if blind_overlay == null:
+		return
+
+	var player: G2GPlayer = game.players.get(player_id) if game != null else null
+	var want := 1.0 if player != null and player.blinded else 0.0
+	blind_overlay.modulate.a = move_toward(
+		blind_overlay.modulate.a, want, maxf(delta, 0.0) / BLIND_FADE_SEC
+	)
+	blind_overlay.visible = blind_overlay.modulate.a > 0.0
+
+	if blind_overlay.visible and is_inside_tree():
+		# The whole viewport, in this HUD's own coordinates — whatever its parent and the
+		# interface scale did to where this HUD starts.
+		var inverse := get_global_transform().affine_inverse()
+		blind_overlay.position = inverse * Vector2.ZERO
+		blind_overlay.size = inverse.basis_xform(get_viewport_rect().size)
 
 
 ## What the status line says about the map's time left: the server's clock when it has
