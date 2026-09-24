@@ -37,6 +37,17 @@ var bridge: G2GNetBridge = null
 ## Chat, voice and moderation. See [G2GServices].
 var services: G2GServices = null
 
+## Where the services keep punishments. Empty is dot-moderation's own default,
+## `user://moderation.json` — the store a real server enforces.
+##
+## [b]Static, because nothing holds this module before it exists[/b]: dot-server constructs
+## it from a path inside `load_module`, so there is no instance for a host to set a field on
+## first. `examples/dedicated.tscn` points it at a directory of its own; before it could,
+## every run appended its gags and the live tools' warnings to the real store, 290 records
+## by the time anybody counted. game-simple-lobby's `RoomModule.punishments_path` is the
+## same seam.
+static var punishments_file: String = ""
+
 ## The live tools' commands. See [method _build_services].
 var mod_commands: DotModToolCommands = null
 
@@ -323,6 +334,7 @@ func _build_identity() -> DotResult:
 func _build_services() -> DotResult:
 	services = G2GServices.new()
 	services.name = "Services"
+	services.punishments_file = punishments_file
 	add_child(services)
 
 	var ready: DotResult = await services.setup(server, game, bridge.link)

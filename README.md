@@ -125,7 +125,7 @@ godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 170 checks
 godot --headless --path . res://examples/headless_net.tscn   # 113 checks, server + client in one process
-godot --headless --path . res://examples/dedicated.tscn      # 168 checks over 15 sections
+godot --headless --path . res://examples/dedicated.tscn      # 173 checks over 16 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_imported.tscn   # every imported map
 ```
