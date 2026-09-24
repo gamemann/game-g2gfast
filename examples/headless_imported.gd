@@ -82,6 +82,12 @@ const ARRIVES_IN_PIT := {
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
 const CHECKS_PER_MAP := 28
 
+## Sections every map runs, entered against run to their last line. A runtime error inside
+## a section aborts that function and nothing says so; a section that bailed out after a
+## failed guard is counted as not finished on purpose, and the two that end early because
+## a map legitimately has nothing to check (no course, no door) say so first.
+const SECTIONS_PER_MAP := 9
+
 ## A script error inside a test aborts THAT TEST and not the run, so a suite that has
 ## quietly lost two checks still prints "0 failed" — which is what happened while this
 ## file was being written, to the zone section. The count is asserted, not trusted.
@@ -91,6 +97,8 @@ var _map_id: StringName = &""
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 var game: G2GGame = null
 
 
@@ -135,10 +143,29 @@ func _run() -> void:
 		_failed += 1
 		_failures.append("the suite ran %d checks and should run %d — one aborted"
 			% [_passed + _failed, _expected])
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
+		_passed, _failed, _completed, _entered
+	])
 	for line in _failures:
 		print("  FAIL  %s" % line)
+	var sections := SECTIONS_PER_MAP * ids.size()
+	if _entered != sections or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, sections
+		])
+		get_tree().quit(1)
+		return
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+func _section(title: String) -> void:
+	_entered += 1
+	print(title)
+
+
+## A section reached its last line. See [constant SECTIONS_PER_MAP].
+func _done() -> void:
+	_completed += 1
 
 
 func _imported_ids() -> Array[StringName]:
@@ -164,7 +191,7 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 
 
 func _test_loads(manifest_path: String) -> void:
-	print("loading")
+	_section("loading")
 	var config := G2GConfig.new()
 	config.records_directory = ""
 	config.map_seconds = 0.0
@@ -182,10 +209,11 @@ func _test_loads(manifest_path: String) -> void:
 		"the imported map is in the catalogue and loads")
 	# Discovery, not a list. If this fails the map was found by something naming it.
 	_check(FileAccess.file_exists(manifest_path), "its manifest is beside it")
+	_done()
 
 
 func _test_geometry() -> void:
-	print("geometry")
+	_section("geometry")
 	var node := game.current_map_node()
 	_check(node is G2GBspMap, "the map node is a G2GBspMap")
 	var mi := node.get_node_or_null("World") as MeshInstance3D
@@ -231,10 +259,11 @@ func _test_geometry() -> void:
 	var longest := maxf(units.x, maxf(units.y, units.z))
 	_check(longest > 1000.0 and longest < 40000.0,
 		"and is the size a Source map can be", "%.0f x %.0f x %.0f units" % [units.x, units.y, units.z])
+	_done()
 
 
 func _test_lighting() -> void:
-	print("lighting")
+	_section("lighting")
 	var node := game.current_map_node() as G2GBspMap
 	var lm: Dictionary = node.manifest.get("lightmap", {})
 	var path: String = "res://maps/imported/%s/%s" % [_map_id, lm.get("file", "")]
@@ -247,10 +276,11 @@ func _test_lighting() -> void:
 		return
 	_check(mat.get_shader_parameter("lightmap_tex") is Texture2D,
 		"and the atlas is bound to every one of them")
+	_done()
 
 
 func _test_zones() -> void:
-	print("zones")
+	_section("zones")
 	var zones := game.timers.zones
 	_check(zones != null, "the map produced a zone set")
 	if zones == null:
@@ -301,10 +331,11 @@ func _test_zones() -> void:
 			without.append(DotTimerTrack.name_of(track))
 	_check(without.is_empty(), "and every runnable track has somewhere to spawn",
 		", ".join(without))
+	_done()
 
 
 func _test_runnable() -> void:
-	print("runnable")
+	_section("runnable")
 	var zones := game.timers.zones
 	if zones == null:
 		_check(false, "a run can be started, split and finished")
@@ -332,6 +363,7 @@ func _test_runnable() -> void:
 			"has no run to time, as documented",
 			"listed in NOT_COURSES")
 		_check(true, "and no stages to order")
+		_done()
 		return
 
 	if start == null or finish == null:
@@ -385,10 +417,11 @@ func _test_runnable() -> void:
 			got += 1
 	_check(got == wanted, "and its stages come out in order",
 		"%d of %d splits" % [got, wanted])
+	_done()
 
 
 func _test_stands_on_it() -> void:
-	print("collision")
+	_section("collision")
 	var node := game.current_map_node()
 	# Anywhere under the map, not under the MeshInstance3D. The solid used to BE the
 	# mesh -- `create_trimesh_collision()` parents a `World_col` to it -- and it is not
@@ -432,6 +465,7 @@ func _test_stands_on_it() -> void:
 	var min_y: float = float((bounds.get("min", [0, -16384, 0]) as Array)[1]) * G2GUnits.METRES_PER_UNIT
 	_check(bot.global_position.y > min_y, "and has not left the world",
 		"y=%.1f, world floor %.1f" % [bot.global_position.y, min_y])
+	_done()
 
 
 ## Every place the map can put a player: each track's spawn, and each `!s<n>`.
@@ -443,7 +477,7 @@ func _test_stands_on_it() -> void:
 ## Standing on it for a second is the whole test, and it is the same test as the one
 ## above with somewhere else to stand.
 func _test_stands_where_it_sends_you() -> void:
-	print("destinations")
+	_section("destinations")
 	var node := game.current_map_node()
 	var zones := game.timers.zones
 	var spots: Array = []
@@ -470,6 +504,7 @@ func _test_stands_where_it_sends_you() -> void:
 		var drop := at.y - bot.global_position.y
 		_check(drop < 8.0, "%s is somewhere a player can stand" % spot[0],
 			"fell %.1f m from %s" % [drop, str(at / G2GUnits.METRES_PER_UNIT)])
+	_done()
 
 
 ## Every place the map puts a player -- a spawn, a stage, the far side of a door -- is
@@ -485,7 +520,7 @@ func _test_stands_where_it_sends_you() -> void:
 ## could not see it: it teleports a bot to each arrival and measures how far it FELL,
 ## and a bot the pit put back at a higher spawn has fallen a negative distance.
 func _test_arrivals_miss_the_pits() -> void:
-	print("arrivals")
+	_section("arrivals")
 	var zones := game.timers.zones
 	var inside := PackedStringArray()
 	if zones != null:
@@ -516,6 +551,7 @@ func _test_arrivals_miss_the_pits() -> void:
 		_check(inside == listed,
 			"lands in a pit exactly where ARRIVES_IN_PIT says it does",
 			"listed %s, found %s" % [str(listed), str(inside)])
+	_done()
 
 
 ## Walking through one of the map's doors does not end the run.
@@ -529,7 +565,7 @@ func _test_arrivals_miss_the_pits() -> void:
 ## first door. Driven through the real handler: the manager's signal, which is what the
 ## timer emits when a player walks in.
 func _test_a_door_keeps_the_run() -> void:
-	print("doors")
+	_section("doors")
 	var zones := game.timers.zones
 	var door: DotTimerZone = null
 	var start: DotTimerZone = null
@@ -538,6 +574,7 @@ func _test_a_door_keeps_the_run() -> void:
 		start = zones.first_of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN)
 	if door == null or start == null:
 		_check(true, "a door keeps the run", "no door on the main track")
+		_done()
 		return
 
 	var bot: G2GPlayer = game.players.get(&"bot")
@@ -568,3 +605,4 @@ func _test_a_door_keeps_the_run() -> void:
 		"running before %s, moved %s, running after %s"
 		% [was_running, moved, timer.run.is_running()])
 	timer.stop()
+	_done()

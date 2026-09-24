@@ -35,9 +35,17 @@ const CLIENT_ENGINE_TICK_RATE := 60
 
 const CHECKS := 113
 
+## Sections entered against sections that ran to their last line, and against this. A
+## runtime error inside a section aborts that function and nothing says so; a section that
+## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
+## total above is the other half — see docs/testing.md.
+const SECTIONS := 19
+
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 
 var _server_game: G2GGame = null
 var _client_game: G2GGame = null
@@ -85,9 +93,17 @@ func _run() -> void:
 
 func _report() -> void:
 	print("")
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
+		_passed, _failed, _completed, _entered
+	])
 	for f in _failures:
 		print("  FAIL " + f)
+	if _entered != SECTIONS or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, SECTIONS
+		])
+		get_tree().quit(1)
+		return
 	# The total the section counter cannot be. A runtime error inside a section aborts
 	# that function, and the counter is satisfied because the section had already
 	# announced itself. See docs/testing.md.
@@ -111,8 +127,14 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 
 
 func _section(name: String) -> void:
+	_entered += 1
 	print("")
 	print(name)
+
+
+## A section reached its last line. See [constant SECTIONS].
+func _done() -> void:
+	_completed += 1
 
 
 # --- Wire ------------------------------------------------------------------
@@ -143,6 +165,7 @@ func _test_command_wire() -> void:
 	var twice := G2GNetCommand.new()
 	twice.read(DotNetReader.new(again.to_bytes()))
 	_check(twice.equals(back), "and is stable under a second trip, which is what input compression rests on")
+	_done()
 
 
 func _test_movement_wire() -> void:
@@ -161,6 +184,7 @@ func _test_movement_wire() -> void:
 	_check(G2GMovement.tunables_for(received).fingerprint() == fingerprint,
 		"and the receiver derives the same tunables the sender fingerprinted")
 	_check(G2GMovement.tunables_for(config).fingerprint() == fingerprint, "which are the sender's")
+	_done()
 
 
 func _test_hello_wire() -> void:
@@ -171,6 +195,7 @@ func _test_hello_wire() -> void:
 	_check(bool(hello["ok"]), "parses")
 	_check(int(hello["tick_rate"]) == 128 and int(hello["player_id"]) == 7 and int(hello["peer_id"]) == 2, "with ids")
 	_check(int(hello["server_tick"]) == 4096 and hello["map_id"] == &"surf_g2g_intro", "the tick and the map")
+	_done()
 
 
 # --- Bringing both halves up ---------------------------------------------------
@@ -300,6 +325,7 @@ func _build() -> bool:
 	_check(_server_game.external_tick, "the server game hands its tick to the bridge")
 	_check(_client_game.external_tick, "and so does the client's, which predicts and interpolates instead")
 
+	_done()
 	return attached.ok and client_attached.ok
 
 
@@ -457,6 +483,7 @@ func _test_handshake() -> void:
 	_check(mine != null and mine.identity != null and mine.identity.is_predicted(), "the local player is predicted")
 	_check(mine != null and mine.identity.net_id == _server_bridge.behaviour_for(SESSION).identity.net_id,
 		"under the server's entity id")
+	_done()
 
 
 func _test_prediction() -> void:
@@ -478,6 +505,7 @@ func _test_prediction() -> void:
 	_check(absf(_client_net.stats.rtt_percentile(0.5) - 40.0) < 0.01, "and the clock has been told how long the link is",
 		"%.1f ms" % _client_net.stats.rtt_percentile(0.5))
 	await get_tree().process_frame
+	_done()
 
 
 func _test_timer() -> void:
@@ -501,6 +529,7 @@ func _test_timer() -> void:
 	var drift := absf(client.timer.run.time() - server.timer.run.time())
 	_check(drift < 0.05, "reading the same time", "%.3f s apart" % drift)
 	await get_tree().process_frame
+	_done()
 
 
 func _test_finish() -> void:
@@ -538,6 +567,7 @@ func _test_finish() -> void:
 	_check(finishes.size() == 1 and (int(finishes[0][2]) >= 1 or not notices.is_empty()),
 		"ranked, or told why not", str(notices))
 	_check(not _client_player().timer.run.is_running(), "and the client's mirror stops")
+	_done()
 
 
 func _test_movement_change() -> void:
@@ -548,6 +578,7 @@ func _test_movement_change() -> void:
 	_check(_client_game.config.air_accelerate == 150.0, "the cvar reaches the client")
 	_check(_client_game.tunables.fingerprint() == _server_game.tunables.fingerprint(), "and both derive the same tunables")
 	_steps(2)
+	_done()
 
 
 func _test_style_and_track() -> void:
@@ -570,6 +601,7 @@ func _test_style_and_track() -> void:
 	_client_bridge.ask_style(&"normal")
 	_client_bridge.ask_track(DotTimerTrack.MAIN)
 	_exchange()
+	_done()
 
 
 func _test_avatar() -> void:
@@ -581,6 +613,7 @@ func _test_avatar() -> void:
 	var after := _server_player().rig.avatar.to_dict() if _server_player().rig.avatar != null else {}
 	_check(after != before or avatar.to_dict() == before, "reaches the server's rig")
 	_check(_client_player().rig.avatar != null and _client_player().rig.avatar.to_dict() == after, "and comes back to the client")
+	_done()
 
 
 func _test_lossy() -> void:
@@ -594,6 +627,7 @@ func _test_lossy() -> void:
 	_check(apart < 0.5, "the client still shows the server's position", "%.3f m" % apart)
 	_check(_client_net.predictor.correction_rate() < 0.15, "and prediction still converges", "%.3f" % _client_net.predictor.correction_rate())
 	await get_tree().process_frame
+	_done()
 
 
 func _test_map_change() -> void:
@@ -610,6 +644,7 @@ func _test_map_change() -> void:
 	_steps(4)
 	_check(_client_player().global_position.distance_to(_server_player().global_position) < 1.0, "at the new spawn",
 		"%.3f m" % _client_player().global_position.distance_to(_server_player().global_position))
+	_done()
 
 
 func _test_ghost() -> void:
@@ -649,6 +684,7 @@ func _test_ghost() -> void:
 	_exchange()
 	_check(_server_bridge.behaviour_for(G2GGame.GHOST_SESSION) == null, "removing it releases the entity")
 	_check(not _client_game.players.has(G2GGame.GHOST_ID), "and the client drops it")
+	_done()
 
 
 ## An administrator's blind and beacon, through the real handlers, over the lossy link.
@@ -732,6 +768,7 @@ func _test_blind_and_beacon() -> void:
 
 	_server_bridge.remove_player(8)
 	_exchange()
+	_done()
 
 
 func _test_leave() -> void:
@@ -754,6 +791,7 @@ func _test_leave() -> void:
 	_flush()
 	_check(_server_player() == null, "the server drops a leaving peer's player")
 	_check(not _server_net.peers().has(CLIENT_PEER), "and the peer")
+	_done()
 
 
 ## A voice frame, client to server to another client, over this game's own link.
@@ -803,6 +841,7 @@ func _test_vote_wire() -> void:
 		rocked.size() == 1 and String(rocked[0]).begins_with("u"),
 		"and a client's RTV request reaches the server's rtv_fn, as a player id (%s)" % str(rocked)
 	)
+	_done()
 
 
 ## The map's time left, from the server's vote to what the client's HUD draws.
@@ -910,6 +949,7 @@ func _test_clock_wire() -> void:
 	_client_bridge.clock_view = DotVoteClockView.new()
 	remove_child(vote)
 	vote.free()
+	_done()
 
 
 func _test_voice_wire() -> void:
@@ -960,3 +1000,4 @@ func _test_voice_wire() -> void:
 		_server_bridge.link.voice_sent == before,
 		"and a voice frame addressed to peer 0 is refused rather than broadcast"
 	)
+	_done()

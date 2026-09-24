@@ -25,9 +25,16 @@ const EXPECTED_FIXED_CHECKS := 24
 
 const CHECKS := 27
 
+## Sections entered against sections that ran to their last line, and against this. A
+## runtime error inside a section aborts that function and nothing says so. The CHECKS
+## total above is the other half — see docs/testing.md.
+const SECTIONS := 5
+
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 var game: G2GGame = null
 
 
@@ -51,9 +58,17 @@ func _run() -> void:
 		_failed += 1
 		_failures.append("the suite ran %d checks and should run %d — one aborted"
 			% [_passed + _failed, expected])
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
+		_passed, _failed, _completed, _entered
+	])
 	for line in _failures:
 		print("  FAIL  %s" % line)
+	if _entered != SECTIONS or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, SECTIONS
+		])
+		get_tree().quit(1)
+		return
 	# The total the section counter cannot be. A runtime error inside a section aborts
 	# that function, and the counter is satisfied because the section had already
 	# announced itself. See docs/testing.md.
@@ -64,6 +79,16 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+func _section(title: String) -> void:
+	_entered += 1
+	print(title)
+
+
+## A section reached its last line. See [constant SECTIONS].
+func _done() -> void:
+	_completed += 1
 
 
 func _check(ok: bool, what: String, detail: String = "") -> void:
@@ -77,7 +102,7 @@ func _check(ok: bool, what: String, detail: String = "") -> void:
 
 
 func _test_discovery() -> void:
-	print("discovery")
+	_section("discovery")
 	var catalogue := G2GMapCatalogue.discover()
 	_check(catalogue.size() >= 3, "the hand-written maps are found without being named",
 		"%d maps" % catalogue.size())
@@ -120,10 +145,11 @@ func _test_discovery() -> void:
 	else:
 		_check(true, "an imported map uses the shared scene (none present)")
 		_check(true, "and carries its manifest path instead of a script (none present)")
+	_done()
 
 
 func _test_derivations() -> void:
-	print("derivations")
+	_section("derivations")
 	_check(G2GMapCatalogue.kind_of(&"surf_kitsune") == DotMapDef.KIND_SURF,
 		"a surf_ prefix means surf")
 	_check(G2GMapCatalogue.kind_of(&"bhop_g2g_stages") == DotMapDef.KIND_BHOP,
@@ -135,10 +161,11 @@ func _test_derivations() -> void:
 	_check(G2GMapCatalogue.default_name(&"surf_kitsune") == "surf: kitsune",
 		"a name is derived when the map does not carry one",
 		G2GMapCatalogue.default_name(&"surf_kitsune"))
+	_done()
 
 
 func _test_rescan() -> void:
-	print("rescan")
+	_section("rescan")
 	var config := G2GConfig.new()
 	config.records_directory = ""
 	config.map_seconds = 0.0
@@ -181,10 +208,11 @@ func _test_rescan() -> void:
 	# it leaves the rotation offering exactly the maps that are no longer there.
 	_check(game.maps.rotation != null and game.maps.rotation.catalogue == game.maps.catalogue,
 		"and the rotation still points at the catalogue it was given")
+	_done()
 
 
 func _test_client_config() -> void:
-	print("client configuration")
+	_section("client configuration")
 	# The client used to build a bare G2GConfig and never read a layer, so it was the
 	# one thing here that could not be configured. This asserts the layering runs at
 	# all; which layer wins is DotConfig's own contract and is tested there.
@@ -195,6 +223,7 @@ func _test_client_config() -> void:
 		layered.error.message if not layered.ok else "")
 	_check(config.initial_map != &"" or before == &"",
 		"and still names a map afterwards", String(config.initial_map))
+	_done()
 
 
 ## Every zone a player has to STAND in has geometry under it.
@@ -220,7 +249,7 @@ func _test_client_config() -> void:
 ## bootstrap scripts, `tools/export_zones.gd` and `headless_run`'s sidecar check — where
 ## a fourth map would simply not have been looked at, silently.
 func _test_zones_have_floor() -> void:
-	print("zones sit on the geometry")
+	_section("zones sit on the geometry")
 
 	for id in _hand_written_map_ids():
 		var scene: PackedScene = load("res://maps/%s.tscn" % id)
@@ -262,6 +291,7 @@ func _test_zones_have_floor() -> void:
 
 		map.queue_free()
 		await get_tree().process_frame
+	_done()
 
 
 ## The hand-written maps: the ones with a script of their own, discovered rather than

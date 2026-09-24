@@ -27,12 +27,20 @@ const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 
 const CHECKS := 170
 
+## Sections entered against sections that ran to their last line, and against this. A
+## runtime error inside a section aborts that function and nothing says so; a section that
+## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
+## total above is the other half — see docs/testing.md.
+const SECTIONS := 18
+
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
 
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
+var _entered := 0
+var _completed := 0
 var game: G2GGame = null
 
 
@@ -65,9 +73,17 @@ func _run() -> void:
 	await _test_effects_and_the_run()
 
 	print("")
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
+		_passed, _failed, _completed, _entered
+	])
 	for line in _failures:
 		print("  FAIL  %s" % line)
+	if _entered != SECTIONS or _completed != _entered:
+		print("ERROR: %d sections entered and %d completed, %d expected. One aborted or was skipped." % [
+			_entered, _completed, SECTIONS
+		])
+		get_tree().quit(1)
+		return
 	# The total the section counter cannot be. A runtime error inside a section aborts
 	# that function, and the counter is satisfied because the section had already
 	# announced itself. See docs/testing.md.
@@ -78,6 +94,16 @@ func _run() -> void:
 		get_tree().quit(1)
 		return
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+func _section(title: String) -> void:
+	_entered += 1
+	print(title)
+
+
+## A section reached its last line. See [constant SECTIONS].
+func _done() -> void:
+	_completed += 1
 
 
 func _check(ok: bool, what: String, detail: String = "") -> void:
@@ -120,7 +146,7 @@ func _drive(id: StringName, command: DotFpsCommand, ticks: int) -> void:
 ## Watching somebody run, which on a timer server is the point rather than a
 ## consolation for being dead.
 func _test_spectating() -> void:
-	print("spectating")
+	_section("spectating")
 
 	if game.spectate == null:
 		_check(false, "the spectate layer is built")
@@ -176,6 +202,7 @@ func _test_spectating() -> void:
 
 	game.remove_player(&"watcher")
 	await get_tree().physics_frame
+	_done()
 
 
 # --- Effects, and the rule that makes them safe here ------------------------
@@ -183,7 +210,7 @@ func _test_spectating() -> void:
 ## A movement effect is a style, and a style you did not choose is a record you did not
 ## set. This is the section that pins that.
 func _test_effects_and_the_run() -> void:
-	print("effects")
+	_section("effects")
 
 	# The stock configuration has neither deathmatch nor hunters, so there is no
 	# effects layer — which is correct and is itself worth asserting: a timer server
@@ -280,20 +307,22 @@ func _test_effects_and_the_run() -> void:
 	hunted.queue_free()
 	remove_child(hunted)
 	await get_tree().process_frame
+	_done()
 
 
 # --- Units and view --------------------------------------------------------
 
 func _test_units() -> void:
-	print("genre units")
+	_section("genre units")
 	_near(G2GUnits.to_metres(72.0), 1.3716, 0.0001, "a 72-unit player is 1.37 m")
 	_near(G2GUnits.to_units(G2GUnits.to_metres(3500.0)), 3500.0, 0.001, "and the round trip is exact")
 	_check(G2GUnits.format_speed(G2GUnits.to_metres(250.0)) == "250", "speed formats as whole units")
 	_near(G2GUnits.sensitivity_to_degrees(2.5), 0.055, 0.0001, "sensitivity 2.5 is 0.055°/count")
+	_done()
 
 
 func _test_source_fov() -> void:
-	print("the genre field of view")
+	_section("the genre field of view")
 	# fov_desired 90 is 90° horizontal on a 4:3 frame. Vertical is 2·atan(tan(45°)·3/4).
 	var vertical := G2GUnits.horizontal_fov_to_vertical(90.0)
 	_near(vertical, 73.74, 0.01, "fov_desired 90 is 73.74° vertical")
@@ -307,10 +336,11 @@ func _test_source_fov() -> void:
 	_check(naive_16_9 > 120.0, "handing 90 straight to a vertical fov would be over 120° wide", "%.1f" % naive_16_9)
 
 	_near(G2GUnits.horizontal_fov_to_vertical(75.0), 59.8, 0.1, "and 75 is 59.8°")
+	_done()
 
 
 func _test_movement_from_config() -> void:
-	print("movement cvars become tunables")
+	_section("movement cvars become tunables")
 	var config := G2GConfig.new()
 	var t := G2GMovement.tunables_for(config)
 
@@ -341,12 +371,13 @@ func _test_movement_from_config() -> void:
 	layered.apply_dictionary({"auto_bhop": false, "air_accelerate": 150, "fov_desired": 100})
 	_check(not layered.auto_bhop and layered.air_accelerate == 150.0 and layered.fov_desired == 100.0,
 		"a config file layer moves the cvars")
+	_done()
 
 
 # --- Boot ------------------------------------------------------------------
 
 func _test_boot() -> void:
-	print("booting")
+	_section("booting")
 	var config := G2GConfig.new()
 	config.records_directory = ""
 	config.map_seconds = 0.0
@@ -396,11 +427,12 @@ func _test_boot() -> void:
 
 	await get_tree().physics_frame
 	_check(bot.global_position.distance_to(game.current_map_node().spawn_for(0)) < 1.0, "at the map's spawn")
+	_done()
 
 
 
 func _test_avatars() -> void:
-	print("avatars")
+	_section("avatars")
 	var schema := game.avatar_schema
 	_check(schema.validate_schema().ok, "the stock schema validates", schema.validate_schema().error.message if not schema.validate_schema().ok else "")
 
@@ -436,10 +468,11 @@ func _test_avatars() -> void:
 	_check(redressed.ok and int(redressed.value) >= 2, "an unknown part is dropped rather than refusing the whole avatar", str(redressed.value))
 
 	bot.rig.dress(G2GAvatars.stock_avatar(&"bot"), schema, game.avatar_catalogue)
+	_done()
 
 
 func _test_cameras() -> void:
-	print("first and third person")
+	_section("first and third person")
 	var bot: G2GPlayer = game.players[&"bot"]
 	var camera := bot.camera
 
@@ -469,12 +502,13 @@ func _test_cameras() -> void:
 	_near(rad_to_deg(camera.arm.rotation.x), -30.0, 0.01, "and so does the third-person arm")
 	bot.controller.state.pitch = 0.0
 	await get_tree().process_frame
+	_done()
 
 
 # --- Auto-bhop -------------------------------------------------------------
 
 func _test_auto_bhop_gate() -> void:
-	print("auto-bhop is the server's decision")
+	_section("auto-bhop is the server's decision")
 	var bot: G2GPlayer = game.players[&"bot"]
 
 	# With sv_autobunnyhopping 1, holding jump chains hops. This is what the game is for.
@@ -524,10 +558,11 @@ func _test_auto_bhop_gate() -> void:
 	_check(not bot.timer.run.is_active(), "and changing sv_airaccelerate abandons it")
 	game.config.air_accelerate = 1000.0
 	game.apply_movement()
+	_done()
 
 
 func _test_zone_files_match() -> void:
-	print("the shipped zone files match the maps")
+	_section("the shipped zone files match the maps")
 	# Every hand-written map the catalogue finds, and not a list of them.
 	#
 	# [b]This was `["bhop_g2g_intro", "surf_g2g_intro"]`, and there are three.[/b]
@@ -543,6 +578,7 @@ func _test_zone_files_match() -> void:
 		_check(loaded.ok and (loaded.value as DotTimerZoneSet).fingerprint() == built.fingerprint(),
 			"%s's file matches what the map builds" % id)
 	await get_tree().process_frame
+	_done()
 
 
 ## The hand-written maps: the ones with a script of their own, discovered rather than
@@ -569,7 +605,7 @@ func _hand_written_map_ids() -> Array:
 ## the gap are read off the geometry by [G2GReach], and the reach is read off the
 ## tunables the server applies. Nothing in this function is a number about a map.
 func _test_reach() -> void:
-	print("what the movement can reach")
+	_section("what the movement can reach")
 
 	var t := G2GMovement.tunables_for(game.config)
 	var sweep := reach_sweep(t, game.tick_rate)
@@ -627,6 +663,7 @@ func _test_reach() -> void:
 		"it chained to the end at %.0f u/s" % float(verdict["top"])
 	)
 	intro.free()
+	_done()
 
 
 ## A hand-written map's script, built but never added to the tree: [method G2GMap._build]
@@ -744,7 +781,7 @@ static func _percent(fraction: float) -> String:
 # --- Runs ------------------------------------------------------------------
 
 func _test_bhop_run() -> void:
-	print("a bhop run")
+	_section("a bhop run")
 	var bot: G2GPlayer = game.players[&"bot"]
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame
@@ -814,6 +851,7 @@ func _test_bhop_run() -> void:
 	var page: DotResult = await game.boards.page(&"fastest", {"map": "bhop_g2g_intro", "track": "0", "style": "normal"})
 	_check((page.value as Array).size() >= 1 or (filed.size() == 1 and filed[0][1] != ""),
 		"and reaches the leaderboard, or says why not", str(filed))
+	_done()
 
 
 ## Whether a bot at [param z_units] on the needle should be holding jump this tick.
@@ -853,7 +891,7 @@ func _needle_jumps_at(z_units: float) -> bool:
 ## the start line, BOTH stage splits are crossed in order, and the finish line ends it.
 ## A block moved 100 units fails this; it fails nothing anywhere else.
 func _test_needle_bonus() -> void:
-	print("the needle, run end to end")
+	_section("the needle, run end to end")
 
 	var bot: G2GPlayer = game.players[&"bot"]
 	var needle := DotTimerTrack.of_bonus(2)
@@ -959,10 +997,11 @@ func _test_needle_bonus() -> void:
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame
+	_done()
 
 
 func _test_surf_run() -> void:
-	print("a surf run")
+	_section("a surf run")
 	var changed: DotResult = await game.change_map(&"surf_g2g_intro")
 	_check(changed.ok, "the surf map loads")
 	game.config.air_accelerate = 150.0
@@ -1070,10 +1109,11 @@ func _test_surf_run() -> void:
 	_check(bot.controller.motor.stuck_ticks == 0, "without the slide ever running out of iterations")
 	game.config.air_accelerate = 1000.0
 	game.apply_movement()
+	_done()
 
 
 func _test_bonus_track() -> void:
-	print("the bonus track")
+	_section("the bonus track")
 	var bot: G2GPlayer = game.players[&"bot"]
 	_check(game.timers.set_player_track(&"bot", DotTimerTrack.of_bonus(1)), "a player can switch to the bonus")
 	game.spawn_player(&"bot")
@@ -1086,6 +1126,7 @@ func _test_bonus_track() -> void:
 	await _test_transfer_bonus()
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	_done()
 
 
 ## Bonus 1 on the surf map, driven from its pad into its finish.
@@ -1371,7 +1412,7 @@ func _test_transfer_bonus() -> void:
 ## about a constant gap: a scripted bot cannot air-strafe, so a route that needs turning
 ## is a route no suite ever runs end to end. Here the bot holds forward and nothing else.
 func _test_the_fall_line() -> void:
-	print("the fall line — surf_g2g_intro's third bonus")
+	_section("the fall line — surf_g2g_intro's third bonus")
 
 	var bot: G2GPlayer = game.players[&"bot"]
 	var fall := DotTimerTrack.of_bonus(3)
@@ -1533,6 +1574,7 @@ func _test_the_fall_line() -> void:
 	)
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	_done()
 
 
 ## Whether every playable track on the current map has a respawn zone.
@@ -1572,7 +1614,7 @@ static func _fake_replay(map_id: StringName, seconds: float, tick_rate: int) -> 
 
 
 func _test_ghost() -> void:
-	print("the world-record ghost")
+	_section("the world-record ghost")
 	var map_id: StringName = game.maps.current.id
 	var replay := _fake_replay(map_id, 3.0, game.tick_rate)
 	var record := DotTimerRecord.new()
@@ -1642,6 +1684,7 @@ func _test_ghost() -> void:
 	_check(look.mouse_drives_view(),
 		"and a captured one is")
 	look.free()
+	_done()
 
 
 # --- Progression ------------------------------------------------------------
@@ -1653,7 +1696,7 @@ func _test_ghost() -> void:
 ## dot-stats already does; what is untested anywhere else is whether a finish in this
 ## game reaches those two addons at all.
 func _test_progression() -> void:
-	print("progression")
+	_section("progression")
 
 	var progress := game.progress
 
@@ -1800,3 +1843,4 @@ func _test_progression() -> void:
 		"a player who has never run has not finished a course in under thirty seconds"
 	)
 	await progress.leave(&"nobody")
+	_done()
