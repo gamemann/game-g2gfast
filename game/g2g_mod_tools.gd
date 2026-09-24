@@ -97,6 +97,11 @@ static func handlers(game: G2GGame) -> Dictionary:
 			var arsenal: DotWeaponArsenal = game.combat.arsenal_of(key_of(id)) if game.combat != null else null
 			if arsenal == null:
 				return _no_health()
+			# A weapon an admin handed over can shove its holder (a rocket, a knockback
+			# gun): assisted, like a slap.
+			var runner := _player(game, id)
+			if runner != null and runner.timer != null:
+				runner.timer.taint()
 			return arsenal.give(StringName(str(args["item"]).strip_edges().to_lower())),
 
 		DotModTools.ACTION_STRIP: func(id: StringName, _args: Dictionary) -> DotResult:
@@ -163,6 +168,10 @@ static func _hurt(game: G2GGame, id: StringName, amount: float) -> DotResult:
 	if amount >= 0.0:
 		p.controller.state.velocity += Vector3(3.0, 5.0, 3.0)
 		p.controller.state.mode = DotFpsState.Mode.AIR
+		# A shove is speed nobody earned, in a direction the slapper knows: an admin's
+		# help, which a record must not carry. `slap @me` was the cheapest boost there is.
+		if p.timer != null:
+			p.timer.taint()
 
 	if amount == 0.0:
 		return DotResult.success(null)

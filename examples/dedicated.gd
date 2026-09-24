@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 173
+const CHECKS := 174
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -1211,6 +1211,14 @@ func _test_live_tools() -> void:
 		await get_tree().physics_frame
 	_check(player.timer.run.tainted, "a speed step is help on the ground, and taints the run too")
 	var _normal := await _run_command_later("speed One 1")
+
+	# A slap is a shove in a direction the slapper knows: speed nobody earned.
+	player.timer.run.begin(0.0)
+	await _physics(2)
+	var clean_before_slap := not player.timer.run.tainted
+	var _slapped := await _run_command_later("slap One")
+	_check(clean_before_slap and player.timer.run.tainted,
+		"a slap taints the run it lands in, so `slap @me` is not a boost with a record at the end")
 
 	var described := await _run_command_later("modtools")
 	_check(_said(described, "abilities") and _said(described, "burn (there is no fire"),
