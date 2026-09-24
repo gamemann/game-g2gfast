@@ -56,46 +56,40 @@ const NO_PIT := ["buses_from_hell_fixed"]
 
 ## Arrivals on these maps that DO land inside a pit on their own track, by label.
 ##
-## [b]Known, not accepted.[/b] Each is a different fault the importer does not yet
-## understand, written down so the check below can be asserted on every other map while
-## these are worked through (`[arrive-1]` in the nightly list):
+## [b]Known, not accepted[/b] (`[arrive-1]`). Two of the three that were here are fixed:
 ##
-## - `surf_summit` stage 3 is put on a floor-level plane 6,272 by 4,224 units that sends
-##   a player to the map start -- the destination is the checkpoint trigger's floor, and
-##   that trigger reaches down to the plane.
-## - `surf_greensway` stage 2 and `surf_mesa`'s door land inside teleport brushes 2,000
-##   to 4,000 units across whose boxes are almost certainly wider than the brushes: a
-##   wedge under a ramp has a bounding box over the ramp.
+## - `surf_mesa`'s door landed 237 units over the SLOPED top of a teleport brush and
+##   inside its bounding box -- a zone is a box and a brush is a hull. `trim_to_hull` in
+##   `tools/bsp_import.py` asks `point_in_brush` of every arrival and cuts the box back.
+## - `surf_summit` stage 3 landed on the floor beam of a gate whose far side is the fail
+##   plane. Its zones file gives the stage a destination on the deck past the gate.
 ##
-## All three are inside the MAPPER's trigger, not inside thickness this importer added --
-## `clear_arrivals` in `tools/bsp_import.py` trims that, and it is what took
-## `surf_aquaflow` stage 2 off this list.
+## `surf_greensway` stage 2 is not a wedge: its arrival (the floor of `checkpoint_1`, a
+## plane 3,328 wide and 7,168 tall) is INSIDE the hull of the mapper's own teleport, and
+## so is every floor and both canyon rims within 1,700 units of the line, measured with
+## `point_in_brush`. The checkpoint is a split with nowhere to stand; where `!s2` should
+## put a player wants somebody to look at the map in-game.
 ##
 ## Asserted both ways, like [constant NOT_COURSES]: a map in here whose arrival stops
 ## landing in a pit fails, so the list cannot outlive its reason.
 const ARRIVES_IN_PIT := {
-	"surf_summit": ["stage 3"],
 	"surf_greensway": ["stage 2"],
-	"surf_mesa": ["door"],
 }
 
 ## Imported bonuses with no pit of their own, by track, which `route_problems()` reports.
 ##
-## [b]Known, not accepted — `[track-zone-2]` in the nightly list.[/b] The importer turns
-## every `trigger_teleport` that is not a zone into a RESPAWN on the MAIN track, and the
-## timer acts only on the run's own track, so on these bonuses a player who falls off
-## touches the map's pits and is not put back. The fix is the importer's (which pits
-## belong to which route, or a pit every route shares), not this list's.
+## [b]Empty since `[track-zone-2]`, and kept so the next one has somewhere to go.[/b] The
+## importer used to turn every leftover `trigger_teleport` into a RESPAWN on the MAIN
+## track, and the timer acts only on the run's own, so bhop_pit's bonus, surf_arcade's,
+## surf_beginner2's four and surf_summit's two had no pit: a player who fell off one fell
+## for ever. `pit_tracks` in `tools/bsp_import.py` gives a teleport to the track whose
+## START its destination is in -- a fail teleport sends a player back to the start of the
+## route they fell off -- and every one of those bonuses has pits now.
 ##
 ## Asserted both ways, like [constant NOT_COURSES]: a listed map must report exactly
 ## these tracks and nothing else, and an unlisted map must report nothing, so a map
 ## that gains a pit or loses one fails here and the list cannot outlive its reason.
-const BONUSES_WITHOUT_PITS := {
-	"bhop_pit": [1],
-	"surf_arcade": [1],
-	"surf_beginner2": [1, 2, 3, 4],
-	"surf_summit": [1, 2],
-}
+const BONUSES_WITHOUT_PITS := {}
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
 const CHECKS_PER_MAP := 29

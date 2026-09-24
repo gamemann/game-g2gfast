@@ -24,6 +24,10 @@ A volume, exactly one of:
 
 Plus `"kind"`, `"track"`, `"number"` (a stage), `"destination"` (a name or a point), `"destination_yaw"`, and `"note"`.
 
+A `STAGE` with a `"number"` and a `"destination"` and **no volume rule** does not add a stage: it moves where `!s<n>` puts a player on the stage the map already labelled, and stops the import if there is no such stage. The line stays the mapper's. `surf_summit`'s stage 3 is the one use: the floor of its checkpoint gate is the edge of its fail plane.
+
+**Which track a pit is on comes from the map, not from this file.** Every `trigger_teleport` left over after the zones is a `RESPAWN`, on the track whose `START` volume its destination is inside (within 64 units), copied to each if several, and on the main track otherwise (`pit_tracks` in `tools/bsp_import.py`). A fail teleport sends a player back to the start of the route they fell off, so this is the mapper's own statement of whose pit it is. And a pit's box is cut back off any arrival that is inside the box but outside the brush (`trim_to_hull`), because the box around a wedge-shaped pit reaches over the ramp it sits under.
+
 `"doorways": {"max_horizontal": 512}` opts a map into the rule that a teleport volume narrower than that is a **door the player walks through** rather than the pit — `TELEPORT`, which keeps the run, rather than `RESPAWN`, which ends it. It is not on by default because it is only true of a map whose sections are joined by doors.
 
 Anything a rule cannot resolve is an error and stops the import. That is deliberate: a finish line that silently resolved to nothing is a map that cannot be finished, and nothing about playing it would say so.

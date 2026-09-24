@@ -8,6 +8,8 @@
    "note": "where all thirty of the map's fail teleports put a player"},
   {"kind": "END", "track": 0, "teleport_to": "td_end_room",
    "note": "the seamless portal into the end room. Its pair (-> td_end_facade) is the way back and is left as ordinary geometry"},
-  {"kind": "SPAWN", "track": 0, "destination": "td_mapstart", "destination_yaw": 0}
+  {"kind": "SPAWN", "track": 0, "destination": "td_mapstart", "destination_yaw": 0},
+  {"kind": "STAGE", "track": 0, "number": 3, "destination": [2448, 0, -224], "destination_yaw": 180,
+   "note": "tm_checkpoint2 is a wooden gate 4,096 wide and 1,600 tall at x -1536..-1408, and the middle of its floor -- where !s3 used to land -- is the beam at z 576 with the fail plane to td_mapstart (x -7680..-1408, z 576..608) on the far side of it: a player put there stands in a doorway with nowhere to go but the pit. Past the gate is a closed cave room whose one standable thing clear of every teleport hull is the 480 x 1,280 wooden deck against its east wall at z -224, with the ramps off it dropping back toward the gate (-X), so that is where the stage starts. Read from the brush and face lumps on 2026-09-24, not ridden: checked clear of every trigger_teleport hull with point_in_brush"}
  ]
 }

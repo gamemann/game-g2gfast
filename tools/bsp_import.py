@@ -985,6 +985,18 @@ def resolve_overrides(z, doc):
         track = int(spec.get("track", 0))
         box = resolve_box(z, spec)
         dest, yaw = resolve_point(z, spec)
+        if kind == "STAGE" and box is None and dest is not None:
+            # A destination for a stage the MAP labelled, with no volume of its own:
+            # the line is the mapper's and only where `!s<n>` puts a player is ours.
+            # surf_summit's `tm_checkpoint2` is a gate whose floor is its fail plane.
+            number = float(spec.get("number", 0))
+            hits = [zz for zz in z.zones if zz["kind"] == "STAGE"
+                    and zz["track"] == track and float(zz.get("number", 0)) == number]
+            if not hits:
+                raise ValueError("stage %g on track %d has a destination and no zone" % (number, track))
+            for zz in hits:
+                zz["destination"], zz["destination_yaw"] = list(dest), yaw
+            continue
         if kind not in POINT_KINDS and box is None:
             raise ValueError("zone %r in the override resolves to no volume" % spec)
         if box is not None and dest is None and kind in ("STAGE", "SPAWN", "TELEPORT"):
@@ -1351,6 +1363,12 @@ def brush_boxes(bsp, e):
     Falls back to nothing, and the caller to [method brush_box], for a model whose tree
     reaches no brush with a hull.
     """
+    return [box for _, _, box in brush_boxes_indexed(bsp, e)]
+
+
+def brush_boxes_indexed(bsp, e):
+    """[method brush_boxes], with each box's brush index and the entity's origin, so a
+    caller can ask [method point_in_brush] about the brush the box was drawn around."""
     model = e.get("model", "")
     if not model.startswith("*"):
         return []
@@ -1363,8 +1381,8 @@ def brush_boxes(bsp, e):
         pts = bsp.brush_hull(i)
         if len(pts) < 4:
             continue
-        out.append(([min(p[a] for p in pts) + o[a] for a in range(3)],
-                    [max(p[a] for p in pts) + o[a] for a in range(3)]))
+        out.append((i, o, ([min(p[a] for p in pts) + o[a] for a in range(3)],
+                           [max(p[a] for p in pts) + o[a] for a in range(3)])))
     return out
 
 
@@ -1441,6 +1459,69 @@ def clear_arrivals(zone, arrivals):
         elif p[2] > ohi[2]:
             hi[2] = min(hi[2], p[2] - 1.0)
         zone["cleared"] = True
+
+
+def pit_tracks(z, e):
+    """Which tracks a leftover teleport is a pit FOR: the ones whose start it sends to.
+
+    [b]A zone carries a track and the timer only acts on the run's own, so a pit on
+    track 0 catches nobody running a bonus.[/b] Every leftover teleport used to be a
+    RESPAWN on the main track, which left surf_beginner2's four bonuses, surf_summit's
+    two, surf_arcade's and bhop_pit's with no pit at all -- a player who fell off one
+    fell for ever. The map says whose pit it is: a mapper's fail teleport sends a player
+    back to the start of the route they fell off, so a teleport whose destination is in
+    track N's START volume belongs to track N. One whose destination is in several (a
+    shared start) is copied to each; one aimed anywhere else -- a stage reset, a hub --
+    stays on the main track, which is what it always was.
+    """
+    hits = z.destinations(e.get("target", ""))
+    if not hits:
+        return [0]
+    at = hits[0][0]
+    tracks = sorted({zz["track"] for zz in z.zones if zz["kind"] == "START"
+                     and box_contains((zz.get("original_min", zz["min"]),
+                                       zz.get("original_max", zz["max"])), at, 64.0)})
+    return tracks or [0]
+
+
+def trim_to_hull(zone, arrivals, bsp, brush, origin):
+    """Cut a pit's box back off an arrival that is inside the box but not the brush.
+
+    [b]A brush is a hull and a zone is a box, and the box around a wedge is not the
+    wedge.[/b] A mapper's pit under a ramp is routinely a sloped or wedge-shaped brush,
+    and its bounding box reaches up over whatever the slope leaves clear -- Surf_Mesa's
+    door lands 237 units above the sloped top of a 2,816 by 9,072 unit teleport brush and
+    well inside its box, so walking through that door respawned the player. Asked with
+    [method point_in_brush], which is the definition of inside rather than a guess at it.
+
+    An arrival that IS inside the hull is left alone: that is the map's own trigger, and
+    `headless_imported` reports it (`ARRIVES_IN_PIT`) rather than this hiding it. The cut
+    is the one of the box's six faces that loses the least volume, the top winning a tie
+    because a player a lowered top misses keeps falling into what is left of the box.
+    """
+    for p in arrivals:
+        lo, hi = zone["min"], zone["max"]
+        if not all(lo[a] <= p[a] < hi[a] for a in range(3)):
+            continue
+        if point_in_brush(bsp, brush, [p[a] - origin[a] for a in range(3)]):
+            continue
+        size = [hi[a] - lo[a] for a in range(3)]
+        best = None
+        for a in (2, 0, 1):
+            for side in ("hi", "lo"):
+                removed = (hi[a] - (p[a] - 1.0)) if side == "hi" else ((p[a] + 1.0) - lo[a])
+                if removed <= 0.0 or removed >= size[a]:
+                    continue
+                if best is None or removed / size[a] < best[0] - 1e-9:
+                    best = (removed / size[a], a, side)
+        if best is None:
+            continue
+        _, a, side = best
+        if side == "hi":
+            hi[a] = p[a] - 1.0
+        else:
+            lo[a] = p[a] + 1.0
+        zone["trimmed"] = True
 
 
 def dead_teleports(z):
@@ -1526,22 +1607,27 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
                 if zz.get("destination") is not None and zz["kind"] in ("SPAWN", "STAGE", "TELEPORT")]
     respawn = []
     for i, e in z.entities("trigger_teleport"):
-        boxes = brush_boxes(bsp, e)
+        boxes = brush_boxes_indexed(bsp, e)
         if not boxes:
             box = brush_box(bsp, e)
             if box is None:
                 continue
-            boxes = [box]
+            boxes = [(None, None, box)]
         z.claimed.add(i)
-        for box in boxes:
-            zone = z.add("RESPAWN", 0, box=box)
-            clear_arrivals(zone, arrivals)
-            respawn.append({"min": zone["min"], "max": zone["max"],
-                            "inflated": zone["inflated"],
-                            "hung": bool(zone.get("hung")),
-                            "cleared": bool(zone.get("cleared")),
-                            "original_min": zone["original_min"],
-                            "original_max": zone["original_max"]})
+        for track in pit_tracks(z, e):
+            for brush, origin, box in boxes:
+                zone = z.add("RESPAWN", track, box=box)
+                clear_arrivals(zone, arrivals)
+                if brush is not None:
+                    trim_to_hull(zone, arrivals, bsp, brush, origin)
+                respawn.append({"min": zone["min"], "max": zone["max"],
+                                "inflated": zone["inflated"],
+                                "hung": bool(zone.get("hung")),
+                                "cleared": bool(zone.get("cleared")),
+                                "trimmed": bool(zone.get("trimmed")),
+                    "track": track,
+                                "original_min": zone["original_min"],
+                                "original_max": zone["original_max"]})
 
     return z, spawns, respawn, push, other, dropped
 
