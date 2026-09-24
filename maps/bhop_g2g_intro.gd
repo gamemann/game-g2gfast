@@ -240,9 +240,12 @@ static func build_zones() -> DotTimerZoneSet:
 	# down the needle: it fell at a block and was still falling 1,370 metres later.
 	#
 	# `surf_g2g_intro` was given per-bonus respawn zones when its second bonus was
-	# added, and `headless_run.zones_have_respawn_on_bonuses` was written then — but it
-	# is asked on the surf map only, so this map was never the one being checked. The
-	# same one-map fix this tree has now missed in six places.
+	# added, and a hand-written check for them was added to `headless_run` then — but it
+	# was asked on the surf map only, so this map was never the one being checked. The
+	# same one-map fix this tree has now missed in six places. That check is gone:
+	# dot-timer's `DotTimerZoneSet.route_problems()` asks every route on every map for a
+	# start, a finish, a spawn and a pit (`[track-zone-1]`), and `tools/export_zones.gd`
+	# refuses to write a map that fails it.
 	var fall_low := Vector3(-4096.0, FLOOR_Y - 1024.0, finish_z - 4096.0)
 	var fall_high := Vector3(4096.0, FLOOR_Y - 192.0, START_Z + 4096.0)
 

@@ -1261,8 +1261,9 @@ func _test_bonus_track() -> void:
 ## bank above the finish pad's height and lands past it (see below).
 ##
 ## The line is read off the map. Only the strip of bank between its low lip and the far
-## edge of the finish pad lies over the pad, and the bot rides one hull width up from
-## the lip — inside that strip, and where the motor carries it (see the freeze below).
+## edge of the finish pad lies over the pad, and the bot rides three quarters of a hull
+## up from the lip — inside that strip, and on a line measured to finish from a
+## standstill (see the numbers where `line` is set).
 ##
 ## [b]What this decides, and what it deliberately does not.[/b] It fails if the bot falls
 ## off the route (the respawn zone fires), if it never reaches the end of the bank, or
@@ -1280,7 +1281,13 @@ func _test_single_bank() -> void:
 	await get_tree().physics_frame
 
 	var lip := SurfIntro.bonus_bank_lip_x()
-	var line := lip + G2GUnits.PLAYER_HALF_WIDTH * 2.0
+	# Three quarters of a hull up from the lip. Measured 2026-09-24 from a standstill
+	# spawn, once dot-player-controller 94f1c87 had removed the freeze: lines at +8, +16,
+	# +24, +64 and +96 finish (1,299 to 1,676 ticks, 1 to 7 stalled slides each); +32,
+	# where this sat, and +48 do not -- the rider sheds its forward speed mid-bank and
+	# hangs against it. +32 finished here only because the sections before this one
+	# leave the bot about 30 u/s of sideways drift, which is not a line to rely on.
+	var line := lip + G2GUnits.PLAYER_HALF_WIDTH * 1.5
 	var end_z := SurfIntro.bonus_bank_end_z()
 
 	var started: Array[bool] = [false]
@@ -1332,8 +1339,10 @@ func _test_single_bank() -> void:
 			ride_y_low = minf(ride_y_low, at.y)
 			top = maxf(top, -G2GUnits.to_units(bot.controller.state.velocity.z))
 
-		# A rider who has not moved in a second and a half is not riding. See the
-		# freeze in CLAUDE.md: it keeps its velocity and covers no ground.
+		# A rider who has not moved in a second and a half is not riding. The freeze
+		# this was written for (velocity intact, no ground covered, one duplicate-plane
+		# stall every tick) is gone since dot-player-controller 94f1c87; kept, because
+		# a stall is exactly what a movement change would bring back.
 		still = still + 1 if bot.global_position.distance_to(last) < 0.001 else 0
 		last = bot.global_position
 
