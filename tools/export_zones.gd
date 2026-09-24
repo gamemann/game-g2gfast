@@ -31,6 +31,12 @@ func _init() -> void:
 		for problem in zones.problems():
 			printerr("  PROBLEM %s: %s" % [id, problem])
 			failures += 1
+		# `[track-zone-2]`: a route with no start, finish, spawn or pit of its own is a
+		# map a player can fall out of for ever, and `problems()` does not ask per route.
+		# Failing here is the first place it can fail, before any suite is run.
+		for problem in zones.route_problems():
+			printerr("  ROUTE %s: %s" % [id, problem])
+			failures += 1
 	print("%d map%s exported" % [ids.size(), "" if ids.size() == 1 else "s"])
 	quit(1 if failures > 0 else 0)
 

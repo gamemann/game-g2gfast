@@ -24,14 +24,15 @@ const G2GReach := preload("../game/g2g_reach.gd")
 
 const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
+const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 170
+const CHECKS := 178
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 18
+const SECTIONS := 19
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -64,6 +65,7 @@ func _run() -> void:
 	_test_reach()
 	await _test_bhop_run()
 	await _test_needle_bonus()
+	await _test_ridge_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
 	await _test_the_fall_line()
@@ -1001,6 +1003,116 @@ func _test_needle_bonus() -> void:
 		finished.size() == 1 and finished[0].track == needle,
 		"and the finish line ends the run, on the bonus's own track",
 		"%d finished" % finished.size()
+	)
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+
+## Whether a bot at [param z_units] on the ridge should be holding jump: in the last
+## twenty units of the start pad or of any block, read off the MAP's own list of blocks
+## so moving one moves the jump with it. Twenty rather than the needle's thirty because
+## the ridge's gaps are wider, and every unit before the lip is a unit off the reach.
+func _ridge_jumps_at(z_units: float) -> bool:
+	var edges: Array = [BhopStages.START_Z - BhopStages.RIDGE_PAD_LENGTH * 0.5]
+	for block: Dictionary in BhopStages.ridge_blocks():
+		edges.append(float(block["far"]))
+	for far: float in edges:
+		if z_units >= far and z_units - far <= 20.0:
+			return true
+	return false
+
+
+## `the ridge`, `bhop_g2g_stages` bonus 2, run end to end by a bot that cannot strafe:
+## up five steps, along a crest that narrows to 80 units, down five drops, through
+## both stage splits into the finish, without once being put back. The second route
+## here a bot runs from start line to finish, and shaped RUN for the needle's reason.
+func _test_ridge_bonus() -> void:
+	_section("the ridge, run end to end")
+
+	var changed: DotResult = await game.change_map(&"bhop_g2g_stages")
+	_check(changed.ok, "the stages map loads")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var ridge := DotTimerTrack.of_bonus(2)
+	var zones := game.timers.zones
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2])
+		and zones.stage_count(ridge) == 2,
+		"with a second bonus that has two stages",
+		str(zones.playable_tracks()) if zones else "no zones")
+	_check(game.timers.set_player_track(&"bot", ridge), "a player can switch to the ridge")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	var reset := false
+
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset = true
+
+	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
+
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	await _prestrafe(&"bot", 120)
+
+	var started := false
+	var resets := 0
+	var top := 0.0
+	var deepest := 0.0
+	var highest := -INF
+
+	for _i in range(4000):
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.set_button(
+			DotFpsCommand.BUTTON_JUMP,
+			_ridge_jumps_at(G2GUnits.vector_to_units(bot.global_position).z)
+		)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+		var at := G2GUnits.vector_to_units(bot.global_position)
+		top = maxf(top, G2GUnits.to_units(bot.speed()))
+		deepest = minf(deepest, at.z)
+		highest = maxf(highest, at.y)
+		if reset:
+			resets += 1
+			reset = false
+		if bot.timer.run.is_active():
+			started = true
+		if not finished.is_empty():
+			break
+
+	print("  ..    ridge: top %.0f u/s, highest %.0f u, reached z %.0f u, %d resets, %s" % [
+		top, highest, deepest, resets,
+		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
+	])
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	_check(started, "leaving its pad starts a run on the ridge's own track")
+	_check(highest >= 120.0, "the bot climbs to the crest", "highest %.0f u" % highest)
+	_check(splits == [1, 2], "crossing both of its stage lines, in order", str(splits))
+	_check(resets == 0, "without ever being put back", "%d resets" % resets)
+	_check(
+		finished.size() == 1 and finished[0].track == ridge,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())]
 	)
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)

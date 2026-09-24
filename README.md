@@ -123,7 +123,7 @@ The end-of-map vote and the option to extend the current map:
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 170 checks
+godot --headless --path . res://examples/headless_run.tscn   # 178 checks
 godot --headless --path . res://examples/headless_net.tscn   # 113 checks, server + client in one process
 godot --headless --path . res://examples/dedicated.tscn      # 174 checks over 16 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks

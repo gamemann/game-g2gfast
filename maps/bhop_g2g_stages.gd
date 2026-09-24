@@ -3,7 +3,10 @@ extends "../game/g2g_map.gd"
 const G2GGeometry := preload("../game/g2g_geometry.gd")
 const G2GReach := preload("../game/g2g_reach.gd")
 
-## `bhop_g2g_stages` — five stages, a bonus, and a different idea in each stage.
+## `bhop_g2g_stages` — five stages, two bonuses, and a different idea in each stage.
+##
+## Bonus 1 is a surf descent; bonus 2, `the ridge`, is a staged RUN line — see
+## [constant RIDGE_SECTIONS].
 ##
 ## [b]Why this map exists.[/b] `bhop_g2g_intro` is sixteen blocks in a straight line
 ## over a flat plane. It proves the movement and it is not a map: there is one thing to
@@ -61,6 +64,34 @@ const FLOOR_Y := 0.0
 
 ## How far to the side the bonus sits. See `_build_bonus`.
 const BONUS_X := 6144.0
+
+## Bonus 2, `the ridge`: up a stair, along a narrowing crest, down the other side. Half
+## way between the main course (which never leaves x <= 176) and the surf bonus (whose
+## ramps start at 5,760), so neither is in the other's view from a start pad.
+const RIDGE_X := 3072.0
+
+## The ridge's three sections, in order. One list, read by the geometry, the zones and
+## `headless_run`'s bot, for the reason [constant STAGES] is one list. `rise` is per
+## block; a section's first gap is the gap onto its first block.
+##
+## [b]Every gap is a RUN gap, sized with [G2GReach] under the shipped cvars[/b] — a jump
+## from the lip at 250 u/s clears 189 flat, 166 onto +24 and 222 down 48 — and each is at
+## least 29 units inside it, so a player who lands anywhere on a block can run to its
+## edge and still make the next one. That is the route's whole promise: it is the
+## stages map's practice line, for a player who can jump but cannot yet chain, and it
+## asks three things a straight line of level blocks does not — judge a climb, hold a
+## line on a crest that narrows from 176 to 80, and not overshoot a drop.
+const RIDGE_SECTIONS: Array = [
+	{"kind": "climb", "blocks": 5, "rise": 24.0, "first_gap": 96.0, "last_gap": 128.0,
+		"first_width": 176.0, "last_width": 176.0},
+	{"kind": "crest", "blocks": 4, "rise": 0.0, "first_gap": 128.0, "last_gap": 160.0,
+		"first_width": 176.0, "last_width": 80.0},
+	{"kind": "descent", "blocks": 5, "rise": -48.0, "first_gap": 128.0, "last_gap": 192.0,
+		"first_width": 128.0, "last_width": 128.0},
+]
+
+## The ridge's start pad: its centre is at START_Z, like the main route's.
+const RIDGE_PAD_LENGTH := 512.0
 
 ## Where a player stands to start, behind the start line.
 const START_Z := 512.0
@@ -147,6 +178,78 @@ func _build() -> void:
 	add_course("main", DotTimerTrack.MAIN, G2GReach.Kind.CHAIN, bodies)
 
 	_build_bonus()
+	_build_ridge()
+
+
+## Bonus 2, `the ridge`. See [constant RIDGE_SECTIONS].
+func _build_ridge() -> void:
+	var bodies: Array = [G2GGeometry.box(
+		self, Vector3(RIDGE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z),
+		Vector3(256.0, BLOCK_THICKNESS, RIDGE_PAD_LENGTH), G2GGeometry.ROLE_START
+	)]
+
+	for block: Dictionary in ridge_blocks():
+		bodies.append(G2GGeometry.box(
+			self,
+			Vector3(RIDGE_X, float(block["y"]) - BLOCK_THICKNESS * 0.5,
+				float(block["near"]) - BLOCK_LENGTH * 0.5),
+			Vector3(float(block["width"]), BLOCK_THICKNESS, BLOCK_LENGTH),
+			# The first block of each section after the first carries a stage line and is
+			# drawn in the finish colour, as the main route's are: a split a player can see.
+			G2GGeometry.ROLE_END if bool(block["stage_line"]) else G2GGeometry.ROLE_BONUS
+		))
+
+	var pad := ridge_pad()
+	bodies.append(G2GGeometry.box(
+		self, Vector3(RIDGE_X, pad.y - BLOCK_THICKNESS * 0.5, pad.z),
+		Vector3(256.0, BLOCK_THICKNESS, 384.0), G2GGeometry.ROLE_END
+	))
+
+	# RUN: every gap is a jump from the lip at run speed, which is what the route
+	# promises and what `headless_run` drives a bot along to prove it.
+	add_course("the ridge", DotTimerTrack.of_bonus(2), G2GReach.Kind.RUN, bodies)
+
+
+## Every block of the ridge in order: `near` and `far` are the Z of its two edges
+## (near > far, the route runs toward -Z), `y` its top, `stage_line` whether a stage
+## split is drawn across it and `stage` which number that split is.
+##
+## [b]Static, and the only place the ridge's arithmetic is done[/b] — the geometry, the
+## zones and the suite's bot all read it, so a gap changed here moves the block, the
+## split on it and the bot's jump together.
+static func ridge_blocks() -> Array:
+	var out: Array = []
+	var near := START_Z - RIDGE_PAD_LENGTH * 0.5
+	var y := FLOOR_Y
+
+	for section_index in range(RIDGE_SECTIONS.size()):
+		var section: Dictionary = RIDGE_SECTIONS[section_index]
+		var blocks := int(section["blocks"])
+
+		for i in range(blocks):
+			var t := float(i) / float(maxi(blocks - 1, 1))
+			near -= lerpf(float(section["first_gap"]), float(section["last_gap"]), t)
+			y += float(section["rise"])
+
+			out.append({
+				"near": near,
+				"far": near - BLOCK_LENGTH,
+				"y": y,
+				"width": lerpf(float(section["first_width"]), float(section["last_width"]), t),
+				"stage_line": section_index > 0 and i == 0,
+				"stage": section_index,
+			})
+			near -= BLOCK_LENGTH
+
+	return out
+
+
+## The centre of the ridge's finish pad (top face): 384 units long, one more
+## descent step below the last block and a 160-unit gap past it.
+static func ridge_pad() -> Vector3:
+	var blocks := ridge_blocks()
+	var last: Dictionary = blocks[blocks.size() - 1]
+	return Vector3(RIDGE_X, float(last["y"]) - 48.0, float(last["far"]) - 160.0 - 192.0)
 
 
 ## The bonus: a two-ramp surf descent onto a pad.
@@ -359,6 +462,38 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, bonus,
 		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
 		Vector3(16384.0, bonus_floor - 256.0, 16384.0)))
+
+	# Bonus 2, the ridge: a start, two stage splits, a finish, a spawn and a pit.
+	var ridge := DotTimerTrack.of_bonus(2)
+	var pad := ridge_pad()
+
+	zones.add(zone_box(DotTimerZone.Kind.START, ridge,
+		Vector3(RIDGE_X - 128.0, FLOOR_Y, START_Z - RIDGE_PAD_LENGTH * 0.5),
+		Vector3(RIDGE_X + 128.0, FLOOR_Y + 192.0, START_Z + RIDGE_PAD_LENGTH * 0.5)))
+	# The pad's last 320 units: it begins 64 in from the pad's near edge, so a player
+	# has landed rather than grazed the lip when the clock stops.
+	zones.add(zone_box(DotTimerZone.Kind.END, ridge,
+		Vector3(RIDGE_X - 128.0, pad.y, pad.z - 192.0),
+		Vector3(RIDGE_X + 128.0, pad.y + 192.0, pad.z + 128.0)))
+
+	for block: Dictionary in ridge_blocks():
+		if not bool(block["stage_line"]):
+			continue
+		var half := float(block["width"]) * 0.5
+		zones.add(zone_stage(
+			ridge, int(block["stage"]),
+			Vector3(RIDGE_X - half, float(block["y"]), float(block["far"])),
+			Vector3(RIDGE_X + half, float(block["y"]) + 192.0, float(block["near"])),
+			Vector3(RIDGE_X, float(block["y"]) + 16.0, float(block["near"]) - BLOCK_LENGTH * 0.5),
+			# Facing down the route: yaw 0 is -Z here, as the spawn zones use. The main
+			# route's `yaw + 180` faces back up it and is `[stage-yaw-1]`'s, not copied.
+			0.0
+		))
+
+	zones.add(zone_spawn(ridge, Vector3(RIDGE_X, FLOOR_Y + 8.0, START_Z + 128.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, ridge,
+		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
+		Vector3(16384.0, pad.y - BLOCK_THICKNESS - 256.0, 16384.0)))
 
 	return zones
 

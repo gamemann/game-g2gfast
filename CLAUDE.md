@@ -91,7 +91,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (170), headless_net (113), dedicated (174),
+examples/           headless_run (178), headless_net (113), dedicated (174),
                     headless_imported (29 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -479,7 +479,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 170 checks
+godot --headless --path . res://examples/headless_run.tscn   # 178 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_net.tscn   # 113 checks
 godot --headless --path . res://examples/dedicated.tscn      # 174 checks, 16 sections
@@ -1596,6 +1596,10 @@ A timer server has no leading score, so nothing here calls `note_score`; `trigge
 
 That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s while holding jump, and that number is the **prestrafe** being carried into the first hop rather than anything hopping achieved. The check is true and it is not evidence that the bot is running.
 
+## `the ridge`, and the second route a bot runs end to end
+
+`bhop_g2g_stages` bonus 2 (2026-09-24) is the stages map's practice line: five blocks climbing 24 units each, a crest of four that narrows from 176 to 80 units, and five drops of 48 onto a finish pad 168 units under the start, with a stage split on the first block of the crest and the first block of the descent (drawn in the finish colour, as the main route's are). It sits at x = 3072, between the main course and the surf bonus. Every gap is a **RUN** gap, sized with `G2GReach` and at least 29 units inside it — 128 onto +24 against 166, 160 flat against 189, 192 down 48 against 222 — so it asks for a climb, a line and a drop and never for speed a player has not got. `RIDGE_SECTIONS` and `ridge_blocks()` are the one list: the geometry, the zones and `headless_run`'s bot read it, and the bot jumps in the last twenty units of each block read off it. `_test_ridge_bonus` drives it from the pad through both splits into the finish with no reset: 17.60 s, 0 resets, top 250 u/s. Render: `tools/route_preview.sh bhop_g2g_stages 2`.
+
 ## The bonus tracks had no respawn zone
 
 A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
@@ -1621,6 +1625,7 @@ What `headless_run` prints, all passing:
 | `bhop_g2g_intro` warm-up | RUN, 3 | 128 | inside 189 |
 | `bhop_g2g_intro` the needle | RUN, 11 | 96 | inside 189 |
 | `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
+| `bhop_g2g_stages` the ridge | RUN, 15 | 192 down 48 | inside 222 |
 
 `surf_g2g_intro` declares nothing, and says why in its header: every way from one surface to the next on it is a drop onto something below, and only riding it answers whether the thing below is there.
 
