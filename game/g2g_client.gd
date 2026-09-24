@@ -213,6 +213,10 @@ func _watch(id: StringName) -> void:
 		hud.name = "Hud"
 		add_child(hud)
 	hud.bind(game, id)
+	# The server's time left, which may well have arrived before there was a HUD: HELLO
+	# and the admit's CLOCK come together, and JOIN is what makes the player watched.
+	if bridge != null:
+		hud.clock_view = bridge.clock_view
 	_say_click_to_play()
 
 	# By id, like the HUD, and for the same reason: HELLO names us before JOIN makes us.
@@ -317,6 +321,11 @@ func _build_netcode() -> DotResult:
 	bridge.notice_received.connect(func(_pid: int, text: String) -> void:
 		if hud != null:
 			hud.notice(text)
+	)
+	# The map's time left, from the server's vote. The bridge holds it; the HUD draws it.
+	bridge.clock_received.connect(func(_state: Dictionary) -> void:
+		if hud != null:
+			hud.clock_view = bridge.clock_view
 	)
 	# The map vote's cue and countdown. The ballot itself arrives as chat; this is what
 	# chat cannot carry.

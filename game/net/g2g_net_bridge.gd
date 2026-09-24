@@ -46,6 +46,9 @@ signal finish_received(player_id: int, time: float, rank: int)
 signal notice_received(player_id: int, text: String)
 ## The map vote's cue and countdown second, from [method G2GEvents.read_vote]. Client side.
 signal vote_received(info: Dictionary)
+## The vote's clock changed: [member clock_view] has just adopted [param state]. Client
+## side.
+signal clock_received(state: Dictionary)
 
 var game: G2GGame = null
 var net: DotNetManager = null
@@ -70,6 +73,16 @@ var voice_relay_fn: Callable = Callable()
 ## ballot, where the module points this at the vote so a request off the wire and a
 ## `!rtv` typed in chat are one vote rather than two.
 var rtv_fn: Callable = Callable()
+
+## [code]func() -> Dictionary[/code], in [method DotVoteClockView.state_of]'s shape. What a
+## joining peer is told about the map's time left. Server side; empty sends nothing, and
+## the client then shows its own map session's clock — which on a server with no vote is
+## the one that ends the map.
+var clock_fn: Callable = Callable()
+
+## The map's time left as the server last described it. Client side; what the HUD draws.
+## Never adopted means never told, which the HUD answers with the local clock.
+var clock_view: DotVoteClockView = DotVoteClockView.new()
 
 ## Which session this process is. Zero on a server.
 var local_player_id: int = 0
@@ -189,6 +202,11 @@ func _broadcast(kind: int, body: PackedByteArray) -> void:
 ## The map vote's cue or countdown second, to every ready peer. Server side.
 func broadcast_vote(cue: StringName, seconds_left: int, runoff: bool) -> void:
 	_broadcast(G2GEvents.Kind.VOTE, G2GEvents.write_vote(String(cue), seconds_left, runoff))
+
+
+## The vote's clock, to every ready peer. Server side.
+func broadcast_clock(state: Dictionary) -> void:
+	_broadcast(G2GEvents.Kind.CLOCK, G2GEvents.write_clock(state))
 
 
 func _tell(peer_id: int, kind: int, body: PackedByteArray) -> void:
@@ -538,6 +556,11 @@ func _admit(peer_id: int) -> void:
 	for other in _behaviours.keys():
 		_send_timer(int(other), peer_id)
 
+	# The time left now, rather than at the clock's next change — which on a quiet map is
+	# never, and a joiner would count down nothing until it came.
+	if clock_fn.is_valid():
+		_tell(peer_id, G2GEvents.Kind.CLOCK, G2GEvents.write_clock(clock_fn.call()))
+
 
 func _join_body(session_id: int) -> PackedByteArray:
 	var behaviour: G2GPlayerNet = _behaviours.get(session_id)
@@ -752,6 +775,11 @@ func _on_event(message: DotNetMessage) -> void:
 			var voted := G2GEvents.read_vote(reader)
 			if bool(voted["ok"]):
 				vote_received.emit(voted)
+		G2GEvents.Kind.CLOCK:
+			var clock := G2GEvents.read_clock(reader)
+			if bool(clock["ok"]):
+				clock_view.adopt(clock, Time.get_ticks_msec() / 1000.0)
+				clock_received.emit(clock)
 
 
 func _apply_hello(reader: DotNetReader) -> void:

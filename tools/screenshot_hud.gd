@@ -20,6 +20,8 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ## hud_run        mid-run, keys down, a stage reference to compare against
 ## hud_practice   the same run after a checkpoint — PRACTICE has to appear
 ## hud_notice     a filed time over the top, which is the widest text the HUD draws
+## hud_clock      the time left as a server's vote describes it, after an extend
+## hud_no_clock   a server whose vote has no clock: no time left drawn at all
 ## [/codeblock]
 ##
 ## Run through `tools/screenshot_hud.sh`. [b]Not `--headless`[/b]: that gives a null
@@ -117,6 +119,8 @@ func _stage() -> void:
 		{"name": "hud_run", "arrange": _arrange_run, "arranged": false},
 		{"name": "hud_practice", "arrange": _arrange_practice, "arranged": false},
 		{"name": "hud_notice", "arrange": _arrange_notice, "arranged": false},
+		{"name": "hud_clock", "arrange": _arrange_clock, "arranged": false},
+		{"name": "hud_no_clock", "arrange": _arrange_no_clock, "arranged": false},
 	]
 
 
@@ -145,6 +149,22 @@ func _arrange_practice() -> void:
 
 func _arrange_notice() -> void:
 	_hud.notice("00:42.31 — rank 3")
+
+
+## Forty minutes left — a thirty-minute map extended by ten — which no local map session
+## on a client could ever say, so a picture showing it is a picture of the server's clock.
+func _arrange_clock() -> void:
+	var view := DotVoteClockView.new()
+	view.adopt({"has_clock": true, "seconds_left": 2400, "running": true}, Time.get_ticks_msec() / 1000.0)
+	_hud.clock_view = view
+
+
+## `trigger: rtv_only` with no limit. The slot between the map and autobhop must be gone,
+## not showing the local session's number and not "no limit".
+func _arrange_no_clock() -> void:
+	var view := DotVoteClockView.new()
+	view.adopt({"has_clock": false}, Time.get_ticks_msec() / 1000.0)
+	_hud.clock_view = view
 
 
 func _capture(name: String) -> void:

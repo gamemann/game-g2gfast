@@ -9,6 +9,8 @@ const G2GNetBridge := preload("../game/net/g2g_net_bridge.gd")
 const G2GNetCommand := preload("../game/net/g2g_net_command.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
+const G2GVote := preload("../game/g2g_vote.gd")
+const G2GHud := preload("../game/g2g_hud.gd")
 ## game-g2gfast's netcode, end to end, in one process.
 ##
 ## A server game and a client game, each with its own [DotNetManager] and
@@ -29,7 +31,7 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 93
+const CHECKS := 103
 
 var _passed := 0
 var _failed := 0
@@ -73,6 +75,7 @@ func _run() -> void:
 		_test_ghost()
 		_test_voice_wire()
 		_test_vote_wire()
+		_test_clock_wire()
 		_test_leave()
 	_report()
 
@@ -714,6 +717,113 @@ func _test_vote_wire() -> void:
 		rocked.size() == 1 and String(rocked[0]).begins_with("u"),
 		"and a client's RTV request reaches the server's rtv_fn, as a player id (%s)" % str(rocked)
 	)
+
+
+## The map's time left, from the server's vote to what the client's HUD draws.
+##
+## The HUD drew the client's own map session, which starts when the client loads the map
+## and hears nothing the server decides — so an extend changed the server's clock and
+## not one pixel on a client. This is the check that an extend reaches the screen.
+func _test_clock_wire() -> void:
+	_section("the vote's clock over the link")
+
+	var round_trip := G2GEvents.read_clock(DotNetReader.new(
+		G2GEvents.write_clock({"has_clock": true, "seconds_left": 1234, "running": true})
+	))
+	_check(
+		bool(round_trip["ok"]) and bool(round_trip["has_clock"])
+			and int(round_trip["seconds_left"]) == 1234 and bool(round_trip["running"]),
+		"a CLOCK round-trips, with the flag, the seconds and whether it counts"
+	)
+
+	# A real vote on the server's game. Not authoritative, so it applies nothing and
+	# registers no service; its clock is the thing under test.
+	var vote := G2GVote.new()
+	vote.name = "ClockVote"
+	vote.game = _server_game
+	vote.authoritative = false
+	vote.config_path = ""
+	add_child(vote)
+	var built := vote.setup()
+	_check(built.ok, "a vote is built on the server's game", str(built.error) if not built.ok else "")
+	if not built.ok:
+		vote.queue_free()
+		return
+
+	var arrived: Array[Dictionary] = []
+	var on_clock := func(state: Dictionary) -> void: arrived.append(state)
+	_client_bridge.clock_received.connect(on_clock)
+	vote.clock_due.connect(_server_bridge.broadcast_clock)
+	var dt := 1.0 / float(_server_game.tick_rate)
+
+	vote.advance(dt)
+	_flush()
+	var now := Time.get_ticks_msec() / 1000.0
+	var before := _client_bridge.clock_view.remaining_at(now)
+	_check(
+		arrived.size() == 1 and _client_bridge.clock_view.has_clock
+			and absf(before - vote.director.clock.remaining) <= 1.0,
+		"the client is told the vote's time left (%.0f s, the server's is %.0f s)" % [
+			before, vote.director.clock.remaining
+		]
+	)
+	_check(
+		G2GHud.time_left_text(_client_bridge.clock_view, "9:59", now)
+			== _client_bridge.clock_view.formatted_at(now),
+		"and the HUD draws that rather than the client's own map clock (%s)" % (
+			G2GHud.time_left_text(_client_bridge.clock_view, "9:59", now)
+		)
+	)
+
+	for i in range(_server_game.tick_rate * 3):
+		vote.advance(dt)
+	_flush()
+	_check(
+		arrived.size() == 1,
+		"three quiet seconds send nothing: the client counts them itself (%d sent)" % (
+			arrived.size() - 1
+		)
+	)
+
+	var extend_by := vote.director.rules.extend_seconds
+	_check(vote.director.clock.extend(), "the server extends the map")
+	vote.advance(dt)
+	_flush()
+	now = Time.get_ticks_msec() / 1000.0
+	var after := _client_bridge.clock_view.remaining_at(now)
+	_check(
+		arrived.size() == 2 and absf((after - before) - (extend_by - 3.0)) <= 2.0,
+		"and what the client sees moves by the extension (%.0f s -> %.0f s, extended by %.0f)" % [
+			before, after, extend_by
+		],
+		"the HUD would go on counting down the old limit"
+	)
+
+	# `trigger: rtv_only` with no limit: the server has no clock, and neither does the HUD
+	# — not even the client's local map session's, which is the number that was wrong.
+	vote.director.rules.duration_sec = 0.0
+	vote.director.rules.trigger = DotVoteRules.Trigger.RTV_ONLY
+	vote.director.begin(_server_game.maps.current.id)
+	vote.advance(dt)
+	_flush()
+	now = Time.get_ticks_msec() / 1000.0
+	_check(
+		arrived.size() == 3 and not _client_bridge.clock_view.has_clock,
+		"a vote with no clock tells the client so"
+	)
+	_check(
+		G2GHud.time_left_text(_client_bridge.clock_view, "9:59", now) == "",
+		"and the HUD shows no clock at all, rather than its own"
+	)
+	_check(
+		G2GHud.time_left_text(null, "9:59", now) == "9:59",
+		"while a HUD nothing has told (offline) keeps the local session's, which is the real one there"
+	)
+
+	_client_bridge.clock_received.disconnect(on_clock)
+	_client_bridge.clock_view = DotVoteClockView.new()
+	remove_child(vote)
+	vote.free()
 
 
 func _test_voice_wire() -> void:

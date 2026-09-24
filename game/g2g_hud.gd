@@ -20,6 +20,16 @@ var _notice_until: float = 0.0
 var game: G2GGame = null
 var player_id: StringName = &"local"
 
+## The map's time left as the server's vote last described it. Null, or never adopted,
+## when nothing has told this HUD anything — offline, where the local map session IS the
+## clock that ends the map, and the only case in which it is.
+##
+## [b]The map session's clock was what this drew, and on a client it is wrong.[/b] A
+## client's session starts its own clock when it loads the map and nothing the server
+## decides ever reaches it: an extend added ten minutes on the server and none here, and
+## under `trigger: rtv_only` it counted down a limit the server did not have.
+var clock_view: DotVoteClockView = null
+
 ## How far up from the bottom the notice line starts, in pixels.
 ##
 ## The clock block's own margin is 92 and it draws about 90 tall, so anything below 182
@@ -223,10 +233,19 @@ func _process(_delta: float) -> void:
 	# where a player reads the two together.
 	var parts := PackedStringArray([
 		game.maps.current.name_or_id() if game.maps.current != null else "-",
-		game.maps.time_limit.formatted_remaining(),
-		"autobhop %s" % ("on" if game.config.auto_bhop else "off"),
-		player.camera.describe()["mode"] if player.camera != null else "",
 	])
+
+	var time_left := time_left_text(
+		clock_view, game.maps.time_limit.formatted_remaining(), Time.get_ticks_msec() / 1000.0
+	)
+
+	# Nothing at all when the vote has no clock, rather than "no limit": a status line
+	# spending a slot on something that is not happening is a slot a player learns to skip.
+	if time_left != "":
+		parts.append(time_left)
+
+	parts.append("autobhop %s" % ("on" if game.config.auto_bhop else "off"))
+	parts.append(player.camera.describe()["mode"] if player.camera != null else "")
 
 	if player.timer != null and player.timer.run.used_checkpoints:
 		parts.append("PRACTICE")
@@ -235,6 +254,15 @@ func _process(_delta: float) -> void:
 		parts.append("ground")
 
 	_status.text = "   ·   ".join(parts)
+
+
+## What the status line says about the map's time left: the server's clock when it has
+## said anything — empty when that clock does not exist — and [param local] otherwise.
+static func time_left_text(view: DotVoteClockView, local: String, now: float) -> String:
+	if view != null and view.known:
+		return view.formatted_at(now)
+
+	return local
 
 
 func _on_run_filed(id: StringName, run: DotTimerRun, rank: int, reason: String) -> void:

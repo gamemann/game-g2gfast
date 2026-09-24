@@ -384,9 +384,18 @@ func _build_vote() -> DotResult:
 				bridge.broadcast_vote(cue, seconds_left, runoff)
 	)
 
+	# The time left, from the clock that ends the map. The HUD drew the map session's,
+	# which on a client is a clock nobody extends; see `DotVoteClockView`.
+	vote.clock_due.connect(
+		func(state: Dictionary) -> void:
+			if bridge != null:
+				bridge.broadcast_clock(state)
+	)
+
 	# A client's RTV request is this vote's rock-the-vote, not the map session's. See
 	# `G2GNetBridge.rtv_fn`.
 	if bridge != null:
+		bridge.clock_fn = vote.clock_state
 		bridge.rtv_fn = func(id: StringName) -> void:
 			var res := vote.rock_the_vote(id)
 			if not res.ok and services != null:
