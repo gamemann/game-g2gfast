@@ -799,7 +799,7 @@ Verified with a real click in headless Chromium: `document.pointerLockElement` i
 before and set after. `tools/browser_check.mjs` never clicks, which is why nothing had
 exercised this.
 
-## Decision 11: a Source map is content, and it is read rather than rebuilt
+## Decision 11: an imported map is content, and it is read rather than rebuilt
 
 `tools/bsp_import.py` turns a Source-engine `.bsp` into a map this game
 loads: geometry, the textures the file carried inside itself, the lighting its
