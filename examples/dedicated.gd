@@ -608,6 +608,78 @@ func _test_vote() -> void:
 		"and the map session's own clock no longer ends a map the vote may have extended"
 	)
 
+	_test_status_clock(vote)
+
+
+## `g2g_status`'s "time left" is the vote's clock, and an extend moves it.
+##
+## [b]It read the map session's clock after the vote had taken the map's end over[/b], so
+## an operator asking how long was left was shown a limit an extend had already moved —
+## the same bug the HUD had, one screen over. The check goes through the console, which
+## is how an operator reads it, and asserts the session's clock did NOT move while the
+## line did: the line moving with the session held still is the line reading the vote.
+func _test_status_clock(vote: G2GVote) -> void:
+	var rules := vote.director.rules
+	var clock := vote.director.clock
+	var was_duration := rules.duration_sec
+	var was_trigger := rules.trigger
+	var was_max_extends := rules.max_extends
+
+	# A known clock, so the numbers mean something whatever the config shipped.
+	rules.duration_sec = 600.0
+	rules.trigger = DotVoteRules.Trigger.TIME_LIMIT
+	rules.max_extends = 0
+	clock.start()
+
+	var session_before := game.maps.time_limit.formatted_remaining()
+	var before := _status_seconds(_run_command("g2g_status"))
+	_check(
+		absf(before - clock.remaining) <= 1.0,
+		"`g2g_status` reports the vote's time left (%d s, the vote's is %.0f s)" % [
+			before, clock.remaining
+		]
+	)
+
+	_check(clock.extend(), "the vote extends the map")
+	var after := _status_seconds(_run_command("g2g_status"))
+	_check(
+		after - before == int(rules.extend_seconds)
+			and game.maps.time_limit.formatted_remaining() == session_before,
+		"and the status line moves by the extension while the map session's clock does not "
+			+ "(%d s -> %d s, extended by %.0f)" % [before, after, rules.extend_seconds],
+		"the line is reading the map session's clock, which nothing extends"
+	)
+
+	# `trigger: rtv_only` with no limit, which is what the deployment runs.
+	rules.duration_sec = 0.0
+	rules.trigger = DotVoteRules.Trigger.RTV_ONLY
+	clock.start()
+	var status := _run_command("g2g_status")
+	_check(
+		_said(status, "time left    no limit"),
+		"a vote with no clock is reported as no limit, not as the session's (%s)" % _status_line(status)
+	)
+
+	rules.duration_sec = was_duration
+	rules.trigger = was_trigger
+	rules.max_extends = was_max_extends
+	clock.start()
+
+
+func _status_line(lines: PackedStringArray) -> String:
+	for line in lines:
+		if line.begins_with("time left"):
+			return line
+	return ""
+
+
+## Seconds on `g2g_status`'s time-left line, or -1 when it is not an m:ss.
+func _status_seconds(lines: PackedStringArray) -> int:
+	var parts := _status_line(lines).trim_prefix("time left").strip_edges().split(" ")[0].split(":")
+	if parts.size() != 2 or not parts[0].is_valid_int() or not parts[1].is_valid_int():
+		return -1
+	return int(parts[0]) * 60 + int(parts[1])
+
 
 ## The three modes, and the cvars that flip them.
 ##

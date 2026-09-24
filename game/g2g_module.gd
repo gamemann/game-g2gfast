@@ -410,6 +410,10 @@ func _build_vote() -> DotResult:
 	# vote it no longer decides anything.
 	game.rotation_ends_maps = false
 
+	# And the clock `g2g_status` reports, for the same reason: the session's is no longer
+	# the one that ends the map.
+	game.clock_fn = vote.clock_state
+
 	return DotResult.success(vote)
 
 

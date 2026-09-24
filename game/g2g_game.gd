@@ -103,6 +103,18 @@ var maps: DotMapSession = null
 ## ends a map, and both acting was a map the players voted to extend being ended on the
 ## old clock, by a rotation nobody asked.
 var rotation_ends_maps: bool = true
+
+## The clock that ends a map, as [method DotVoteClockView.state_of] describes it. Set by
+## [code]G2GModule[/code] to its vote's [code]clock_state[/code]; unset on a server with
+## no vote, where the map session's own clock is the one that ends a map.
+##
+## [b]A Callable rather than the vote, because the game does not know the vote exists[/b]
+## — the module builds it, over this game, and a game holding the thing built on top of it
+## is the dependency pointing the wrong way. It is read by [method time_left_text], which
+## is what `g2g_status` says: that line read the map session's clock after the vote had
+## taken the map's end over, so an operator was shown a limit an extend had already moved,
+## and under `trigger: rtv_only` a limit the server did not have at all.
+var clock_fn: Callable = Callable()
 var timers: DotTimerManager = null
 var boards: DotLeaderboardManager = null
 var world: Node3D = null
@@ -1126,7 +1138,7 @@ func describe_lines() -> PackedStringArray:
 	out.append("movement     airaccel %.0f  accel %.1f  gravity %.0f  friction %.1f  maxvel %.0f" % [
 		config.air_accelerate, config.accelerate, config.gravity, config.friction, config.max_velocity,
 	])
-	out.append("time left    %s" % maps.time_limit.formatted_remaining())
+	out.append("time left    %s" % time_left_text())
 
 	if progress != null:
 		out.append_array(progress.describe_lines())
@@ -1143,6 +1155,28 @@ func describe_lines() -> PackedStringArray:
 	for id in players:
 		out.append("  %s" % str((players[id] as G2GPlayer).describe()))
 	return out
+
+
+## The map's time left as an operator should read it: the vote's clock when there is a
+## vote — "no limit" when that vote has none, "stopped" while a ballot holds it or it has
+## run out — and
+## the map session's otherwise.
+##
+## "no limit" here where the HUD shows nothing: a status line is read when somebody asks,
+## and an absent row reads as a diagnostic that forgot to say, not as a clock that is off.
+func time_left_text() -> String:
+	if clock_fn.is_valid():
+		var state: Dictionary = clock_fn.call()
+
+		if not bool(state.get("has_clock", false)):
+			return "no limit"
+
+		var total := int(state.get("seconds_left", 0))
+		return "%d:%02d%s" % [
+			total / 60, total % 60, "" if bool(state.get("running", false)) else " (stopped)"
+		]
+
+	return maps.time_limit.formatted_remaining() if maps != null else "-"
 
 
 func _exit_tree() -> void:
