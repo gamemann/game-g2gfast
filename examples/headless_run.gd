@@ -407,10 +407,13 @@ func _test_boot() -> void:
 	# [b]Asked on THIS map, not only on the surf one.[/b] A RESPAWN zone carries a track
 	# and catches nobody on another, so a bonus without one is a player who falls out of
 	# the world for ever while the same mistake on the main route puts them back on the
-	# pad. `zones_have_respawn_on_bonuses` was written when the surf map's second bonus
-	# was added and had only ever been asked there — and this map's two bonuses had no
-	# respawn zone at all until a bot was driven off one of them and kept falling.
-	_check(zones_have_respawn_on_bonuses(), "and every bonus here puts a fallen player back")
+	# pad. The hand-written check this was had only ever been asked on the surf map —
+	# and this map's two bonuses had no respawn zone at all until a bot was driven off
+	# one of them and kept falling. It is dot-timer's `route_problems()` now, and
+	# `_test_zone_files_match` asks it of every map.
+	_check(zones != null and zones.route_problems().is_empty(),
+		"and every bonus here puts a fallen player back",
+		", ".join(zones.route_problems()) if zones else "no zones")
 	_check(zones != null and zones.thin_zones(G2GUnits.to_metres(3500.0), game.tick_rate).is_empty(),
 		"and no zone a 3500 u/s player passes through between ticks")
 
@@ -577,6 +580,12 @@ func _test_zone_files_match() -> void:
 		var built: DotTimerZoneSet = (load("res://maps/%s.gd" % id) as GDScript).build_zones()
 		_check(loaded.ok and (loaded.value as DotTimerZoneSet).fingerprint() == built.fingerprint(),
 			"%s's file matches what the map builds" % id)
+		# `[track-zone-1]`: every route on every map, not whichever map a section
+		# happens to have loaded. The respawn-on-bonuses check below was only ever asked
+		# of the two maps other sections load, and `bhop_g2g_stages`' bonus had no pit.
+		_check(built.route_problems().is_empty(),
+			"%s's every route has a start, a finish, a spawn and a pit" % id,
+			", ".join(built.route_problems()))
 	await get_tree().process_frame
 	_done()
 
@@ -1392,9 +1401,11 @@ func _test_transfer_bonus() -> void:
 	# The respawn zone the bonus tracks did not have. With it, a bot that does fall is
 	# put back on the pad instead of falling for ever -- so "not reset" now means it
 	# stayed on the route rather than meaning nothing was watching.
+	var surf_zones := game.timers.zones
 	_check(
-		zones_have_respawn_on_bonuses(),
-		"and a bonus that is missed puts the player back, like the main track"
+		surf_zones != null and surf_zones.route_problems().is_empty(),
+		"and a bonus that is missed puts the player back, like the main track",
+		", ".join(surf_zones.route_problems()) if surf_zones else "no zones"
 	)
 
 
@@ -1424,21 +1435,17 @@ func _test_the_fall_line() -> void:
 		str(zones.playable_tracks()) if zones else "no zones"
 	)
 
-	# [b]Asked of THIS track by name, rather than of `problems()`.[/b] A zone carries a
-	# track, so a set that is complete for track 0 and partial for track 3 passes
-	# `problems()` — which is a per-zone check — while being an unfinishable route. This
-	# family has shipped that hole twice; see `[track-zone-1]`.
-	for kind in [
-		DotTimerZone.Kind.START,
-		DotTimerZone.Kind.END,
-		DotTimerZone.Kind.SPAWN,
-		DotTimerZone.Kind.RESPAWN,
-	]:
-		_check(
-			zones != null and zones.of_kind(kind, fall).size() == 1,
-			"the fall line has its own %s zone" % DotTimerZone.Kind.keys()[kind].to_lower(),
-			"%d" % (zones.of_kind(kind, fall).size() if zones else -1)
-		)
+	# [b]Asked per track, rather than of `problems()`.[/b] A zone carries a track, so a
+	# set that is complete for track 0 and partial for track 3 passes `problems()` —
+	# which is a per-zone check — while being an unfinishable route. This was four
+	# checks walking this track's kinds by name; it is dot-timer's `route_problems()`
+	# now, which asks the same of every route. See `[track-zone-1]`.
+	_check(
+		zones != null and zones.route_tracks().has(fall)
+			and zones.route_problems().is_empty(),
+		"the fall line has its own start, finish, spawn and pit",
+		", ".join(zones.route_problems()) if zones else "no zones"
+	)
 
 	_check(
 		zones != null and zones.stage_count(fall) == SurfIntro.FALL_SPLITS.size(),
@@ -1575,27 +1582,6 @@ func _test_the_fall_line() -> void:
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
 	_done()
-
-
-## Whether every playable track on the current map has a respawn zone.
-func zones_have_respawn_on_bonuses() -> bool:
-	var zones := game.timers.zones
-
-	if zones == null:
-		return false
-
-	for track in zones.playable_tracks():
-		var found := false
-
-		for zone in zones.zones:
-			if zone.track == track and zone.kind == DotTimerZone.Kind.RESPAWN:
-				found = true
-				break
-
-		if not found:
-			return false
-
-	return true
 
 
 # --- The ghost -------------------------------------------------------------

@@ -92,7 +92,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
 examples/           headless_run (170), headless_net (113), dedicated (174),
-                    headless_imported (28 per map, plus one per track and stage),
+                    headless_imported (29 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -484,7 +484,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_net.tscn   # 113 checks
 godot --headless --path . res://examples/dedicated.tscn      # 174 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 28 per map, +1 per stage
+godot --headless --path . res://examples/headless_imported.tscn  # 29 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1600,7 +1600,7 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 
 A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
 
-`surf_g2g_intro` was given per-bonus respawn zones when its second bonus was added, and `headless_run.zones_have_respawn_on_bonuses` was written at the same time — **asked on the surf map only.** So the guard existed, passed, and was never once pointed at the map that was broken. It is asked on this map now too. Same shape as the stale copied list this tree has had in `setup.sh`, both check scripts, both bootstraps and `tools/export_zones.gd`: the fix went to one place and the question was never asked of the others.
+`surf_g2g_intro` was given per-bonus respawn zones when its second bonus was added, and `headless_run.zones_have_respawn_on_bonuses` was written at the same time — **asked on the surf map only.** So the guard existed, passed, and was never once pointed at the map that was broken. It is asked on this map now too. Same shape as the stale copied list this tree has had in `setup.sh`, both check scripts, both bootstraps and `tools/export_zones.gd`: the fix went to one place and the question was never asked of the others. **And it happened a third time**: `bhop_g2g_stages`' surf bonus had a start, a finish and a spawn and no pit, because the helper was asked of whichever map a section had loaded and no section loads that one. The helper is gone; dot-timer's `DotTimerZoneSet.route_problems()` (`[track-zone-1]`) asks every route for a start, a finish, a spawn and a pit of its own, `_test_zone_files_match` asks it of every hand-written map, and `headless_imported` of every imported one — where four maps' bonuses have no pit at all, because the importer puts every teleport on the main track (`BONUSES_WITHOUT_PITS`, asserted both ways, `[track-zone-2]`).
 
 ## What a jump reaches, asked of the three hand-written maps
 

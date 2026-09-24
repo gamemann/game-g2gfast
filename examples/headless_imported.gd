@@ -79,8 +79,26 @@ const ARRIVES_IN_PIT := {
 	"surf_mesa": ["door"],
 }
 
+## Imported bonuses with no pit of their own, by track, which `route_problems()` reports.
+##
+## [b]Known, not accepted — `[track-zone-2]` in the nightly list.[/b] The importer turns
+## every `trigger_teleport` that is not a zone into a RESPAWN on the MAIN track, and the
+## timer acts only on the run's own track, so on these bonuses a player who falls off
+## touches the map's pits and is not put back. The fix is the importer's (which pits
+## belong to which route, or a pit every route shares), not this list's.
+##
+## Asserted both ways, like [constant NOT_COURSES]: a listed map must report exactly
+## these tracks and nothing else, and an unlisted map must report nothing, so a map
+## that gains a pit or loses one fails here and the list cannot outlive its reason.
+const BONUSES_WITHOUT_PITS := {
+	"bhop_pit": [1],
+	"surf_arcade": [1],
+	"surf_beginner2": [1, 2, 3, 4],
+	"surf_summit": [1, 2],
+}
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 28
+const CHECKS_PER_MAP := 29
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -331,6 +349,20 @@ func _test_zones() -> void:
 			without.append(DotTimerTrack.name_of(track))
 	_check(without.is_empty(), "and every runnable track has somewhere to spawn",
 		", ".join(without))
+
+	# `[track-zone-1]`: every route, per track — a start, a finish, a spawn and a pit of
+	# its own. See [constant BONUSES_WITHOUT_PITS] for the ones known not to have one.
+	var expected := PackedStringArray()
+	for track: int in BONUSES_WITHOUT_PITS.get(String(_map_id), []):
+		expected.append("%s has no respawn zone" % DotTimerTrack.name_of(track))
+	var reported := PackedStringArray()
+	for problem in zones.route_problems():
+		var cut := problem.find(",")
+		reported.append(problem.substr(0, cut) if cut > 0 else problem)
+	_check(reported == expected,
+		"every route has a start, a finish, a spawn and a pit" if expected.is_empty()
+			else "its bonuses without a pit are the ones listed, and only those",
+		"reported %s, listed %s" % [reported, expected])
 	_done()
 
 

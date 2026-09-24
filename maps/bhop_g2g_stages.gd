@@ -350,6 +350,16 @@ static func build_zones() -> DotTimerZoneSet:
 		bonus, Vector3(BONUS_X, FLOOR_Y + 1032.0, START_Z + 128.0), 0.0
 	))
 
+	# The bonus's own pit. A RESPAWN carries a track, and the main route's catches
+	# nobody on this one: until `[track-zone-1]` asked every route on every map, a
+	# player who came off either ramp fell for ever. Under the lowest thing on the
+	# whole map -- the bonus's finish pad sits below the main course -- so neither
+	# route's geometry is ever inside it.
+	var bonus_floor := minf(lowest, FLOOR_Y - 384.0 - BLOCK_THICKNESS)
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, bonus,
+		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
+		Vector3(16384.0, bonus_floor - 256.0, 16384.0)))
+
 	return zones
 
 
