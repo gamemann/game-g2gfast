@@ -17,7 +17,8 @@ const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
 ## xvfb-run, not `--headless`: a null renderer saves a frame of nothing, which is worse
 ## than no screenshot because it looks like one.
 
-const CHANNEL := "g2g.preview"
+# No `CHANNEL`: a one-shot CLI whose output is its stdout line and its PNG; the one
+# failure is a bad argument, which `push_error` hands the person who typed it.
 
 
 func _ready() -> void:

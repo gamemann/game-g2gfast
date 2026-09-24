@@ -20,7 +20,8 @@ extends RefCounted
 ## distinction between "held zero" and "never seen" that makes a first reading of 12
 ## seconds be 12 rather than min(12, 0).
 
-const CHANNEL := "g2g.stats"
+# No `CHANNEL`: this is a declaration read at setup, with no runtime of its own to
+# report -- `G2GProgress` logs what happens to the numbers and the awards.
 
 # --- Runs ------------------------------------------------------------------
 

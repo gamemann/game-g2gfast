@@ -24,6 +24,9 @@ const G2GUnits := preload("g2g_units.gd")
 
 const CHANNEL := "g2g.player"
 
+## Whether an admin's help was on last tick, so [method _on_simulated] logs the edge.
+var _assisted := false
+
 signal finished(run: DotTimerRun)
 
 ## A beacon on this player sent out a ripple: once a second while it is on, and once the
@@ -205,6 +208,11 @@ func set_style(movement: DotFpsStyle, ranking: DotTimerStyle) -> DotResult:
 
 	var result := controller.set_style(movement)
 
+	if not result.ok:
+		DotLog.warn(CHANNEL, "a style did not apply to a player's movement", {
+			"player": String(name), "why": result.error.message,
+		})
+
 	if sampler != null:
 		sampler.tunables = controller.tunables
 
@@ -302,6 +310,19 @@ func _on_simulated(_tick: int, state: DotFpsState) -> void:
 		or not is_equal_approx(DotFpsAdminModifiers.gravity_of(controller), 1.0)
 	):
 		timer.taint()
+		# Logged on the edge, not the tick: an operator asking "why was this run not
+		# filed" wants the moment the help went on, not 128 lines a second of it.
+		if not _assisted:
+			_assisted = true
+			DotLog.info(CHANNEL, "an admin's help is on this player; their runs are assisted", {
+				"player": String(name),
+				"noclip": DotFpsAdminModifiers.is_noclipped(controller),
+				"speed": DotFpsAdminModifiers.speed_of(controller),
+				"gravity": DotFpsAdminModifiers.gravity_of(controller),
+			})
+	elif _assisted:
+		_assisted = false
+		DotLog.info(CHANNEL, "an admin's help is off this player", {"player": String(name)})
 
 	if (
 		movement_style != null

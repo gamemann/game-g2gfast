@@ -91,6 +91,24 @@ static func attached_to(parent: Node, p_bridge: G2GNetBridge, server: bool) -> G
 	return link
 
 
+## Whether [method _unbridged] has already said so. Once per link: the condition is
+## per packet, and a hundred and twenty-eight warnings a second say nothing the first did not.
+var _warned_unbridged := false
+
+
+## A payload arrived before [member bridge] was set, and was dropped. Nothing else here
+## is worth an operator's attention -- the counters in [method describe] are the traffic
+## -- but this one is the bridge's ordering broken, which the bridge cannot report
+## because it is the thing that is missing.
+func _unbridged(kind: String, from_peer_id: int) -> void:
+	if _warned_unbridged:
+		return
+	_warned_unbridged = true
+	DotLog.warn(CHANNEL, "a payload arrived before the link had a bridge, and was dropped", {
+		"kind": kind, "from": from_peer_id,
+	})
+
+
 func _live() -> bool:
 	if loopback.is_valid():
 		return true
@@ -165,6 +183,8 @@ func _net_snapshot(payload: PackedByteArray) -> void:
 
 	if bridge != null:
 		bridge.receive_snapshot(payload)
+	else:
+		_unbridged("snapshot", 1)
 
 
 ## Anything from the authority that must arrive: spawns, deaths, the field.
@@ -174,6 +194,8 @@ func _net_event(payload: PackedByteArray) -> void:
 
 	if bridge != null:
 		bridge.receive_event(payload)
+	else:
+		_unbridged("event", 1)
 
 
 ## A client's intent. Unreliable, and resent: the next tick's packet carries the newer
@@ -186,6 +208,8 @@ func _net_client_input(payload: PackedByteArray) -> void:
 		# The sender comes from the transport, never from inside the payload. A peer id in
 		# a body is a claim; this is a fact.
 		bridge.receive_input(multiplayer.get_remote_sender_id(), payload)
+	else:
+		_unbridged("input", multiplayer.get_remote_sender_id())
 
 
 ## A client asking for something. Reliable and rare.
@@ -195,6 +219,8 @@ func _net_request(payload: PackedByteArray) -> void:
 
 	if bridge != null:
 		bridge.receive_request(multiplayer.get_remote_sender_id(), payload)
+	else:
+		_unbridged("request", multiplayer.get_remote_sender_id())
 
 
 ## Hands a payload to this end as though it had arrived over the wire.
@@ -256,6 +282,7 @@ func _net_voice_frame(payload: PackedByteArray) -> void:
 ## socket.
 func deliver(method: StringName, from_peer_id: int, payload: PackedByteArray) -> void:
 	if bridge == null:
+		_unbridged(String(method), from_peer_id)
 		return
 
 	match method:

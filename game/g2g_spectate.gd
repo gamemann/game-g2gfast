@@ -58,6 +58,8 @@ func setup() -> DotResult:
 
 	var res := manager.setup()
 	if not res.ok:
+		# An ERROR, because the server runs on without `!spec` and nothing else says so.
+		DotLog.error(CHANNEL, "spectating did not start", {"why": res.error.message})
 		return res.wrap("g2gfast spectate")
 
 	if not game.player_removed.is_connected(_on_player_removed):
@@ -131,7 +133,18 @@ func tick(_delta: float) -> void:
 func watch(viewer: StringName, target: StringName) -> DotResult:
 	if manager == null:
 		return DotResult.fail(DotError.CODE_STATE, "Spectating is not set up.")
-	return manager.watch(String(viewer), String(target))
+	return _watched(viewer, manager.watch(String(viewer), String(target)))
+
+
+## Logs what a watch request decided. DEBUG either way: a refused `!spec` is the player's
+## answer in chat, not something an operator acts on, but "who was watching whom" is the
+## first thing asked about a spectator complaint.
+func _watched(viewer: StringName, res: DotResult) -> DotResult:
+	if res.ok:
+		DotLog.debug(CHANNEL, "spectating", {"viewer": String(viewer), "target": String(target_of(viewer))})
+	else:
+		DotLog.debug(CHANNEL, "a spectate request was refused", {"viewer": String(viewer), "why": res.error.message})
+	return res
 
 
 ## Watch whoever is furthest into a run, which is what a player who typed `!spec` with
@@ -159,14 +172,17 @@ func watch_best(viewer: StringName) -> DotResult:
 			best = key
 
 	if best == "":
-		return manager.next_target(String(viewer))
+		return _watched(viewer, manager.next_target(String(viewer)))
 
-	return manager.watch(String(viewer), best)
+	return _watched(viewer, manager.watch(String(viewer), best))
 
 
 func stop(viewer: StringName) -> void:
 	if manager != null:
+		var was := manager.is_spectating(String(viewer))
 		manager.stop(String(viewer))
+		if was:
+			DotLog.debug(CHANNEL, "stopped spectating", {"viewer": String(viewer)})
 
 
 func is_spectating(viewer: StringName) -> bool:

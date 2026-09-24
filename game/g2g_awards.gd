@@ -21,7 +21,8 @@ const G2GStats := preload("g2g_stats.gd")
 ## requiring a finished run, because the alternative is every new player unlocking it
 ## for having done nothing.
 
-const CHANNEL := "g2g.awards"
+# No `CHANNEL`: this is a declaration read at setup, with no runtime of its own to
+# report -- `G2GProgress` logs what happens to the numbers and the awards.
 
 const CAT_TIMER := &"timer"
 const CAT_MOVEMENT := &"movement"
