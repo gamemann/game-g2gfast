@@ -46,6 +46,14 @@ var _interpolated := false
 var _label := ""
 var _frames := 0
 var _failures := 0
+
+## Configurations whose verdict was reached, against how many there are. Each
+## configuration is one section and one check, so this one count is both guards: a
+## runtime error inside [method _report] aborts it and nothing says so, [method _next]
+## is still called from [method _process], and without this the run exits 0 with a
+## verdict missing. See docs/testing.md.
+const CONFIGURATIONS := 4
+var _reported := 0
 var _pending: Array = []
 var _lines: Array[String] = []
 
@@ -84,6 +92,12 @@ func _next() -> void:
 			print(line)
 		print("\n%s" % ("smooth, and only in the configuration that ships" if _failures == 0
 			else "%d configuration(s) measured wrong" % _failures))
+		if _reported != CONFIGURATIONS:
+			print("ERROR: %d of %d configurations reached a verdict. One aborted or was skipped." % [
+				_reported, CONFIGURATIONS
+			])
+			get_tree().quit(1)
+			return
 		get_tree().quit(1 if _failures > 0 else 0)
 		return
 
@@ -160,3 +174,4 @@ func _report() -> void:
 		smallest * 1000.0, largest * 1000.0, mean * 1000.0])
 	_lines.append("        spread: %.0f%% of a mean step  (expected %s)" % [
 		spread * 100.0, "smooth" if must_be_smooth else "judder"])
+	_reported += 1
