@@ -5,6 +5,8 @@
 #   tools/bsp_preview.sh surf_kitsune          # one, from its spawn
 #   tools/bsp_preview.sh surf_kitsune orbit    # one, orbiting the whole map
 #   tools/bsp_preview.sh surf_kitsune spawn 6  # six angles instead of four
+#   GAME=1 tools/bsp_preview.sh                # as the GAME draws it: the map's own sky,
+#                                              # fog and tone map, not the neutral stage
 #
 # `tools/bsp_preview.gd` has named this script since it was written and it did not
 # exist, so the one thing in this repository whose bugs are invisible to every
@@ -33,7 +35,8 @@ view="${1:-spawn}" ; shots="${2:-4}"
 for id in "${ids[@]}"; do
     echo "  rendering $id ($view)"
     xvfb-run -a godot --path . --resolution 1600x900 \
-        tools/bsp_preview.tscn -- "$id" "screenshots/${id}_${view}.png" "$shots" "$view" \
+        tools/bsp_preview.tscn -- "$id" "screenshots/${id}_${view}${GAME:+_game}.png" "$shots" "$view" \
+        ${GAME:+- - - keepenv} \
         2>&1 | grep -E "^\[preview\]" || true
 done
 echo "screenshots/ now holds:"

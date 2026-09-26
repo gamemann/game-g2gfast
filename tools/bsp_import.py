@@ -402,6 +402,38 @@ def face_normal(bsp, f):
     return bsp.planes[f[0]][:3]
 
 
+def surface_colour(refl, name=""):
+    """The colour a surface is painted when its texture is not in the .bsp, or None.
+
+    [b]Most of a map's textures live in the game's own archives and cannot ship, but
+    their average colour is inside the map.[/b] vrad stores each texture's mean albedo as
+    `reflectivity`, linear, for its own bounce lighting -- so a stock wooden floor is
+    known to be (0.09, 0.05, 0.03) even though its pixels are not. Painting the prototype
+    grid in that colour makes an imported map read as its own palette, a green neon strip
+    green and a lava pit red, where the role colour made every surface of every map the
+    same four greys.
+
+    sRGB out, because that is what a `source_color` uniform takes. Black stays black: a
+    texture vrad measured as black (TOOLSBLACK, an unlit `$selfillum` light panel) is the
+    one case where the average is not the look.
+
+    [b]A measured black is only trusted when the texture says it is black.[/b] vrad
+    measures albedo, and a `$selfillum` light panel -- `lights/white001`, the ramps of a
+    whole neon map -- has none: it is black to the bounce and white to the eye. Painted
+    black, surf_kitsune's ramps vanished into the sky. So a zero average returns None and
+    the surface keeps its role colour, unless the name says black (`toolsblack`,
+    `black_*`), which is the one texture whose average really is its look.
+    """
+    if refl is None or len(refl) < 3:
+        return None
+    if max(float(c) for c in refl[:3]) < 0.004 and "black" not in name.lower():
+        return None
+    def srgb(c):
+        c = max(0.0, min(1.0, float(c)))
+        return 12.92 * c if c <= 0.0031308 else 1.055 * (c ** (1.0 / 2.4)) - 0.055
+    return [round(srgb(c), 4) for c in refl[:3]]
+
+
 def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
     """One vertex block and one index block per (material, role).
 
@@ -420,6 +452,10 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
     """
     groups = collections.defaultdict(lambda: ([], []))     # (mat, role) -> (verts, indices)
     dedupe = collections.defaultdict(dict)
+    # The average colour of each material's texture, which vrad measured when the map was
+    # compiled and left in `dtexdata_t.reflectivity` -- the one fact about a stock texture
+    # that IS inside the .bsp. See `surface_colour`.
+    reflectivity = {}
 
     def emit(key, pos_src, nrm_src, uv, uv2):
         verts, _ = groups[key]
@@ -453,6 +489,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
         td = int(ti[17])
         if 0 <= td < len(bsp.texdata):
             tw, th = max(1, bsp.texdata[td][4]), max(1, bsp.texdata[td][5])
+            reflectivity.setdefault(mat, tuple(bsp.texdata[td][0:3]))
         tan, bit = tangent_frame(n)
 
         def uv_of(p):
@@ -521,9 +558,13 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
         ioff = len(blob)
         for i in idx:
             blob += struct.pack("<I", i)
-        surfaces.append({"material": mat, "role": role, "prototype": use_prototype,
-                         "vertex_offset": voff, "vertex_count": len(verts),
-                         "index_offset": ioff, "index_count": len(idx)})
+        entry = {"material": mat, "role": role, "prototype": use_prototype,
+                 "vertex_offset": voff, "vertex_count": len(verts),
+                 "index_offset": ioff, "index_count": len(idx)}
+        colour = surface_colour(reflectivity.get(mat), mat)
+        if colour is not None:
+            entry["colour"] = colour
+        surfaces.append(entry)
     return surfaces, bytes(blob)
 
 

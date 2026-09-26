@@ -375,6 +375,23 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 	# prototype set the hand-built maps draw in instead, chosen by what the surface is
 	# FOR, which the importer worked out from its slope.
 	var role := _role(str(s.get("role", "FLOOR")))
+
+	# [b]The map's own colour, when the importer found it.[/b] vrad left each texture's
+	# average albedo in the .bsp, so a surface whose pixels could not ship still knows
+	# what colour it was: the greyscale grid is painted that colour, and the map reads as
+	# its own palette instead of four role greys. The grid stays for scale -- a flat fill
+	# at 3000 u/s gives no sense of speed or distance. See `surface_colour` in
+	# tools/bsp_import.py; a manifest written before it has no `colour` and falls through
+	# to the role colours below.
+	var colour: Variant = s.get("colour", null)
+	if colour is Array and (colour as Array).size() >= 3:
+		mat.set_shader_parameter("albedo_tex", G2GTextures.grid_texture())
+		mat.set_shader_parameter("has_albedo", true)
+		mat.set_shader_parameter("tint", Color(float(colour[0]), float(colour[1]), float(colour[2])))
+		mat.set_shader_parameter("uv_scale", 1.0 / float(G2GTextures.SQUARES_PER_TILE))
+		mat.set_shader_parameter("ambient", prototype_ambient)
+		return mat
+
 	var installed := G2GTextures.installed_texture(role)
 	mat.set_shader_parameter("albedo_tex",
 		installed if installed != null else G2GTextures.grid_texture())

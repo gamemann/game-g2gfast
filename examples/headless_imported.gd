@@ -92,7 +92,7 @@ const ARRIVES_IN_PIT := {
 const BONUSES_WITHOUT_PITS := {}
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 29
+const CHECKS_PER_MAP := 30
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -288,6 +288,22 @@ func _test_lighting() -> void:
 		return
 	_check(mat.get_shader_parameter("lightmap_tex") is Texture2D,
 		"and the atlas is bound to every one of them")
+
+	# A texture the map did not carry is painted its own measured colour, not a role grey.
+	# Most of a map is such surfaces, so a regression here turns every map back into the
+	# four greys it looked like before -- a thing no other check in this suite can see,
+	# because every greyscale surface is still a correctly configured material. Most rather
+	# than all: a light panel vrad measured as black keeps its role colour on purpose.
+	var prototype := 0
+	var coloured := 0
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		if bool(entry.get("prototype", false)):
+			prototype += 1
+			if entry.get("colour", null) is Array:
+				coloured += 1
+	_check(prototype == 0 or coloured * 2 >= prototype,
+		"and a surface whose texture did not ship is painted the map's own colour for it",
+		"%d of %d prototype surfaces coloured" % [coloured, prototype])
 	_done()
 
 

@@ -49,9 +49,11 @@ func _ready() -> void:
 				var m := mi.get_surface_override_material(i) as ShaderMaterial
 				if m == null:
 					continue
-				if args.size() > 4:
+				# `-` (or anything not a number) leaves the map's own value, so a caller can
+				# reach `keepenv` without overriding the two things it is trying to look at.
+				if args.size() > 4 and args[4].is_valid_float():
 					m.set_shader_parameter("ambient", float(args[4]))
-				if args.size() > 5:
+				if args.size() > 5 and args[5].is_valid_float():
 					m.set_shader_parameter("light_boost", float(args[5]))
 
 	# `lm` overrides every material to show the baked lighting alone. A map whose
@@ -87,7 +89,7 @@ func _ready() -> void:
 	# So the map's is taken out and named, rather than left to chance. `keepenv` as the
 	# fourth argument puts it back, for the one question this tool cannot otherwise
 	# answer: what the map looks like as the GAME draws it.
-	var keep_env := args.size() > 7 and args[7] == "keepenv"
+	var keep_env := args.has("keepenv")
 	for found: WorldEnvironment in _environments(map):
 		print("[preview] map environment: %s%s" % [found.name,
 			" (kept)" if keep_env else " (removed; pass keepenv to keep it)"])

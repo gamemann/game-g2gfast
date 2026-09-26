@@ -28,7 +28,13 @@ static func apply(parent: Node3D, lighting: Dictionary) -> DirectionalLight3D:
 ## a player navigates by to save a cost they cannot see would be the wrong trade even if
 ## the two cost the same.
 static func profile() -> DotLightProfile:
-	return DotLightProfile.web() if _is_web() else DotLightProfile.high()
+	var p := DotLightProfile.web() if _is_web() else DotLightProfile.high()
+	# Every map this game plays floats inside its sky -- ramps and platforms in a skybox,
+	# with nothing under the horizon but more sky -- so the dark "ground" half an enclosed
+	# level wants turned every glance down between two ramps into a floor that is not
+	# there. Measured against the source game's own screenshot of surf_kitsune.
+	p.sky_below_horizon = true
+	return p
 
 
 static func _is_web() -> bool:
