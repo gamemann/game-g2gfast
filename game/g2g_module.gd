@@ -746,6 +746,11 @@ func _build_netcode() -> DotResult:
 		return attached
 
 	net.messages.seal()
+	# [b]A client whose game messages cannot work with this server's is dropped, in words.[/b]
+	# dot-net compares the two schema tables and refuses a pair where either lacks a type
+	# the other REQUIRES, but it owns no socket and can only say so; this is the socket.
+	# The same line DotGameNetcode.refuse_peer is for games built on dot-game.
+	net.peer_schema_refused.connect(_refuse_peer)
 	return net.start()
 
 
@@ -1217,3 +1222,11 @@ func _cmd_ghost(ctx: DotCmdContext) -> void:
 	ctx.reply("%s, %.0f%% through its run." % [
 		ghost.display_name, ghost.replay.progress() * 100.0
 	])
+
+
+## Disconnects a peer whose message schema this server cannot play with, with dot-net's
+## sentence as the reason. See `peer_schema_refused` above.
+func _refuse_peer(peer_id: int, error: DotError) -> void:
+	var session: DotClientSession = server.session_of(peer_id) if server != null else null
+	if session != null:
+		server.kick(session, error.message, error)
