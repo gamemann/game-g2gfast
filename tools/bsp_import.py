@@ -1914,7 +1914,14 @@ def main(argv=None):
     doc = load_overrides(zones_dir, map_id)
 
     bsp = Bsp(a.bsp).load()
-    drawn = [(f, o) for f, o in drawn_faces(bsp) if not (bsp.face_material(f)[1] & SKIP_MASK)]
+    # A "fake skybox" is a brush a mapper painted to look like sky -- a custom texture,
+    # not `tools/toolsskybox`, so SKIP_MASK does not know it. Its pixels never ship, so
+    # it came out as a pale prototype slab across the sky (surf_interference's white
+    # wedge over the start). Not drawing it lets the real sky show, which is what it was
+    # standing in for. Collision comes from the brushes and is untouched.
+    drawn = [(f, o) for f, o in drawn_faces(bsp)
+             if not (bsp.face_material(f)[1] & SKIP_MASK)
+             and "skybox" not in clean_material(bsp.face_material(f)[0])]
     faces = [f for f, _ in drawn]
 
     lm_path = os.path.join(d, map_id + "_lightmap.png")
