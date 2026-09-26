@@ -92,7 +92,7 @@ const ARRIVES_IN_PIT := {
 const BONUSES_WITHOUT_PITS := {}
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 30
+const CHECKS_PER_MAP := 31
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -301,6 +301,12 @@ func _test_lighting() -> void:
 			prototype += 1
 			if entry.get("colour", null) is Array:
 				coloured += 1
+	# A jump map's blocks are brush entities, and for as long as there were imported maps
+	# only the world was drawn: every block was solid and invisible (47% of bhop_eazy).
+	var ents: Dictionary = node.manifest.get("brush_entities", {})
+	_check(int(ents.get("solid", 0)) == 0 or int(ents.get("faces_drawn", 0)) > 0,
+		"and a map with solid brush entities draws them, not only the world",
+		"%s" % ents)
 	_check(prototype == 0 or coloured * 2 >= prototype,
 		"and a surface whose texture did not ship is painted the map's own colour for it",
 		"%d of %d prototype surfaces coloured" % [coloured, prototype])

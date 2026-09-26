@@ -434,7 +434,7 @@ def surface_colour(refl, name=""):
     return [round(srgb(c), 4) for c in refl[:3]]
 
 
-def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
+def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=None):
     """One vertex block and one index block per (material, role).
 
     [b]Per role and not per material, because a role is per face.[/b] The role comes
@@ -472,11 +472,17 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
 
     white = (2.0 / lm_w, 2.0 / lm_h)
 
-    for f in bsp.model_faces(0):
+    if drawn is None:
+        drawn = [(f, (0.0, 0.0, 0.0)) for f in bsp.model_faces(0)]
+    for f, off in drawn:
         mat_raw, flags = bsp.face_material(f)
         if flags & SKIP_MASK:
             continue
         mat = clean_material(mat_raw)
+
+        def at(p, off=off):
+            # Where the vertex IS; `p` stays where vbsp stored it, for the UVs.
+            return (p[0] + off[0], p[1] + off[1], p[2] + off[2])
         n = face_normal(bsp, f)
         role = role_for_normal(n[2], cos_limit)
         # `all` repaints the map's own textures too; `auto` keeps them and only fills
@@ -535,12 +541,12 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype):
                     k = (round(p[0], 2), round(p[1], 2), round(p[2], 2))
                     nn = acc[k]
                     ln = math.sqrt(sum(c * c for c in nn)) or 1.0
-                    idx.append(emit(key, p, [c / ln for c in nn], uv_of(p), uv2_of(flat)))
+                    idx.append(emit(key, at(p), [c / ln for c in nn], uv_of(p), uv2_of(flat)))
         else:
             pts = bsp.face_points(f)
             if len(pts) < 3:
                 continue
-            ring = [emit(key, p, n, uv_of(p), uv2_of(p)) for p in pts]
+            ring = [emit(key, at(p), n, uv_of(p), uv2_of(p)) for p in pts]
             for k in range(1, len(ring) - 1):
                 # Source winds its faces the other way round from Godot's front face.
                 idx.extend((ring[0], ring[k + 1], ring[k]))
@@ -748,6 +754,49 @@ def entity_origin(e):
         return [float(x) for x in e.get("origin", "0 0 0").split()][:3]
     except ValueError:
         return [0.0, 0.0, 0.0]
+
+
+# Brush entities a player SEES. The solid list in bsp_read decides collision and is the
+# wrong list for drawing: `func_clip_vphysics` is solid and invisible, `func_illusionary`
+# is visible and not solid.
+DRAWN_BRUSH_ENTITIES = (SOLID_BRUSH_ENTITIES - {"func_clip_vphysics"}) | {
+    "func_illusionary", "func_wall_illusionary",
+}
+
+
+def drawn_faces(bsp):
+    """Every face a player sees, as (face, offset): the world's, then the brush entities'.
+
+    [b]The world alone was 53% of bhop_eazy.[/b] A jump map's blocks are `func_door`s
+    (they sink when stood on, which is the genre's anti-camping rule) and its
+    decoration is `func_brush` and `func_illusionary`; all of them are separate brush
+    models, and this importer drew model 0 only. Collision already came from the
+    brushes, so every one of those blocks was there to stand on and invisible -- across
+    the 25 maps, between 0% and 47% of what a mapper drew (aztec 30%, monster_jam 22%,
+    tesquo 16%). Measured by counting drawable faces per model, before and after.
+
+    The offset is the entity's `origin`, for the reason `brush_box` gives: vbsp stores a
+    brush entity's geometry relative to it. UVs stay computed from the stored position,
+    because texinfo and the lightmap were computed there too.
+
+    A brush the map hides is left out: `rendermode 10` is "do not render", and a
+    `func_brush` that starts disabled is not there until something turns it on.
+    """
+    out = [(f, (0.0, 0.0, 0.0)) for f in bsp.model_faces(0)]
+    for e in bsp.entities:
+        model = e.get("model", "")
+        if not model.startswith("*") or e.get("classname") not in DRAWN_BRUSH_ENTITIES:
+            continue
+        if str(e.get("rendermode", "0")).strip() == "10":
+            continue
+        if e.get("classname") == "func_brush" and str(e.get("StartDisabled", "0")).strip() == "1":
+            continue
+        index = int(model[1:]) if model[1:].isdigit() else -1
+        if not 0 < index < len(bsp.models):
+            continue
+        o = tuple(entity_origin(e))
+        out.extend((f, o) for f in bsp.model_faces(index))
+    return out
 
 
 def entity_yaw(e):
@@ -1865,7 +1914,8 @@ def main(argv=None):
     doc = load_overrides(zones_dir, map_id)
 
     bsp = Bsp(a.bsp).load()
-    faces = [f for f in bsp.model_faces(0) if not (bsp.face_material(f)[1] & SKIP_MASK)]
+    drawn = [(f, o) for f, o in drawn_faces(bsp) if not (bsp.face_material(f)[1] & SKIP_MASK)]
+    faces = [f for f, _ in drawn]
 
     lm_path = os.path.join(d, map_id + "_lightmap.png")
     place, lm_w, lm_h, lm_clipped = build_lightmap(bsp, faces, lm_path)
@@ -1881,7 +1931,7 @@ def main(argv=None):
 
     cos_limit = math.cos(math.radians(a.max_slope))
     surfaces, mesh_blob = build_mesh(bsp, place, lm_w, lm_h, textured, cos_limit,
-                                     a.prototype)
+                                     a.prototype, drawn)
     for s in surfaces:
         png, translucent = tex.get(s["material"], (None, False))
         s["texture"] = None if s["prototype"] else png
@@ -1915,6 +1965,16 @@ def main(argv=None):
         "lighting": lighting_of(bsp),
         "surfaces": surfaces,
         "collision": collision,
+        # Two counts from two code paths, so a suite can tell "this map has no brush
+        # entities" from "this importer stopped drawing them": the solid ones come from
+        # the classname list collision uses, the drawn faces from `drawn_faces`.
+        "brush_entities": {
+            "solid": sum(1 for e in bsp.entities
+                         if e.get("model", "").startswith("*")
+                         and e.get("classname") in SOLID_BRUSH_ENTITIES),
+            "faces_drawn": len(drawn) - sum(
+                1 for f in bsp.model_faces(0) if not (bsp.face_material(f)[1] & SKIP_MASK)),
+        },
         "units_per_square": UNITS_PER_SQUARE,
         "max_slope": a.max_slope,
         "spawn": pick_spawn(spawns),
