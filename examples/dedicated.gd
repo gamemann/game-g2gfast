@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 174
+const CHECKS := 177
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -1351,6 +1351,28 @@ func _test_unload() -> void:
 	_check(server.console.find_cvar("sv_autobunnyhopping") == null, "and takes its cvars with it")
 	_check(game.players.is_empty(), "and the players it added")
 	await get_tree().process_frame
+	# The bridge's map-change host was the game's while the module was loaded, and the
+	# game outlives the module. [b]Armed by emptying `G2GNetBridge._exit_tree`, and it did
+	# NOT fire[/b]: a freed Object compares equal to null on 4.7.2, so both this check and
+	# `change_map`'s own `map_sync != null` route around a freed host anyway. What it
+	# asserts is the outcome; `_exit_tree` is for a bridge taken out without being freed.
+	_check(game.map_sync == null, "and takes back the map-change protocol it gave the game")
+	# A DIFFERENT map from the one it is on, or the spawn check below cannot tell the
+	# old map's pads from the new one's.
+	var next_map: StringName = &"surf_g2g_intro" if game.maps.current.id == &"bhop_g2g_intro" else &"bhop_g2g_intro"
+	var after: DotResult = await game.change_map(next_map)
+	_check(after.ok and game.maps.current.id == next_map,
+		"so a map change after it is this process's own", str(after.error) if not after.ok else "")
+	# The SECOND map change with the combat layer built — the first one that has old
+	# spawn points to clear. `G2GCombat._on_map_ready` called a method dot-match has never
+	# had, and the script error left the previous map's points as the deathmatch's.
+	var points: Array = game.combat.match_node.spawn_points() if game.combat != null else []
+	var main_pad: Vector3 = game.current_map_node().spawn_for(DotTimerTrack.MAIN)
+	_check(points.size() == 2 and points.all(func(p: Variant) -> bool:
+			return is_instance_valid(p) and not (p as Node).is_queued_for_deletion())
+			and points.any(func(p: Variant) -> bool: return (p as Node3D).position.is_equal_approx(main_pad)),
+		"and the deathmatch respawns on the new map's pads, not the old map's",
+		"%d points, main pad %s" % [points.size(), main_pad])
 	_done()
 
 

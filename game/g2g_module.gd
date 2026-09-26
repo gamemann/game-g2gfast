@@ -199,6 +199,18 @@ func _module_load() -> DotResult:
 
 	if not game.config.content_maps.is_empty():
 		game.fetch_content_maps()
+
+	# How long a map change waits for clients to have the map. See
+	# [member G2GConfig.map_sync_seconds] for why it is thirty and not dot-map's three
+	# hundred. Read by the next change; one in flight keeps the deadline it started with.
+	add_cvar("sv_map_sync_timeout", str(int(game.config.map_sync_seconds)),
+		"Seconds a map change waits for clients to have the map before going ahead without them."
+	).changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.map_sync_seconds = clampf(new_value.to_float(), 1.0, 3600.0)
+			if bridge != null and bridge.map_host != null:
+				bridge.map_host.sync_timeout_sec = game.config.map_sync_seconds
+	)
 	add_command("g2g_rtv", _cmd_rtv, "Rock the vote", "").with_chat()
 
 	# What twenty years of bhop servers taught everybody's fingers: `!r`, `!wr`,

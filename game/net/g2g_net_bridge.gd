@@ -4,6 +4,7 @@ const G2GConfig := preload("../g2g_config.gd")
 const G2GEvent := preload("g2g_event.gd")
 const G2GEvents := preload("g2g_events.gd")
 const G2GGame := preload("../g2g_game.gd")
+const G2GMapCatalogue := preload("../g2g_map_catalogue.gd")
 const G2GNetCommand := preload("g2g_net_command.gd")
 const G2GNetLink := preload("g2g_net_link.gd")
 const G2GPlayer := preload("../g2g_player.gd")
@@ -49,6 +50,13 @@ signal vote_received(info: Dictionary)
 ## The vote's clock changed: [member clock_view] has just adopted [param state]. Client
 ## side.
 signal clock_received(state: Dictionary)
+## This client cannot follow the server to the map it announced: refused by dot-map's
+## trust rules, not fetchable, or not loadable. Client side. [G2GClient] leaves the server
+## on it, because a client on a world the server is not simulating is a player being
+## corrected into the air every tick.
+signal map_refused(map_id: StringName, reason: String)
+## The map-change protocol put this client on a map. Client side.
+signal map_loaded(map: DotMapDef)
 
 var game: G2GGame = null
 var net: DotNetManager = null
@@ -87,6 +95,13 @@ var clock_view: DotVoteClockView = DotVoteClockView.new()
 ## Which session this process is. Zero on a server.
 var local_player_id: int = 0
 
+## The host half of dot-map's map-change protocol. Server side; built by [method attach]
+## and handed to the game as [member G2GGame.map_sync]. See "Map changes" below.
+var map_host: DotMapSyncHost = null
+
+## The peer half. Client side; built by [method attach].
+var map_client: DotMapSyncClient = null
+
 ## Where the clock learns how long the link is, in milliseconds. dot-net never
 ## touches a transport and cannot measure it; dot-server's heartbeat already does
 ## (`DotClientLink.ping_ms()`), and a client that feeds nothing has a clock that
@@ -104,6 +119,10 @@ var _tick: int = 0
 var _adding: bool = false
 var _game_ticked_for: int = -1
 var _client_ticked_for: int = -1
+
+## Client: the map id of the announce being handled, for [signal map_refused]. dot-map
+## reports a refused announce with no map, because it refused to make one.
+var _map_handling: StringName = &""
 
 ## A style index -> id table both ends build identically. See [DotTimerNet].
 var _style_ids: Array[StringName] = []
@@ -149,6 +168,8 @@ func attach(p_game: G2GGame, p_net: DotNetManager, link_parent: Node) -> DotResu
 	net.messages.on(G2GRequest.NAME, _on_request)
 
 	link = G2GNetLink.attached_to(link_parent, self, net.is_server)
+
+	_build_map_sync()
 
 	# Both ends: the server's tick is server_tick, and the client's is client_tick,
 	# which simulates what it predicts and leaves the rest to interpolation. A
@@ -264,6 +285,7 @@ func remove_player(session_id: int) -> void:
 	_player_of_peer.erase(peer_id)
 	_peer_of_player.erase(session_id)
 	_ready_peers.erase(peer_id)
+	_map_forget(peer_id)
 
 	# Released BEFORE the game is told, and the ordering is load-bearing:
 	# game.remove_player emits player_removed, which _on_player_removed answers by
@@ -546,8 +568,7 @@ func _admit(peer_id: int) -> void:
 	var session_id := int(_player_of_peer[peer_id])
 
 	_tell(peer_id, G2GEvents.Kind.HELLO, G2GEvents.write_hello(
-		game.tick_rate, session_id, peer_id, net.clock.tick,
-		game.maps.current.id if game.maps.current != null else &"", game.config
+		game.tick_rate, session_id, peer_id, net.clock.tick, game.config
 	))
 
 	for other in _behaviours.keys():
@@ -560,6 +581,9 @@ func _admit(peer_id: int) -> void:
 	# never, and a joiner would count down nothing until it came.
 	if clock_fn.is_valid():
 		_tell(peer_id, G2GEvents.Kind.CLOCK, G2GEvents.write_clock(clock_fn.call()))
+
+	# Last, so everything above describes the world the announce is about to put it in.
+	_map_admit(peer_id)
 
 
 func _join_body(session_id: int) -> PackedByteArray:
@@ -630,10 +654,194 @@ func _on_movement_changed(config: G2GConfig) -> void:
 	_broadcast(G2GEvents.Kind.MOVEMENT, G2GEvents.write_movement(config))
 
 
-func _on_map_ready(map: DotMapDef) -> void:
-	_broadcast(G2GEvents.Kind.MAP, G2GEvents.write_map(map.id))
+## The new map is live on the server. Every player's style and track again, because a
+## map change resets both on the server.
+##
+## [b]The map itself is NOT announced here any more[/b], and that line was the ad-hoc
+## protocol: a map id broadcast from `map_ready`, which fires AFTER the server has already
+## swapped, to clients that were never asked whether they had it. The change is now
+## announced before it happens and loaded after everybody is ready; see "Map changes".
+func _on_map_ready(_map: DotMapDef) -> void:
 	for session_id in _behaviours.keys():
 		_broadcast(G2GEvents.Kind.JOIN, _join_body(int(session_id)))
+
+
+# --- Map changes -------------------------------------------------------------
+#
+# dot-map's protocol, carried over dot-net: announce -> (fetch) -> ready -> load, with
+# the straggler timeout and the trust refusals as dot-map wrote them. The host sends a
+# MAP event per peer; a peer answers with an Ask.MAP request. dot-map is transport-
+# agnostic on purpose and names no dot-net class, so this is where the two meet.
+#
+# [b]What it replaced[/b] was a map id broadcast from `map_ready`: sent AFTER the server
+# had already swapped, to clients that had never been asked whether they had the map,
+# which resolved it against their own build and fetched nothing. A client that could not
+# load it stayed on the old world while the server simulated it on the new one, and
+# nothing on either end knew.
+#
+# [b]Nothing here works around dot-map any more.[/b] Running this for the first time
+# found five things wrong in the addon, and this section carried a workaround for four of
+# them: it answered a joiner's ready with a `load` itself, held a joiner mid-change back
+# until the change settled, thinned progress to four a second, and fetched a delivered
+# map by its own convention before dot-map saw the announce — then queued every map
+# message behind that fetch, because a straggler's `load` overtook it. All of that is
+# dot-map's now (see its CLAUDE.md, "What the first transport found"), and what is left
+# is the one decision that IS this game's:
+#
+# - [b]The imported-map scene is a trusted template.[/b] Every imported map is ONE scene
+#   in the build pointed at a manifest (see G2GMapCatalogue) — the mount constraint
+#   forbids putting it in the pack — so the client lists that scene in
+#   `trusted_template_scenes`, and dot-map then requires the manifest, not the scene, to
+#   be inside `res://dot_cloud/<content>/<version>/`. A server marks a map it fetched
+#   into a mount as that content (`G2GGame._mark_delivered`); the client fetches it from
+#   ITS OWN content client and origin, verified against ITS keys. The host still says
+#   only WHICH map; this client decides what it is made of.
+
+## The game outlives this bridge — a module unloads and the game it drove stays in the
+## scene — so the host half is taken back from it here, and the next `change_map` is this
+## process's own again. A FREED host already reads as null on 4.7.2 (`dedicated`'s unload
+## section was armed against this and did not fire); this is for a bridge removed from the
+## tree without being freed, whose host would otherwise still be announcing changes to
+## peers it can no longer hear.
+func _exit_tree() -> void:
+	if game != null and is_instance_valid(game) and game.map_sync == map_host:
+		game.map_sync = null
+
+
+## Server and client: the half of the protocol this end needs.
+func _build_map_sync() -> void:
+	if net.is_server:
+		map_host = DotMapSyncHost.new()
+		map_host.name = "MapSync"
+		map_host.session = game.maps
+		map_host.sync_timeout_sec = game.config.map_sync_seconds
+		map_host.send_fn = _send_map
+		map_host.on_timeout_fn = _on_map_straggler
+		add_child(map_host)
+		game.map_sync = map_host
+	else:
+		map_client = DotMapSyncClient.new()
+		map_client.name = "MapSync"
+		map_client.session = game.maps
+		map_client.send_fn = _send_map_reply
+		# The one scene an imported map is. Its manifest is what has to be delivered.
+		map_client.trusted_template_scenes = PackedStringArray([G2GMapCatalogue.IMPORTED_SCENE])
+		map_client.template_path_keys = PackedStringArray(["manifest"])
+		map_client.fetch_failed.connect(_on_map_fetch_failed)
+		map_client.changed.connect(func(map: DotMapDef) -> void: map_loaded.emit(map))
+		add_child(map_client)
+
+
+## Server: one protocol message to one peer. dot-map's `send_fn`.
+func _send_map(peer_id: int, payload: Dictionary) -> void:
+	var body := G2GEvents.write_map_message(payload)
+	if body.is_empty():
+		# An announce is a map definition and its meta; one that does not fit is a
+		# catalogue entry somebody has filled with something it should not carry.
+		DotLog.error(CHANNEL, "a map-change message is too large to send", {
+			"peer": peer_id, "kind": String(DotMapMessage.kind_of(payload)),
+			"cap": G2GEvents.MAP_MESSAGE_BYTES,
+		})
+		return
+	_tell(peer_id, G2GEvents.Kind.MAP, body)
+
+
+## Server: a peer can receive, so it follows map changes from now on — and is told the
+## map it is joining onto, through the same announce a change would send.
+##
+## dot-map's `admit_peer` does the rest: it sends the `load` when the peer says it has the
+## map, and a peer admitted during a change is announced the map that change settles on
+## rather than waited on for one it was never told about.
+func _map_admit(peer_id: int) -> void:
+	if map_host == null or peer_id <= 0:
+		return
+	map_host.admit_peer(peer_id)
+
+
+## Server: a peer is gone. It must not be waited on by a change in flight.
+func _map_forget(peer_id: int) -> void:
+	if map_host != null and peer_id > 0:
+		map_host.remove_peer(peer_id)
+
+
+## Server: a ready or a progress from a peer.
+func _on_map_reply(peer_id: int, payload: Dictionary) -> void:
+	if map_host == null or not DotMapMessage.is_map_message(payload):
+		return
+	map_host.handle(peer_id, payload)
+
+
+## Server: a peer did not have the map in time, and the change went ahead without it.
+##
+## [b]Told, and not dropped.[/b] dot-map deliberately leaves this to the game, and this
+## game's answer is that the server is authoritative: a straggler's inputs are simulated
+## on the new map whatever its screen shows, so nothing it does there can reach a board.
+## A straggler still downloading follows on its own — dot-map holds the `load` it was
+## sent until the fetch lands. A client that REFUSED the map is the one that cannot follow,
+## and it is the one that knows it, so it leaves (see [signal map_refused]); the server
+## cannot tell the two apart, because a refusal is silent by dot-map's design.
+func _on_map_straggler(peer_id: int) -> void:
+	var session_id := player_for_peer(peer_id)
+	var pending := String(map_host.describe().get("pending", "-")) if map_host != null else "-"
+	DotLog.info(CHANNEL, "a client did not have the map in time; changing without it", {
+		"peer": peer_id, "session": session_id, "map": pending,
+	})
+	_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(
+		session_id, "The map changed before your client had it. You will follow when it arrives."
+	))
+
+
+## Client: one protocol message to the host. dot-map's `send_fn`.
+##
+## Progress arrives here already throttled (`DotMapSyncClient.progress_interval_sec`),
+## because dot-net's server allows a client so many messages a second and drops the
+## excess without asking which — so a burst of progress could cost the `ready` behind it.
+func _send_map_reply(payload: Dictionary) -> void:
+	var body := G2GEvents.write_map_message(payload, G2GEvents.MAP_REPLY_BYTES)
+	if body.is_empty():
+		DotLog.error(CHANNEL, "a map-change reply is too large to send", {
+			"kind": String(DotMapMessage.kind_of(payload)), "cap": G2GEvents.MAP_REPLY_BYTES,
+		})
+		return
+	_ask(G2GEvents.Ask.MAP, body)
+
+
+## Client: a protocol message from the host.
+##
+## Handed straight to dot-map, which does not suspend the caller: an announce starts a
+## fetch on its own, and a `load` that overtakes that fetch — a straggler's — is held by
+## dot-map until the fetch lands.
+func _on_map_message(payload: Dictionary) -> void:
+	if not DotMapMessage.is_map_message(payload):
+		DotLog.warn(CHANNEL, "the server sent a map message this client cannot read")
+		return
+	if map_client == null:
+		return
+
+	# A refused announce is reported with no map, synchronously, from inside `handle`.
+	var def: Variant = payload.get("map", {})
+	_map_handling = (
+		StringName(str((def as Dictionary).get("id", "")))
+		if DotMapMessage.kind_of(payload) == DotMapMessage.KIND_ANNOUNCE and def is Dictionary
+		else &""
+	)
+	map_client.handle(payload)
+	_map_handling = &""
+
+
+## Client: dot-map refused the announce, could not fetch it, or could not load it.
+##
+## [b]WARN, not ERROR.[/b] A refusal is dot-map's trust rule doing its job, and the client
+## leaving over it is the designed outcome rather than a failure of this code; an ERROR
+## here would staple a backtrace to every refusal and read like a crash in the one log
+## where somebody is looking for why a player left.
+func _on_map_fetch_failed(map: DotMapDef, error: DotError) -> void:
+	var id := map.id if map != null else _map_handling
+	var why := error.message if error != null else "unknown"
+	if error != null and error.detail != "":
+		why = "%s (%s)" % [why, error.detail]
+	DotLog.warn(CHANNEL, "cannot follow the server to its map", {"map": String(id), "why": why})
+	map_refused.emit(id, why)
 
 
 # --- Client: asking ----------------------------------------------------------
@@ -713,6 +921,8 @@ func _on_request(message: DotNetMessage) -> void:
 				game.rock_the_vote(id)
 		G2GEvents.Ask.CHECKPOINT:
 			_checkpoint(id, G2GEvents.read_int(reader))
+		G2GEvents.Ask.MAP:
+			_on_map_reply(peer_id, G2GEvents.read_map_message(reader, G2GEvents.MAP_REPLY_BYTES))
 
 
 func _checkpoint(id: StringName, action: int) -> void:
@@ -756,9 +966,7 @@ func _on_event(message: DotNetMessage) -> void:
 		G2GEvents.Kind.MOVEMENT:
 			_apply_movement(reader)
 		G2GEvents.Kind.MAP:
-			var map_id := G2GEvents.read_map(reader)
-			if game.maps.current == null or game.maps.current.id != map_id:
-				game.change_map(map_id)
+			_on_map_message(G2GEvents.read_map_message(reader))
 		G2GEvents.Kind.TIMER:
 			var timer := G2GEvents.read_timer(reader)
 			if bool(timer["ok"]):
@@ -807,10 +1015,8 @@ func _apply_hello(reader: DotNetReader) -> void:
 
 	_apply_movement(DotNetReader.new(hello["movement"]))
 
-	var map_id: StringName = hello["map_id"]
-	if map_id != &"" and (game.maps.current == null or game.maps.current.id != map_id):
-		game.change_map(map_id)
-
+	# No map here. The map this client joins onto arrives as the protocol's announce,
+	# right behind HELLO — see `_map_admit`.
 	hello_received.emit(local_player_id)
 
 
@@ -939,4 +1145,8 @@ func describe() -> Dictionary:
 		"local": local_player_id,
 		"tick": _tick,
 		"link": link.describe() if link != null else {},
+		"map_sync": (
+			map_host.describe() if map_host != null
+			else map_client.describe() if map_client != null else {}
+		),
 	}

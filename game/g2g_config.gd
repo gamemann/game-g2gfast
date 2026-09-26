@@ -152,6 +152,19 @@ const G2GUnits := preload("g2g_units.gd")
 ## Seconds a map runs before the next is chosen. 0 disables it.
 @export_range(0.0, 86400.0, 30.0) var map_seconds: float = 1800.0
 
+## Seconds a map change waits for every connected client to say it has the new map.
+## `sv_map_sync_timeout`.
+##
+## [b]Thirty, where dot-map's own default is three hundred[/b], and the difference is who
+## is waiting. The wait holds the whole server on the old map — every runner stopped, the
+## clock frozen — for the slowest client, and a timer server's players came to run. A
+## client that misses it is not dropped: the change goes ahead without it
+## ([member DotMapSyncHost.swap_without_stragglers] stays on), it is told so, and it
+## follows the moment its download finishes, because the load it was sent is queued
+## behind its own fetch rather than lost. So a short wait costs the slow client a few
+## seconds on the wrong map and a long one costs everybody else the same seconds.
+@export_range(1.0, 3600.0, 1.0) var map_sync_seconds: float = 30.0
+
 @export_group("Records")
 
 ## Where records go. Empty keeps them in memory only.
@@ -221,7 +234,8 @@ func validate() -> DotResult:
 		)
 
 	# [b]Only an authoritative instance chooses a map.[/b] A client is told which map
-	# it is in by HELLO and clears this deliberately (see [G2GClient]) — so requiring
+	# it is in by the map-change protocol's announce, right behind HELLO, and clears this
+	# deliberately (see [G2GClient]) — so requiring
 	# one unconditionally made every networked client's own configuration invalid.
 	# `load_layered` validates last and returns the failure, so every client logged
 	# "the g2gfast configuration is not usable" on startup, about a config that was

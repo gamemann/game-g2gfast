@@ -29,7 +29,7 @@ godot --path .
 | **Tab** | Cycle style: normal, sideways, half-sideways, backwards, low gravity, prebhop |
 | **R** | Back to the start |
 | **C** / **V** | Save a practice checkpoint / go back to it |
-| **M** | Next map |
+| **M** | Next map, offline. On a server the server chooses: `!rtv` asks for a vote |
 | **Esc** / **click** | Release the mouse / take it back. In a browser a click is also what captures it to begin with, because pointer lock needs a user gesture |
 | **`** | The console, which is also the settings screen: `settings` lists every one and each is a command of its own |
 
@@ -53,6 +53,10 @@ sv_replay_bot 1            # run the server record as a visible ghost
 ```
 
 `--g2g-auto-bhop=0`, `G2G_AIR_ACCELERATE=150` and a JSON file all work too: the config is layered like every `DotConfig`.
+
+### Changing the map under connected players
+
+A map change is announced before it happens. Every client is told which map is next, fetches it if it does not have it, and says when it is ready, and the server swaps as soon as everybody is. `sv_map_sync_timeout` (30 seconds by default) is how long the server waits for a slow client before it changes without them. That client is told, and it follows as soon as its download finishes. A client that will not load the announced map leaves with the reason: it may not have the map, it may have another version of it, or the server may have named a map that is neither built into the client nor delivered as content. It is not left playing on a world the server is not running. The protocol is [dot-map](https://github.com/modcommunity/dot-map)'s, carried over dot-net, and `CLAUDE.md` explains why each of those choices was made.
 
 ## Maps
 
@@ -124,8 +128,8 @@ The end-of-map vote and the option to extend the current map:
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 178 checks
-godot --headless --path . res://examples/headless_net.tscn   # 113 checks, server + client in one process
-godot --headless --path . res://examples/dedicated.tscn      # 174 checks over 16 sections
+godot --headless --path . res://examples/headless_net.tscn   # 153 checks, server + client in one process
+godot --headless --path . res://examples/dedicated.tscn      # 177 checks over 16 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_imported.tscn   # every imported map
 ```

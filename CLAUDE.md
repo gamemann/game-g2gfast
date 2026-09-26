@@ -91,7 +91,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (178), headless_net (113), dedicated (174),
+examples/           headless_run (178), headless_net (153), dedicated (177),
                     headless_imported (29 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -481,8 +481,8 @@ godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 178 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
-godot --headless --path . res://examples/headless_net.tscn   # 113 checks
-godot --headless --path . res://examples/dedicated.tscn      # 174 checks, 16 sections
+godot --headless --path . res://examples/headless_net.tscn   # 153 checks, 22 sections
+godot --headless --path . res://examples/dedicated.tscn      # 177 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 29 per map, +1 per stage
 godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
@@ -530,7 +530,7 @@ starts.
 `headless_net` runs a server game and a client game in one process over a lossy
 loopback: admission, prediction converging, the timer and a finish replicated to the
 sub-tick fraction, a cvar changed under a live client, styles, tracks, a published
-avatar, a map change, a bot, and leaving.
+avatar, a map change through dot-map's protocol — a client that has the map, one still downloading it, and one that refuses — a bot, and leaving.
 
 `dedicated` counts its sections and its checks since 2026-09-24 — it had neither, the one suite here without a total — and exits 1 when either is off; armed by raising `CHECKS` by one.
 
@@ -1530,6 +1530,24 @@ A timer server has no leading score, so nothing here calls `note_score`; `trigge
 
 **What 9515974 added was two scripts, not two objects a Callable held.** `dedicated` went 409 → 411 with that commit. The game half (`clock_fn = vote.clock_state`) moves nothing — the new code under the old suite leaks 409 — and a `--verbose` diff of the two runs is exactly two more `GDScript` instances, `dot_vote_rules.gd` and `dot_vote_clock.gd`, which the new check's typed `vote.director.rules`/`.clock` and `DotVoteRules.Trigger` load for the first time. Every loaded script is in the graph that leaks, so any check that names a new type adds to the count; untyping the check would lower the number and fix nothing. The remaining non-script instances are the static caches — `G2GTextures._materials`, `_grid`, `_installed` and `G2GCombat._shared_catalogue`, which are the four material, one shader and one texture RID lines — and clearing them at exit takes 14 more off; they are process-lifetime caches by design and are left.
 
+## A map change is announced, and then made
+
+This game had the ad-hoc version dot-map's protocol was written to replace: `G2GNetBridge._on_map_ready` broadcast a map id from `map_ready` — which fires **after** the server has already swapped — and HELLO carried the same id for a joiner. A client changed to it by id out of its own build. Nobody asked whether it had the map, nothing fetched one it did not have, and a client that could not load it stayed on the old world while the server simulated it on the new one, with nothing on either end aware of it.
+
+It is `DotMapSyncHost` and `DotMapSyncClient` now, carried over dot-net: a host message is `G2GEvents.Kind.MAP` to one peer and a peer's answer is `Ask.MAP`, both a `DotMapMessage` as JSON inside a byte cap (4096 from the host, 256 from a peer, because the second is what a client can make the server parse). The bridge builds the host half and hands it to the game as `G2GGame.map_sync`; `G2GGame.change_map` goes through it on a server, so `map`, `g2g_map`, the vote and the rotation's clock — which all already called `change_map` — announce, wait and then swap without knowing it. HELLO no longer carries a map at all: the map a joiner lands on arrives as the protocol's own announce, right behind it.
+
+**JSON rather than a field-by-field encoding**, because dot-map owns these shapes. A game that re-encoded each field would silently drop whatever `DotMapDef.to_dictionary` gains next, until somebody noticed. JSON's one lossy step — an int back as a float — is one `from_dictionary` already undoes. A message too large for its cap is refused whole with an ERROR rather than cut, because `DotNetWriter.write_string` truncates without a word and half a JSON document looks, on the far end, like a hostile host.
+
+**A built-in map is announced as one.** Its definition has no content id, the client finds it in its own catalogue, reports ready without starting a fetch, and nothing pretends it is a pack. `headless_net` asserts exactly that — no content id, nothing fetched, ready before the server swapped, and the change made as soon as everybody was ready rather than at the timeout.
+
+**The wait is thirty seconds, not dot-map's three hundred** (`sv_map_sync_timeout`, `G2GConfig.map_sync_seconds`). The wait holds the whole server on the old map for its slowest client, and a timer server's players came to run. Missing it costs little: `swap_without_stragglers` stays on, the server tells the straggler, and the straggler follows the moment its download finishes. **The server does not kick it**, and the reason is that the server is authoritative — a straggler's inputs are simulated on the new map whatever its screen shows, so nothing it does there reaches a board. **A client that refuses leaves** (`G2GClient._on_map_refused`, with the reason): dot-map keeps a refusal silent to the host by design, so the client is the only end that knows it cannot follow, and staying would put a player on a world the server is not simulating.
+
+**Running it found five things wrong in dot-map, and they are fixed there now** (dot-map's CLAUDE.md, "What the first transport found"). For a day the bridge carried a workaround for four of them, and each was armed here before it went: it answered a joiner's `ready` with a `load` itself, because a host only sent `load` at the end of a change (`headless_net`'s handshake fired without it); it held a joiner mid-change back until the change settled, because `_wait_for_peers` counted every peer and not the ones the change was announced to (5,029 ms against a 5 s timeout instead of one poll); it thinned progress to four a second, because dot-net's server drops a client's excess messages without asking which, and a burst could cost the `ready`; and it fetched a delivered map by its own convention before dot-map saw the announce — then had to queue every map message behind that fetch, because a straggler's `load` overtook it and was dropped. All of that is gone from the bridge; `admit_peer`, the change's peer snapshot, `progress_interval_sec` and dot-map's own hold on a `load` that overtakes its fetch do it, and the same `headless_net` checks pass against the addon.
+
+**What is left is the one decision that is this game's: the imported-map scene is a trusted template.** Every imported map is one scene in the build pointed at a manifest (see *Maps are dropped in, not listed*) — the mount constraint forbids putting a scene that extends a build class in the pack — and dot-map's rule for a map a client does not have was that its scene is in the pack, so it would have refused every delivered map this game has. The client now lists `G2GMapCatalogue.IMPORTED_SCENE` in `DotMapSyncClient.trusted_template_scenes`, and dot-map then requires the **manifest** (`meta.manifest`), and any other path the definition carries, to be inside `res://dot_cloud/<content>/<version>/`. A server marks a map it fetched into a mount as that content and version (`G2GGame._mark_delivered`, off the mount directory, so there is no second record to disagree with it); a map on the server's own disk stays local, and a client that does not have it refuses it. **That is narrower than the workaround was:** the bridge's prefetch asked the client's origin for ANY unknown id, so a map an operator dropped into the server's `user://maps` still reached a client whose origin happened to carry the same id. Now a map a client can be sent is one the server itself got from the content origin — `content_maps`, or `map <id>` on an id the catalogue lacks — which is also the only case where the two ends are known to mean the same bytes by one id. The client fetches from its own content client and origin and verifies against its own keys; the host still says only which map. `headless_net`'s *an imported map that is delivered* publishes a signed pack, has the server fetch it the way it fetches `content_maps`, and asserts the client loads the imported-map scene out of its own build from the manifest in the pack; armed by removing the template from the bridge, and again by removing `_mark_delivered`, and it fired both times. **One limit worth knowing:** the template is matched by exact path, so a client and a server must agree on where `imported_map.tscn` is — which they do when both run the same game pack, and would not with a server run from source and a client on the pack.
+
+**What running it found that was not the protocol.** `G2GCombat._on_map_ready` has called `DotMatch.remove_spawn_point` since 2026-09-10, and dot-match has never had one. The first map has no points to remove, so the call only ran on the second map change on a server with the combat layer built. It raised a script error that aborted the function before it added the new map's points, so the deathmatch kept respawning players on the previous map's pads. `dedicated` had never changed map twice with combat up. Its unload section now does, and asserts that the points are the new map's, which fired with the old line put back. And **M changed the map on a networked client** — that client's own world, and nobody else's — so the server corrected the player into geometry their screen no longer had, every tick. It is offline-only now; online it says `!rtv`.
+
 ## Things deliberately not here
 
 - **A second transport.** The bridge speaks through `DotClientLink`'s RPCs on one
@@ -1547,11 +1565,7 @@ A timer server has no leading score, so nothing here calls `note_score`; `trigge
 - **A master server.** `DotBrowserSourceBackbone` reads a listing that nothing is yet
   publishing, and there is no heartbeat — so a browser here finds what somebody typed
   into it and nothing else. That gap is the family's, not this game's.
-- **A map-sync client.** game-arena has one; this game does not need one, because
-  `G2GGame` drives a `DotMapSession` on every instance including a mirroring client
-  and the bridge already sends a map change as a game event. Adding `DotMapSyncClient`
-  on top would be a second thing loading the same map, which is two owners of one
-  world.
+- **A kick for a client that missed a map change.** dot-map leaves the straggler to the game and dot-server kicks one that misses a GAME change; this game does neither. A straggler still downloading follows on its own, and one that refused the map is the one end that knows it, so it leaves. See "A map change is announced, and then made".
 - **A texture set for the hand-built maps.** `G2GTextures` generates a prototype grid
   and the hand-built maps draw in it. `res://textures/prototype/` holds an installed
   set, and **the imported `.bsp` maps are the half that uses it** — see Decision 11.

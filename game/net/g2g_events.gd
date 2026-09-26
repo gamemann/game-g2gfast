@@ -15,14 +15,17 @@ const G2GMovement := preload("../g2g_movement.gd")
 ## netcode feels bad".
 
 enum Kind {
-	## Tick rate, who you are, the map, the movement, the server tick.
+	## Tick rate, who you are, the movement, the server tick. NOT the map: see [constant MAP].
 	HELLO,
 	## A player joined, or changed: name, peer, net id, avatar, style, track.
 	JOIN,
 	LEAVE,
 	## The movement changed under everybody. Carries the config fields.
 	MOVEMENT,
-	## The map changed. Clients load it from their own build.
+	## One message of dot-map's map-change protocol, host to peer: announce, load or abort.
+	## A [DotMapMessage] as JSON. See [method write_map_message] and G2GNetBridge's
+	## "Map changes" section. It used to be a bare map id sent AFTER the server had
+	## changed, which a client resolved against its own build.
 	MAP,
 	## A player's run state changed: started, stopped, paused. A DotTimerNet.RunState.
 	TIMER,
@@ -55,12 +58,24 @@ enum Ask {
 	RTV,
 	## Save a checkpoint (0), teleport to it (1), clear them (2).
 	CHECKPOINT,
+	## One message of dot-map's map-change protocol, peer to host: progress or ready.
+	## Last, because a kind is its index on the wire.
+	MAP,
 }
 
 const NAME_BYTES := 64
-const MAP_BYTES := 64
 const AVATAR_BYTES := 4096
 const TEXT_BYTES := 256
+
+## A map-change message from the host: an announce carries the whole [DotMapDef], meta
+## and all. A few hundred bytes in practice; the cap is what a hostile or broken host
+## can make a client parse.
+const MAP_MESSAGE_BYTES := 4096
+
+## A map-change message from a peer: a ready or a progress, an id, a version and a
+## number. Far smaller than the host's, because it is what a CLIENT can make the server
+## parse, and a peer has no reason ever to send more.
+const MAP_REPLY_BYTES := 256
 
 
 static func kind_name(kind: int) -> String:
@@ -104,16 +119,20 @@ static func read_movement(reader: DotNetReader, config: G2GConfig) -> String:
 
 # --- HELLO -----------------------------------------------------------------
 
+## [b]No map id, and there was one.[/b] HELLO carried the server's map and the client
+## changed to it by id out of its own catalogue — the ad-hoc version of what dot-map's
+## protocol now does, and wrong in the same two ways the MAP event was: the client never
+## said whether it had the map, and a map it did not have was fetched by nothing. The
+## map a joiner is on now arrives as the protocol's own announce, right behind this, and
+## a field left here would be a value produced and consumed by nothing.
 static func write_hello(
-	tick_rate: int, player_id: int, peer_id: int, server_tick: int,
-	map_id: StringName, config: G2GConfig
+	tick_rate: int, player_id: int, peer_id: int, server_tick: int, config: G2GConfig
 ) -> PackedByteArray:
 	var writer := _w()
 	writer.write_uint(tick_rate, 8)
 	writer.write_varint(player_id)
 	writer.write_varint(peer_id)
 	writer.write_uint(server_tick, 32)
-	writer.write_string(String(map_id), MAP_BYTES)
 	writer.write_bytes(write_movement(config))
 	return writer.to_bytes()
 
@@ -124,7 +143,6 @@ static func read_hello(reader: DotNetReader) -> Dictionary:
 		"player_id": reader.read_varint(),
 		"peer_id": reader.read_varint(),
 		"server_tick": reader.read_uint(32),
-		"map_id": StringName(reader.read_string(MAP_BYTES)),
 		"movement": reader.read_bytes(1024),
 	}
 	out["ok"] = reader.ok()
@@ -182,14 +200,41 @@ static func read_player(reader: DotNetReader) -> int:
 
 # --- MAP -------------------------------------------------------------------
 
-static func write_map(map_id: StringName) -> PackedByteArray:
+## One [DotMapMessage], as JSON inside a byte cap. Empty when it would not fit.
+##
+## [b]JSON rather than a field-by-field encoding[/b], because dot-map owns these shapes
+## and a game that re-encoded each one would have to change whenever dot-map added a
+## field to [method DotMapDef.to_dictionary] — silently dropping it until then. Every
+## value in them is a string, a bool or a number, and JSON's one lossy conversion, an
+## int returned as a float, is one `from_dictionary` already undoes with `int()`.
+##
+## [b]Empty rather than truncated.[/b] [method DotNetWriter.write_string] cuts at the cap
+## without a word, and half a JSON document is a parse failure on the far end that looks
+## like a hostile host. The caller refuses to send an empty body and says why.
+static func write_map_message(payload: Dictionary, max_bytes: int = MAP_MESSAGE_BYTES) -> PackedByteArray:
+	var text := JSON.stringify(payload)
+	if text.to_utf8_buffer().size() > max_bytes:
+		return PackedByteArray()
 	var writer := _w()
-	writer.write_string(String(map_id), MAP_BYTES)
+	writer.write_string(text, max_bytes)
 	return writer.to_bytes()
 
 
-static func read_map(reader: DotNetReader) -> StringName:
-	return StringName(reader.read_string(MAP_BYTES))
+## The dictionary back, or an empty one for anything that is not a JSON object.
+##
+## Empty is safe to hand straight to dot-map: [method DotMapMessage.is_map_message] says
+## no to it, and both halves of the protocol return false without acting.
+static func read_map_message(reader: DotNetReader, max_bytes: int = MAP_MESSAGE_BYTES) -> Dictionary:
+	var text := reader.read_string(max_bytes)
+	if not reader.ok() or text == "":
+		return {}
+	# `JSON.new().parse` rather than `JSON.parse_string`: the static one pushes an engine
+	# error for bad input, and bad input here is whatever a peer chose to send.
+	var json := JSON.new()
+	if json.parse(text) != OK:
+		return {}
+	var parsed: Variant = json.data
+	return parsed as Dictionary if parsed is Dictionary else {}
 
 
 # --- TIMER / FINISH --------------------------------------------------------

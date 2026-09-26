@@ -303,10 +303,20 @@ func _build_loadouts() -> void:
 ## are where the map puts people, so they are what a respawn uses — which also means a
 ## player killed mid-run is put back where a `!r` would put them, and that is the right
 ## answer on a server where the run is the point.
+##
+## [b]The old points are freed here and forgotten by `DotMatch.clear_spawn_points()`.[/b]
+## This once called a `remove_spawn_point` that did not exist yet: the first map has no
+## points to remove, so it only ran on the SECOND map change with the combat layer built —
+## a script error that aborted this function before it added the new map's points, leaving
+## the deathmatch respawning players at the previous map's pads. Nothing ran a second map
+## change on a server with combat until `dedicated`'s unload section did. For a while it
+## then cleared the array `spawn_points()` hands back, by reference, which worked only
+## because that is the match's own list; dot-match has had `clear_spawn_points` and
+## `remove_spawn_point` since 2026-09-25, and the list is now the match's to empty.
 func _on_map_ready(_map: DotMapDef) -> void:
 	for point in match_node.spawn_points():
-		match_node.remove_spawn_point(point)
 		point.queue_free()
+	match_node.clear_spawn_points()
 
 	var world := game.current_map_node()
 

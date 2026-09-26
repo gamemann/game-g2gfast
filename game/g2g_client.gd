@@ -335,6 +335,7 @@ func _build_netcode() -> DotResult:
 		link.connect("chat_received", extras.receive_wire)
 
 	bridge.hello_received.connect(_on_hello)
+	bridge.map_refused.connect(_on_map_refused)
 	bridge.finish_received.connect(func(pid: int, time: float, rank: int) -> void:
 		if hud != null and pid == bridge.local_player_id:
 			hud.notice("%s%s" % [DotTimerRun.format_time(time), " — rank %d" % rank if rank > 0 else ""])
@@ -440,6 +441,22 @@ func _on_hello(player_id: int) -> void:
 	# goes up now, to be conformed against the server's schema like any other.
 	if avatar != null and bridge != null:
 		bridge.publish_avatar(avatar)
+
+
+## The server moved to a map this client will not or cannot load.
+##
+## [b]Leaves, rather than staying.[/b] The server keeps simulating this player on the map
+## it announced, so staying is a player whose every tick is corrected into geometry their
+## screen does not have — and the server cannot know to do anything about it, because
+## dot-map keeps a refusal silent on purpose. The client is the one end that knows, so it
+## is the one that acts, with the reason on the way out rather than a connection that
+## simply goes strange.
+func _on_map_refused(map_id: StringName, reason: String) -> void:
+	var text := "Cannot follow the server to %s: %s" % [String(map_id), reason]
+	if hud != null:
+		hud.notice(text)
+	if link != null and link.has_method("disconnect_from_server"):
+		link.call("disconnect_from_server", text)
 
 
 func _physics_process(delta: float) -> void:
@@ -615,10 +632,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				game.spawn_player(&"local")
 			else:
 				bridge.ask_restart()
-		KEY_M:
+		# [b]Offline only.[/b] Online this changed THIS client's world and nobody else's:
+		# the server went on simulating the player on its own map, and every tick's
+		# correction put them back in a place their screen no longer had. A client's map
+		# is the server's to announce; `!rtv` is how a player asks for another.
+		KEY_M when _offline:
 			var next := game.maps.rotation.choose(1)
 			if next != null:
 				game.change_map(next.id)
+		KEY_M:
+			hud.notice("The server chooses the map. !rtv asks for a vote.")
 		KEY_C when not _offline:
 			bridge.ask_checkpoint(0)
 		KEY_V when not _offline:

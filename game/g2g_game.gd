@@ -96,6 +96,16 @@ var authoritative: bool = true
 
 var maps: DotMapSession = null
 
+## The map-change protocol's host half, when this game has clients to take with it.
+##
+## Set by [code]G2GNetBridge[/code] on a server, and null everywhere else — offline, on a
+## client, in every suite that runs a game without a network. [method change_map] goes
+## through it when it is set, so a map change is ANNOUNCED, waited on and then made,
+## rather than made here and reported afterwards. Every way a map changes on a server —
+## `map`, `g2g_map`, the vote, the rotation's clock — already calls [method change_map],
+## which is why this is the one line that needed to know.
+var map_sync: DotMapSyncHost = null
+
 ## Whether the map session's own clock running out changes to the rotation's next map.
 ##
 ## On for a server with no vote, where that clock is the only thing that ever ends a map.
@@ -872,6 +882,14 @@ func change_map(id: StringName) -> DotResult:
 	if not content.ok:
 		return content
 
+	# [b]Through the protocol on a server with clients, and only there.[/b] The session's
+	# own `change_to` swaps this process's world and nothing else; it is what the ad-hoc
+	# version called, and then broadcast the map id to clients that had not been asked
+	# whether they could load it. A client never takes this branch: its map changes when
+	# the host tells it to, through `DotMapSyncClient`, which calls the session directly.
+	if map_sync != null and authoritative:
+		return await map_sync.change_to(id)
+
 	return await maps.change_to(id)
 
 
@@ -931,6 +949,8 @@ func ensure_map_content(id: StringName) -> DotResult:
 			"%s was fetched but does not look like a map." % id
 		)
 
+	_mark_delivered(map, dir)
+
 	var added := maps.catalogue.add(map)
 
 	if not added.ok:
@@ -941,6 +961,28 @@ func ensure_map_content(id: StringName) -> DotResult:
 		"map": String(id), "dir": dir
 	})
 	return DotResult.success(null)
+
+
+## Says, on a map that came out of a dot-cloud mount, which content and version it is.
+##
+## [b]So that a client can be sent it.[/b] Without a content id a map is, to dot-map, a map
+## in this build, and a client that does not have it refuses it — correctly: a host that
+## could name a local map could name anything in the client's build. With one, the client
+## fetches that content from its own origin and accepts the announce because the scene is
+## [constant G2GMapCatalogue.IMPORTED_SCENE], which it lists as a trusted template, and the
+## manifest is inside the pack (see the bridge's "Map changes"). The mount is
+## [code]res://dot_cloud/<content_id>/<version>[/code], so both come off the directory
+## rather than out of a second record that could disagree with it.
+func _mark_delivered(map: DotMapDef, dir: String) -> void:
+	var base := dir.rstrip("/")
+	var prefix := "res://dot_cloud/%s/" % map.id
+	if not base.begins_with(prefix):
+		return                            # a directory on disk, not a mount
+	var version := base.substr(prefix.length())
+	if version.is_empty() or version.contains("/"):
+		return
+	map.content_id = map.id
+	map.content_version = version
 
 
 ## Fetch every id in [member G2GConfig.content_maps] into the catalogue, in the background.
