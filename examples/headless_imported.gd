@@ -102,7 +102,7 @@ const OWN_TEXTURES := {
 }
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 34
+const CHECKS_PER_MAP := 35
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -282,8 +282,13 @@ func _test_geometry() -> void:
 	# backdrop at all. Drawn, they are their own `Sky` instances, scaled about the camera.
 	var sky: Variant = (node as G2GBspMap).manifest.get("skybox", null)
 	var sky_node := node.get_node_or_null("Sky") as MeshInstance3D
-	var wants_sky := sky is Dictionary and bool((sky as Dictionary).get("drawn", true)) \
-		and int((sky as Dictionary).get("faces", 0)) > 0
+	# "Has one" is read from the lighting block's sky_camera, a second code path, so a
+	# skybox the importer stopped handling at all is a failure and not a map without one.
+	var has_camera := ((node as G2GBspMap).manifest.get("lighting", {}) as Dictionary) \
+		.has("sky_camera")
+	var told_off := sky is Dictionary and (not bool((sky as Dictionary).get("drawn", true))
+		or int((sky as Dictionary).get("faces", 0)) == 0)
+	var wants_sky := has_camera and not told_off
 	_check(sky_node != null if wants_sky else sky_node == null,
 		"and its 3D skybox is drawn as a backdrop exactly when it has one to draw",
 		"skybox %s, Sky node %s" % [sky, sky_node != null])
@@ -575,6 +580,24 @@ func _test_stands_on_it() -> void:
 	var drop := floor_y - bot.global_position.y
 	_check(drop < 8.0, "and is still standing on the map three seconds later",
 		"fell %.1f m" % drop)
+
+	# [b]And where it came to rest is inside the start zone (2026-09-27).[/b] The timer asks
+	# the zone about the player's own position every tick; a start box that stops short of
+	# the floor contains the spawn in mid-air and not the player standing under it, so the
+	# run starts as they fall out of it and a player on the pad can never be "in the
+	# start". surf_arcade was that: its start is a box around `s1_reset`, which stands
+	# 240 units over the pad, and at +/-128 the player rested 112 units under it. Armed
+	# by putting the old box back.
+	var start_zone := game.timers.zones.first_of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN) \
+		if game.timers.zones != null else null
+	if start_zone == null:
+		_check(NOT_COURSES.has(_map_id), "and comes to rest inside the start zone",
+			"no start zone on the main track")
+	else:
+		var at := bot.controller.state.position
+		_check(start_zone.contains(at), "and comes to rest inside the start zone",
+			"at %s, zone %s..%s" % [at / G2GUnits.METRES_PER_UNIT,
+				start_zone.from / G2GUnits.METRES_PER_UNIT, start_zone.to / G2GUnits.METRES_PER_UNIT])
 
 	var bounds: Dictionary = (node as G2GBspMap).manifest.get("bounds", {})
 	var min_y: float = float((bounds.get("min", [0, -16384, 0]) as Array)[1]) * G2GUnits.METRES_PER_UNIT

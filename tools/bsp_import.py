@@ -2113,6 +2113,14 @@ def lighting_of(bsp):
     if world is not None and world.get("skyname"):
         out["sky_name"] = str(world["skyname"])
 
+    # The 3D skybox's camera, read here from the entity and not from `skybox_of`, so the
+    # suite has a second path to "this map has a skybox" that does not trust the one
+    # that draws it.
+    cam = next((e for e in bsp.entities if e.get("classname") == "sky_camera"), None)
+    if cam is not None:
+        out["sky_camera"] = {"origin": _numbers(cam.get("origin", ""), 3),
+                             "scale": (_numbers(cam.get("scale", "16"), 1) or [16.0])[0]}
+
     # The count only, not the lights. A point light in Source is an input to vrad and
     # its output is already in the lightmap this importer bakes down -- placing 148 real
     # lights would light the map twice. It is carried because "this map has 148 lights
