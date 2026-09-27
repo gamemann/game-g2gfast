@@ -91,8 +91,18 @@ const ARRIVES_IN_PIT := {
 ## that gains a pit or loses one fails here and the list cannot outlive its reason.
 const BONUSES_WITHOUT_PITS := {}
 
+## The share of a map's triangles drawn in the texture its own pakfile carried, at least,
+## for the maps where a parsing bug was measured taking it away (2026-09-27): a leading
+## `/` on the material name and a `$basetexture` with a space in it. Measured after the
+## fix at 99%, 97% and 100%; before it, 2%, 8% and 0%.
+const OWN_TEXTURES := {
+	"surf_interference": 0.9,
+	"surf_aquaflow": 0.9,
+	"bhop_eazy": 0.9,
+}
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 31
+const CHECKS_PER_MAP := 32
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -310,6 +320,31 @@ func _test_lighting() -> void:
 	_check(prototype == 0 or coloured * 2 >= prototype,
 		"and a surface whose texture did not ship is painted the map's own colour for it",
 		"%d of %d prototype surfaces coloured" % [coloured, prototype])
+
+	# [b]A texture the pakfile carried is drawn, not replaced by the prototype grid.[/b]
+	# Two spellings the importer did not read: a material typed with a leading `/`
+	# (`/SURFACE`, looked up as `materials//surface.vmt`) and a `$basetexture` with a
+	# space in it (`"hammer textures/..."`, cut at the space). Between them they cost
+	# surf_interference 97% of its own textures, surf_aquaflow a third and bhop_eazy all
+	# of them, and nothing said so: a prototype surface is a correctly configured
+	# material. A name with the slash still on it fails every map; the share is asserted
+	# for the maps it was measured on, see [constant OWN_TEXTURES].
+	var tris := 0
+	var own := 0
+	var slashed := PackedStringArray()
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		var n := int(entry.get("index_count", 0)) / 3
+		tris += n
+		if entry.get("texture", null) is String and not str(entry["texture"]).is_empty():
+			own += n
+		if str(entry.get("material", "")).begins_with("/"):
+			slashed.append(str(entry["material"]))
+	var share := float(own) / float(maxi(tris, 1))
+	var floor_share: float = OWN_TEXTURES.get(String(_map_id), 0.0)
+	_check(slashed.is_empty() and share >= floor_share,
+		"and the textures its pakfile carried are drawn",
+		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"
+			% [share * 100.0, floor_share * 100.0, slashed])
 	_done()
 
 

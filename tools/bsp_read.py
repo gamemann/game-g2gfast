@@ -413,8 +413,15 @@ def clean_material(m):
     VBSP rewrites the name of any face a cubemap patched into
     `maps/<mapname>/<path>_<x>_<y>_<z>`, so the same texture appears under a dozen
     names and grouping by the raw string scatters one surface across the map.
+
+    [b]And a leading `/` is dropped.[/b] A mapper who kept a material in the root of
+    `materials/` and typed its path with a slash gets `/SURFACE` in the string table,
+    which the engine resolves to `materials/surface.vmt`. Kept, it looked up
+    `materials//surface.vmt`, missed, and the surface was drawn in the prototype grid:
+    97% of surf_interference's faces and a third of surf_aquaflow's, whose own textures
+    were in the pakfile the whole time.
     """
-    m = m.lower()
+    m = m.lower().replace("\\", "/").lstrip("/")
     m = re.sub(r"^maps/[^/]+/", "", m)
     return re.sub(r"_-?\d+_-?\d+_-?\d+$", "", m)
 

@@ -197,8 +197,16 @@ def vmt_basetexture(src):
     """
     txt = src.decode("ascii", "replace")
     txt = re.sub(r"//[^\n]*", "", txt)
-    m = re.search(r'"?\$basetexture"?\s+"?([^"\s]+)"?', txt, re.I)
-    base = m.group(1).replace("\\", "/").lower().strip() if m else None
+    # [b]A quoted value runs to the closing quote, spaces and all.[/b] Matching up to the
+    # first space read `"hammer textures/bhop_eazy/31_e_brick_blue"` as `hammer`, found no
+    # such VTF, and drew every face of bhop_eazy in the prototype grid with its own
+    # textures sitting in the pakfile. A leading `/` goes for `clean_material`'s reason
+    # (bhop_tesquo_v2's `/cncr04s/...`, a quarter of that map).
+    m = (re.search(r'"?\$basetexture"?\s+"([^"\n]+)"', txt, re.I)
+         or re.search(r'"?\$basetexture"?\s+([^"\s]+)', txt, re.I))
+    base = m.group(1).replace("\\", "/").lower().strip().lstrip("/") if m else None
+    if base and base.endswith(".vtf"):
+        base = base[:-4]
     translucent = bool(re.search(r'"?\$(translucent|alphatest)"?\s+"?1', txt, re.I))
     return base, translucent
 
