@@ -4,6 +4,10 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GMap := preload("../game/g2g_map.gd")
 const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
+const G2GMapSurvey := preload("../game/g2g_map_survey.gd")
+const G2GMovement := preload("../game/g2g_movement.gd")
+const G2GUnits := preload("../game/g2g_units.gd")
+const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 
 ## Checks that maps are found rather than listed, and that dropping one in or out
 ## reaches a running game.
@@ -19,16 +23,30 @@ const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
 ## anybody naming either.
 
 ## Checks that do not depend on how many maps are on disk. `_test_zones_have_floor`
-## adds one per hand-written map, which is a number this file deliberately does not
-## write down -- see [method _test_zones_have_floor].
-const EXPECTED_FIXED_CHECKS := 24
+## adds one per hand-written map and `_test_maps_are_surveyed` six, which is a number
+## this file deliberately does not write down -- see [method _test_zones_have_floor].
+const EXPECTED_FIXED_CHECKS := 30
 
-const CHECKS := 27
+## Checks each hand-written map adds: one for its zones' floor, six for its survey.
+const CHECKS_PER_MAP := 7
+
+const CHECKS := 51
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 5
+const SECTIONS := 6
+
+## Hand-written maps whose survey finds a tilted slab a player can STAND on, and how
+## many. Asserted both ways, like `headless_imported`'s `ARRIVES_IN_PIT`: a map not
+## listed must have none, and a listed one must still have exactly this many, so the
+## entry goes stale the day the slab is fixed rather than excusing the next one.
+##
+## `bhop_g2g_stages`' surf bonus is two 45° slabs, and this game's slope limit is
+## 45.57°: a player stands on both, so the bonus is a walk down a pair of steep floors
+## rather than surf. It is a scored track and reshaping it is Christian's call, not a
+## suite's (`[gate-sweep-2]`, 2026-09-27).
+const STANDABLE_RAMPS := {"bhop_g2g_stages": 2}
 
 var _passed := 0
 var _failed := 0
@@ -51,9 +69,10 @@ func _run() -> void:
 	await _test_rescan()
 	await _test_client_config()
 	await _test_zones_have_floor()
+	_test_maps_are_surveyed()
 
 	print("")
-	var expected := EXPECTED_FIXED_CHECKS + _hand_written_map_ids().size()
+	var expected := EXPECTED_FIXED_CHECKS + _hand_written_map_ids().size() * CHECKS_PER_MAP
 	if _passed + _failed != expected:
 		_failed += 1
 		_failures.append("the suite ran %d checks and should run %d — one aborted"
@@ -292,6 +311,198 @@ func _test_zones_have_floor() -> void:
 		map.queue_free()
 		await get_tree().process_frame
 	_done()
+
+
+# --- The survey ---------------------------------------------------------------
+
+## Every hand-written map, swept for slots narrower than a player, ground no spawn and no
+## `!s<n>` reaches, ground that leads nowhere, and starts that stand on nothing
+## (`[gate-sweep-1]`, `[gate-sweep-2]`). See [G2GMapSurvey] for what reach means here and
+## why a surf ramp is a surface slid on rather than a floor.
+##
+## [b]The survey is asked about a fixture first, so a sweep that finds nothing is known to
+## be looking.[/b] Three maps passing clean says nothing about a detector that cannot fire;
+## the fixture has one of each thing it looks for, and each is asserted found.
+func _test_maps_are_surveyed() -> void:
+	_section("the hand-written maps, surveyed for slots, unreached ground and traps")
+	var t := G2GMovement.tunables_for(G2GConfig.new())
+	var tick_rate := Engine.physics_ticks_per_second
+
+	_the_survey_sees_what_it_looks_for(t, tick_rate)
+
+	for id: String in _hand_written_map_ids():
+		var script := load("res://maps/%s.gd" % id) as GDScript
+		var map: Node3D = script.new()
+		map.call("_build")
+
+		var zones: DotTimerZoneSet = script.build_zones()
+		var starts: Array[Vector3] = []
+		for zone in zones.zones:
+			if zone.kind == DotTimerZone.Kind.SPAWN or zone.kind == DotTimerZone.Kind.STAGE:
+				starts.append(G2GUnits.vector_to_units(zone.destination))
+
+		var declared := _survey_declared(id)
+		var started := Time.get_ticks_msec()
+		var found: Dictionary = G2GMapSurvey.survey(map, zones, starts, declared, t, tick_rate)
+		map.free()
+
+		print("    %s: %d standable cells (%d reached) in %d regions, %d starts, %d declared, %d course links, %d ms" % [
+			id, int(found["cells"]), int(found["reached_cells"]), int(found["regions"]),
+			starts.size(), declared.size(), int(found["course_links"]),
+			Time.get_ticks_msec() - started,
+		])
+		for line: String in found["standable_tilted"]:
+			print("      a slab a player can stand on: %s" % line)
+
+		_check((found["startless"] as Array).is_empty(),
+			"%s: every spawn and stage destination lands on standable ground" % id,
+			", ".join(found["startless"]))
+		_check((found["slots"] as Array).is_empty(),
+			"%s: no two solids leave a slot narrower than a player" % id,
+			"; ".join(found["slots"]))
+		_check((found["unreached"] as Array).is_empty()
+				and (found["stale_declarations"] as Array).is_empty(),
+			"%s: nothing standable is out of reach of every start, but what is declared" % id,
+			"unreached: %s; declared and reached: %s" % [
+				"; ".join(found["unreached"]), "; ".join(found["stale_declarations"]),
+			])
+		_check((found["trapped"] as Array).is_empty(),
+			"%s: and nowhere a start reaches is a place with no way out" % id,
+			"; ".join(found["trapped"]))
+		_check((found["course_problems"] as Array).is_empty(),
+			"%s: every course it declares is a way forward the survey can follow" % id,
+			"; ".join(found["course_problems"]))
+		var ramps := (found["standable_tilted"] as Array).size()
+		_check(ramps == int(STANDABLE_RAMPS.get(id, 0)),
+			"%s: stands on as many tilted slabs as STANDABLE_RAMPS says" % id,
+			"%d found, %d listed" % [ramps, int(STANDABLE_RAMPS.get(id, 0))])
+
+	_done()
+
+
+## What a hand-written map knows no start reaches, in units, and why.
+##
+## [b]Here rather than on the map, for tonight.[/b] game-playground's maps carry their own
+## `survey_declared()`; these three were being edited elsewhere when the survey arrived,
+## so the declarations sit beside the check and are read off each map's own constants.
+## Every one is asserted to still cover something unreached, so none can outlive the
+## ground it excuses.
+func _survey_declared(id: String) -> Array:
+	if id != "surf_g2g_intro":
+		return []
+
+	var angle := deg_to_rad(SurfIntro.RAMP_ANGLE)
+	var out := cos(angle) * SurfIntro.BONUS_BANK_WIDTH * 0.5
+	var lift := sin(angle) * SurfIntro.BONUS_BANK_WIDTH * 0.5
+	var bank_high_x := SurfIntro.BONUS_BANK_X + out
+	var bank_top := SurfIntro.BONUS_BANK_Y + lift
+	var bank_z := SurfIntro.BONUS_BANK_Z
+	# The transfer's first bank is literals in `_build`: centred (-1536, START_Y - 250),
+	# 768 wide, 1600 long, banked the other way, so its high edge is its -X one.
+	var transfer_high_x := -1536.0 - out
+	var transfer_top := SurfIntro.START_Y - 250.0 + lift
+
+	return [
+		{
+			"box": AABB(Vector3(-384.0, SurfIntro.START_Y + 136.0, SurfIntro.START_Z + 496.0),
+				Vector3(768.0, 16.0, 48.0)),
+			"why": "the top of the start pad's back wall, 144 u over the pad: a wall",
+		},
+		{
+			"box": AABB(Vector3(bank_high_x - 32.0, bank_top - 32.0,
+				bank_z - SurfIntro.BONUS_BANK_LENGTH * 0.5 - 16.0),
+				Vector3(64.0, 64.0, SurfIntro.BONUS_BANK_LENGTH + 32.0)),
+			"why": "bonus 1's bank, its high lip: the slab's 32-u edge face, 30° from level, above its pad",
+		},
+		{
+			"box": AABB(Vector3(transfer_high_x - 32.0, transfer_top - 32.0, SurfIntro.START_Z - 1416.0),
+				Vector3(64.0, 64.0, 1632.0)),
+			"why": "the transfer's first bank, its high lip: the same edge face, above its pad",
+		},
+		{
+			"box": AABB(Vector3(SurfIntro.BONUS_X - SurfIntro.BONUS_FINISH_SIZE * 0.5,
+				SurfIntro.BONUS_FINISH_Y - 16.0,
+				SurfIntro.BONUS_FINISH_Z - SurfIntro.BONUS_FINISH_SIZE * 0.5),
+				Vector3(SurfIntro.BONUS_FINISH_SIZE, 32.0, SurfIntro.BONUS_FINISH_SIZE)),
+			"why": "bonus 1's finish pad: reached by the flight off the bank's end, which is speed and so a rider's, not a survey's; `headless_run`'s single bank rides it into the finish with no reset",
+		},
+	]
+
+
+## A floor with one of everything on it, in units: a 20-unit slot between two walls, a
+## platform 300 units up, a cellar a player drops into and cannot climb out of, a start
+## over nothing, a start over a 60° face that slides off it into a pit, and a 45° slab a
+## player can stand on.
+func _the_survey_sees_what_it_looks_for(t: DotFpsTunables, tick_rate: int) -> void:
+	var tilt := func(degrees: float) -> Basis: return Basis(Vector3.FORWARD, deg_to_rad(degrees))
+	var solids: Array[G2GMapSurvey.Solid] = [
+		G2GMapSurvey.solid(Vector3(0.0, -16.0, 0.0), Vector3(1024.0, 32.0, 1024.0)),
+		# The slot: two walls 20 units apart, side by side for 64.
+		G2GMapSurvey.solid(Vector3(-200.0, 64.0, -300.0), Vector3(128.0, 128.0, 64.0)),
+		G2GMapSurvey.solid(Vector3(-52.0, 64.0, -300.0), Vector3(128.0, 128.0, 64.0)),
+		# Out of reach: 300 up, nothing to climb.
+		G2GMapSurvey.solid(Vector3(-300.0, 300.0, 300.0), Vector3(192.0, 16.0, 192.0)),
+		# The cellar: 200 under the floor's east edge, walled on its other three sides.
+		G2GMapSurvey.solid(Vector3(704.0, -216.0, 0.0), Vector3(384.0, 32.0, 384.0)),
+		G2GMapSurvey.solid(Vector3(912.0, -50.0, 0.0), Vector3(32.0, 300.0, 448.0)),
+		G2GMapSurvey.solid(Vector3(704.0, -50.0, 208.0), Vector3(448.0, 300.0, 32.0)),
+		G2GMapSurvey.solid(Vector3(704.0, -50.0, -208.0), Vector3(448.0, 300.0, 32.0)),
+		# A surf face, far from everything, over a pit.
+		G2GMapSurvey.solid(Vector3(3000.0, 0.0, 0.0), Vector3(512.0, 32.0, 512.0), tilt.call(60.0)),
+		# A slab steep enough to look like one and shallow enough to stand on.
+		G2GMapSurvey.solid(Vector3(-3000.0, 0.0, 0.0), Vector3(512.0, 32.0, 512.0), tilt.call(45.0)),
+	]
+
+	# Everything nobody is meant to reach — wall tops, both slabs' edges — declared the
+	# way a map declares its walls, so the fixture asks only the questions it is about.
+	var walls: Array = []
+	for i in [1, 2, 5, 6, 7, 8, 9]:
+		walls.append({"box": solids[i].bounds.grow(8.0), "why": "a fixture wall %d" % i})
+
+	var spawn := Vector3(0.0, 8.0, 0.0)
+	var starts: Array[Vector3] = [spawn, Vector3(0.0, 100.0, 5000.0), Vector3(3000.0, 400.0, 0.0)]
+	var pits := DotTimerZoneSet.new()
+	var under_ramp := DotTimerZone.make(DotTimerZone.Kind.RESPAWN)
+	under_ramp.set_box(G2GUnits.vector_to_metres(Vector3(2000.0, -2000.0, -1000.0)),
+		G2GUnits.vector_to_metres(Vector3(4000.0, -600.0, 1000.0)))
+	pits.add(under_ramp)
+	var found: Dictionary = G2GMapSurvey.survey_solids(solids, pits, starts, walls, t, tick_rate)
+
+	_check((found["slots"] as Array).size() == 1 and str(found["slots"][0]).begins_with("20 u"),
+		"the survey finds the fixture's one slot", "; ".join(found["slots"]))
+	_check((found["unreached"] as Array).size() == 1
+			and str((found["unreached"] as Array)[0]).contains(", 308, "),
+		"and the platform nobody can reach", "; ".join(found["unreached"]))
+	_check((found["trapped"] as Array).size() == 1
+			and str((found["trapped"] as Array)[0]).contains("-200"),
+		"and the cellar nobody can leave", "; ".join(found["trapped"]))
+	var startless: Array = found["startless"]
+	_check(startless.size() == 2 and str(startless[0]).ends_with("over nothing")
+			and str(startless[1]).ends_with("falls into a pit"),
+		"and a start over nothing, and one on a 60° face, which slides off it into the pit",
+		"; ".join(startless))
+	var tilted: Array = found["standable_tilted"]
+	_check(tilted.size() == 1 and str(tilted[0]).contains("(-3000,") and str(tilted[0]).contains("45.0°"),
+		"a 45° slab is one a player stands on, and a 60° one is not",
+		"; ".join(tilted))
+
+	# Declared, the platform is not reported; a reset in the cellar is a way out of it.
+	var declared: Array = walls.duplicate()
+	declared.append({"box": AABB(Vector3(-400.0, 290.0, 200.0), Vector3(200.0, 30.0, 200.0)), "why": "fixture"})
+	var reset := DotTimerZoneSet.new()
+	var pit := DotTimerZone.make(DotTimerZone.Kind.RESPAWN)
+	pit.set_box(G2GUnits.vector_to_metres(Vector3(520.0, -200.0, -190.0)),
+		G2GUnits.vector_to_metres(Vector3(890.0, 0.0, 190.0)))
+	reset.add(pit)
+	var just_spawn: Array[Vector3] = [spawn]
+	var quiet: Dictionary = G2GMapSurvey.survey_solids(solids, reset, just_spawn, declared, t, tick_rate)
+
+	_check((quiet["unreached"] as Array).is_empty() and (quiet["trapped"] as Array).is_empty()
+			and (quiet["startless"] as Array).is_empty(),
+		"and none of those once the platform is declared, the cellar has a reset and every start stands",
+		"unreached %s; trapped %s; startless %s" % [
+			str(quiet["unreached"]), str(quiet["trapped"]), str(quiet["startless"]),
+		])
 
 
 ## The hand-written maps: the ones with a script of their own, discovered rather than

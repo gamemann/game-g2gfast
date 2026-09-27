@@ -382,7 +382,11 @@ static func build_zones() -> DotTimerZoneSet:
 			fall, i,
 			Vector3(FALL_X - 640.0, at.y - 192.0, at.z - 96.0),
 			Vector3(FALL_X + 640.0, at.y + 640.0, at.z + 96.0),
-			Vector3(FALL_X, at.y + 64.0, at.z + 128.0),
+			# 128 units UPHILL of the line and 64 over the bed there. It was 64 over
+			# the bed at the line itself, which 128 units uphill is 152 units under
+			# the bed's surface: `!s1` and `!s2` put a player beneath the chute and
+			# they fell into the pit. Found by `headless_maps`' survey (2026-09-27).
+			fall_point(t - 128.0 / FALL_RUN) + Vector3(0.0, 64.0, 0.0),
 			0.0
 		))
 

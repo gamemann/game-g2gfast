@@ -41,25 +41,29 @@ const G2GUnits := preload("g2g_units.gd")
 ## no second copy of any number to update. That is the difference from the two games
 ## that asked this before (`[reach-1]`), which carry their three constants beside the
 ## maps with a check that they agree.
+##
+## [b]The arithmetic is [DotFpsTunables]' own[/b] (`[reach-3]`): the apex, the climb
+## limit, the airtime and the reach of a jump landing higher or lower than it left are
+## [method DotFpsTunables.jump_apex], [method DotFpsTunables.climb_limit],
+## [method DotFpsTunables.jump_airtime] and [method DotFpsTunables.jump_reach], asked in
+## metres and converted at the edge by [G2GUnits]. What stays here is the genre's: the
+## CHAIN — [method hop] and everything built on it — which the addon has no notion of.
 
 enum Kind { RUN, CHAIN }
 
-## How much of the apex a climb may use.
-##
-## A player landing at exactly the apex arrives with no vertical speed at the one instant
-## of the arc where a tick either side of it is short. Nine tenths is what game-arena
-## uses for the same reason, and none of this game's rises comes near it.
-const CLIMB_MARGIN := 0.9
+## How much of the apex a climb may use: `DotFpsTunables.CLIMB_MARGIN`, which says why
+## nine tenths. None of this game's rises comes near it.
+const CLIMB_MARGIN := DotFpsTunables.CLIMB_MARGIN
 
 
 ## The apex of a standing jump, in units. The number every bhop player knows as 57.
 static func apex(t: DotFpsTunables) -> float:
-	return G2GUnits.to_units(t.jump_height)
+	return G2GUnits.to_units(t.jump_apex())
 
 
 ## The highest rise a jump is asked to make. Above this a block is a wall.
 static func climb_limit(t: DotFpsTunables) -> float:
-	return apex(t) * CLIMB_MARGIN
+	return G2GUnits.to_units(t.climb_limit())
 
 
 ## A rise at or under this is walked, not jumped.
@@ -74,16 +78,7 @@ static func step(t: DotFpsTunables) -> float:
 ## to come back to the height you left, and it is the wrong number for a climb or a drop:
 ## 0.755 s flat, 0.665 s onto a 24-unit step, 0.889 s down 48.
 static func airtime(rise: float, t: DotFpsTunables) -> float:
-	var v := G2GUnits.to_units(t.jump_velocity())
-	var g := G2GUnits.to_units(t.gravity)
-	var remaining := v * v - 2.0 * g * rise
-
-	if g <= 0.0 or remaining < 0.0:
-		return -1.0
-
-	# The DESCENDING root. The ascending one is the same height on the way up, which is
-	# a shorter jump that lands on the near lip rather than the far one.
-	return (v + sqrt(remaining)) / g
+	return t.jump_airtime(G2GUnits.to_metres(rise))
 
 
 ## Run speed, in u/s.
@@ -93,8 +88,7 @@ static func run_speed(t: DotFpsTunables) -> float:
 
 ## The clear air a RUN jump crosses, landing [param rise] units higher. 0 if unreachable.
 static func run_reach(rise: float, t: DotFpsTunables) -> float:
-	var time := airtime(rise, t)
-	return run_speed(t) * time if time > 0.0 else 0.0
+	return G2GUnits.to_units(t.jump_reach(G2GUnits.to_metres(rise)))
 
 
 ## The most speed one airborne tick can add, in u/s: [code]sv_maxairwishspeed[/code],

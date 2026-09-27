@@ -58,6 +58,7 @@ game/
   g2g_geometry.gd   boxes and ramps, in units
   g2g_map.gd        base for the built-in maps; a map declares its jumps here
   g2g_reach.gd      what a jump reaches, from the tunables; every declared jump, measured
+  g2g_map_survey.gd slots, unreached ground and traps, swept over a hand-built map's boxes
   g2g_bsp_map.gd    base for an IMPORTED map: mesh, materials and zones from a
                     manifest. See Decision 11
   g2g_bsp_lightmapped.gdshader  albedo x the lighting the map's own compiler baked
@@ -93,7 +94,7 @@ scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
 examples/           headless_run (187), headless_net (157), dedicated (179),
                     headless_imported (29 per map, plus one per track and stage),
-                    headless_maps (27), jitter_probe (4 configurations)
+                    headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
                     map from its own spawn, looking down it. bsp_preview orbits a
@@ -485,7 +486,7 @@ godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 se
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 29 per map, +1 per stage
-godot --headless --path . res://examples/headless_maps.tscn      # 27 checks
+godot --headless --path . res://examples/headless_maps.tscn      # 51 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
 
@@ -1636,7 +1637,7 @@ A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody r
 
 `[reach-1]` asked this of game-playground and game-arena and both were wrong: a jump course unfinishable past platform three, and three maps of routes nothing had ever climbed, under suites that passed throughout. Asked here, **every jump the three maps declare is inside reach** — and the question found two things the maps' own comments never said.
 
-**This genre has two reaches, and a gap is sized for one of them.** `G2GReach` holds both, read off the `DotFpsTunables` the server applies rather than off copied constants, so `sv_gravity` and `sv_enablebunnyhopping` move every answer with no second number to update:
+**This genre has two reaches, and a gap is sized for one of them.** `G2GReach` holds both, read off the `DotFpsTunables` the server applies rather than off copied constants, so `sv_gravity` and `sv_enablebunnyhopping` move every answer with no second number to update. Since `[reach-3]` (2026-09-27) the apex, climb limit, airtime and RUN reach are `DotFpsTunables.jump_apex`/`climb_limit`/`jump_airtime`/`jump_reach` asked in metres and converted by `G2GUnits`; only the CHAIN (`hop()` and what is built on it) is this game's own arithmetic. Every number came out identical to ten decimal places:
 
 - **RUN** is a jump from the lip at run speed. Ground acceleration gets a player back to 250 u/s in about thirty units, so anybody who lands anywhere on a block can run to its edge and take it however badly the last hop went. It clears **189 units flat, 166 onto a 24-unit step, 222 down 48** — the landing height is the whole point, because the airtime everybody writes down is the time back to the height you left.
 - **CHAIN** is a hop inside a run of auto-hops, and it is a different quantity rather than a longer one. With the key held there is no grounded tick to walk to the lip on, so a hop takes off where the last one landed and the hops have to average a whole block period — the gap *and* the block. Speed is what makes a period, and strafing is the only thing that makes speed, so a chain is judged by simulating it with a perfect strafe every tick (`v² + 30²` a tick, which is `DotFpsMotor.accelerate`'s own arithmetic). **That is an upper bound on purpose**: a chain it refuses is one nobody can run, and how much of a perfect strafe a chain needs is printed rather than asserted, because that is the number that says how hard it is and no threshold on it would be anything but a guess.
@@ -1670,4 +1671,27 @@ Two things driving it found, and neither is fixed here:
 
 - **A surfer holding into a bank used to freeze in mid-air with its speed intact, and dot-player-controller 94f1c87 removed it.** At several lines the bot stopped dead within a few hundred ticks and never moved again, `velocity` still 222 u/s and `DotFpsMotor.duplicate_plane_ticks` rising one a tick — the duplicate-plane early-out, on a flat hand-built bank: 708 stalled ticks of 1,815 even on the line that worked. Re-measured 2026-09-24 from a standstill spawn (a throwaway probe riding eleven lines): no line freezes, the longest motionless run is 7 ticks, and a ride has 1 to 35 duplicate-plane stalls. Lines +8, +16, +24, +64 and +96 units from the lip finish in 1,299 to 1,676 ticks. **+32, where the bot rode, and +48 do not, and it is a different stall**: the rider loses its forward speed mid-bank (254 u/s along the bank to 0, at z -1397 and -276), hangs against the bank ungrounded with about 10 u/s of jitter, and never moves on. +32 finished in the suite (1,318 ticks, 2 stalls) only because the sections before it leave the bot about 30 u/s of sideways drift and a different yaw; the tunables were dumped in both and are identical. The bot rides +24 now, which finishes from both states: 1,313 ticks and 3 stalls in the suite. The hang is dot-player-controller's, and it is queued (`[bank-hang-1]`). Lines +128 and wider cannot be reached from the pad at all: the bot walks off it first.
 - **The finish only catches a slow rider.** Only the strip of bank between its lip and the pad's far edge lies over the pad, and the end zone is 512 units deep and tops out 455 units under the line the bot rides — so a rider leaving the bank faster than about 470 to 590 u/s, depending on where on that strip, passes over the whole zone and lands in the pit. A bot holding forward-and-right, which is a real strafe, left the bank at 866 u/s and was put back from 1,578 units past the pad's far edge. On a surf route, going well is what fails it. Not changed: it is a scored track, and the two fixes — a longer pad and zone, or a taller zone — respectively leave every existing time comparable and make every future one faster than it, which is Christian's call.
+
+## Every hand-built map, surveyed for slots, unreached ground and traps
+
+`[gate-sweep-1]` and `[gate-sweep-2]`, as a rule over the box list rather than a question about one gap (2026-09-27). `G2GMapSurvey` is game-playground's `PlaygroundMapSurvey` reimplemented in genre units, and `headless_maps`' last section runs it over every hand-built map the catalogue finds, after a built-in bad map that has one of everything it looks for. Per map it asserts: every spawn and `!s<n>` destination lands on standable ground; no two solids leave a slot narrower than the hull; nothing standable is out of reach of every start unless declared, and no declaration covers ground that is reached; nothing a start reaches is a place with no way out (a finish, a pit, a spawn); every declared CHAIN course is a way forward; and the tilted slabs a player can stand on are exactly `STANDABLE_RAMPS`.
+
+**The numbers are the tunables' own, in units.** The hull is `2 × radius`, **32 u**, which is the genre's hull and what the motor collides with; the headroom a crouched player's 54; the step 18; the slope limit 45.57°; a jump is `G2GReach`'s RUN reach and climb limit. The grid is 16 u, half the hull, so a cell's eight neighbours are the hull.
+
+**A CHAIN course is linked body to body when `G2GReach.chain` says a perfect strafe runs it**, because the main routes' gaps (up to 288 u) are past any RUN jump by design. Without those links both bhop maps' main routes are unreached past their first wide gap, which is how the links were armed.
+
+**What reach means on a surf map, and why the survey stops short there.** A surf ramp is steeper than anybody can stand on, so it has no cells: it is slid on, not stood on. Where a rider on one gets to is decided by their speed, and on a ramp speed is the rider's to make, so any bound on it is either "everywhere" or a guess at skill. The survey floods only what needs none — walking, a step, a drop, a RUN jump, and a slide straight down a face's fall line off its low edge — and a surf route whose next surface is reached by a carried flight reads as unreached and is declared, naming the check that rides it. The standable parts (pads, the valley floor, platforms, finishes) are surveyed fully. On `surf_g2g_intro` that leaves exactly one such flight: bonus 1's finish pad, reached off the end of the bank, which `headless_run`'s single bank rides with no reset. The other three declarations are the start pad's back-wall top and two banks' high lips (a 60° slab's 32-u edge face is 30° from level and standable, and nobody is sent there). They live in `headless_maps._survey_declared` rather than on the maps for now; moving them onto the maps, as game-playground has them, is the next step once nobody else is editing those files.
+
+What it found, per map (all passing now):
+
+| map | standable cells | reached | regions | course links | declared |
+| --- | --- | --- | --- | --- | --- |
+| `bhop_g2g_intro` | 4,976 | all | 31 | 8 | 0 |
+| `bhop_g2g_stages` | 31,589 | all | 60 | 16 | 0 |
+| `surf_g2g_intro` | 31,373 | 29,715 | 42 | 0 | 4 |
+
+No slot under 32 u and nothing trapped on any of the three. Two real findings:
+
+- **`the fall line`'s `!s1` and `!s2` put a player under the chute, and they fell into the pit.** The destination was 64 u over the bed's centre line *at the stage line* but placed 128 u uphill of it, where the bed is 152 u higher — so the player's feet were 113 u under its surface. Driven: dropped from each destination, a bot fell 2,300 to 3,450 u into the pit and was respawned. Fixed (destinations only; no geometry, no zone volume moved): `fall_point(t - 128 / FALL_RUN)` plus 64, and driven again, both slide the bed into the finish zone.
+- **`bhop_g2g_stages`' surf bonus is two 45° slabs, and 45° is under this game's 45.57° slope limit**, so both are floors. Driven: a bot dropped onto the west slab comes to rest mid-slope at speed 0. Not changed, because it is a scored track: making it surf means steepening the slabs past 45.57°, which reshapes the route, and that is Christian's call. `STANDABLE_RAMPS` lists it and is asserted both ways, so it goes stale the day the slabs change.
 
