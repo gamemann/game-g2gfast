@@ -41,7 +41,7 @@ const CHECKS := 157
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 22
+const SECTIONS := 23
 
 var _passed := 0
 var _failed := 0
