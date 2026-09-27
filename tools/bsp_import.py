@@ -2151,6 +2151,30 @@ def load_overrides(path, map_id):
         return json.load(fh)
 
 
+ATTRIBUTION_FIELDS = ("author", "source", "recorded")
+
+
+def attribution_problem(doc, map_id):
+    """Why [param doc] does not credit the map, or None when it does.
+
+    [b]An imported map is somebody else's work, kept on the condition that its author is
+    credited[/b] (`[credit-1]`). Every map in `maps/zones/` carries an `attribution`
+    block -- author, where it came from, the date it was recorded -- and this refuses one
+    that does not, the way a finish that does not resolve makes a map unimportable: it is
+    the only thing that stops the next forty maps arriving uncredited. The fix is always a
+    person writing it down, in `maps/zones/<id>.json`; see its README.
+    """
+    block = doc.get("attribution")
+    if not isinstance(block, dict):
+        return ("maps/zones/%s.json has no `attribution` block (author, source, "
+                "archive, recorded); an imported map is not importable until its "
+                "author is written down" % map_id)
+    missing = [k for k in ATTRIBUTION_FIELDS if not str(block.get(k) or "").strip()]
+    if missing:
+        return "maps/zones/%s.json's attribution has no %s" % (map_id, ", ".join(missing))
+    return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("bsp")
@@ -2183,6 +2207,11 @@ def main(argv=None):
     if zones_dir is None:
         zones_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps", "zones")
     doc = load_overrides(zones_dir, map_id)
+
+    uncredited = attribution_problem(doc, map_id)
+    if uncredited is not None:
+        print("refused: %s" % uncredited, file=sys.stderr)
+        return 2
 
     bsp = Bsp(a.bsp).load()
     # A "fake skybox" is a brush a mapper painted to look like sky -- a custom texture,

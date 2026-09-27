@@ -48,7 +48,12 @@ for bsp in "$src"/*.bsp; do
     manifest="$out/$id/$id.json"
     # Up to date when the manifest exists and is newer than the .bsp. Re-importing a
     # map nobody has touched is 4 seconds and 12 MB of writes for no change.
-    if [ "$force" -eq 0 ] && [ -f "$manifest" ] && [ "$manifest" -nt "$bsp" ]; then
+    # The zones file counts too: it is where a person writes a map's credit and its
+    # zones, and an import older than it is stale however new it is against the .bsp
+    # (2026-09-27: fifteen new credits sat unread until --force).
+    zones="$here/maps/zones/$id.json"
+    if [ "$force" -eq 0 ] && [ -f "$manifest" ] && [ "$manifest" -nt "$bsp" ] \
+        && { [ ! -f "$zones" ] || [ "$manifest" -nt "$zones" ]; }; then
         echo "  up to date  $id"
         skipped=$((skipped + 1))
         continue
