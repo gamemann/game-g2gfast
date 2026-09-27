@@ -102,7 +102,7 @@ const OWN_TEXTURES := {
 }
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 32
+const CHECKS_PER_MAP := 34
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -252,12 +252,41 @@ func _test_geometry() -> void:
 	# collision and standing check passed, because collision is built from the brushes.
 	var drawn := 0
 	for child in node.get_children():
-		if child is MeshInstance3D and String(child.name).begins_with("World") \
+		if child is MeshInstance3D and (String(child.name).begins_with("World")
+				or String(child.name).begins_with("Props")
+				or String(child.name).begins_with("Sky")) \
 				and (child as MeshInstance3D).mesh != null:
 			drawn += (child as MeshInstance3D).mesh.get_surface_count()
 	var listed: int = (node as G2GBspMap).manifest.get("surfaces", []).size()
 	_check(drawn == listed, "and every surface the manifest lists is drawn",
 		"%d of %d" % [drawn, listed])
+
+	# [b]Static props are drawn (2026-09-27).[/b] 17 of the 26 maps place them and every
+	# one was absent: surf_aquaflow's whole reef, surf_greensway's forest, surf_summit's
+	# trees and arches. The count of props the importer DREW is from the models it read,
+	# the count PLACED is from the lump; a map that placed props it carried and drew none
+	# is an importer that stopped reading them.
+	var manifest_props: Dictionary = (node as G2GBspMap).manifest.get("static_props", {})
+	var carried := int(manifest_props.get("placed", 0)) - int(manifest_props.get("stock_models", 0))
+	var prop_surfaces := 0
+	for child in node.get_children():
+		if child is MeshInstance3D and String(child.name).begins_with("Props") \
+				and (child as MeshInstance3D).mesh != null:
+			prop_surfaces += (child as MeshInstance3D).mesh.get_surface_count()
+	_check(carried <= 0 or (int(manifest_props.get("drawn", 0)) > 0 and prop_surfaces > 0),
+		"and the static props its pakfile carried are drawn",
+		"%s; %d prop surfaces drawn" % [manifest_props, prop_surfaces])
+
+	# [b]And a 3D skybox is a backdrop, not a miniature (2026-09-27).[/b] Ten maps have one;
+	# its faces were drawn at a sixteenth of their size where they were compiled and no
+	# backdrop at all. Drawn, they are their own `Sky` instances, scaled about the camera.
+	var sky: Variant = (node as G2GBspMap).manifest.get("skybox", null)
+	var sky_node := node.get_node_or_null("Sky") as MeshInstance3D
+	var wants_sky := sky is Dictionary and bool((sky as Dictionary).get("drawn", true)) \
+		and int((sky as Dictionary).get("faces", 0)) > 0
+	_check(sky_node != null if wants_sky else sky_node == null,
+		"and its 3D skybox is drawn as a backdrop exactly when it has one to draw",
+		"skybox %s, Sky node %s" % [sky, sky_node != null])
 
 	var verts := 0
 	var has_uv2 := true
@@ -333,6 +362,9 @@ func _test_lighting() -> void:
 	var own := 0
 	var slashed := PackedStringArray()
 	for entry: Dictionary in node.manifest.get("surfaces", []):
+		# The map's own faces: a static prop's stock texture is a different question.
+		if bool(entry.get("prop", false)):
+			continue
 		var n := int(entry.get("index_count", 0)) / 3
 		tris += n
 		if entry.get("texture", null) is String and not str(entry["texture"]).is_empty():

@@ -422,8 +422,13 @@ def clean_material(m):
     were in the pakfile the whole time.
     """
     m = m.lower().replace("\\", "/").lstrip("/")
-    m = re.sub(r"^maps/[^/]+/", "", m)
-    return re.sub(r"_-?\d+_-?\d+_-?\d+$", "", m)
+    # The `_x_y_z` suffix is only vbsp's when vbsp moved the material under `maps/`: a
+    # mapper's own `corals_1_5_8_9` ends in three numbers too, and stripping it there
+    # turned it into `corals_1`, which does not exist.
+    patched = re.sub(r"^maps/[^/]+/", "", m)
+    if patched == m:
+        return m
+    return re.sub(r"_-?\d+_-?\d+_-?\d+$", "", patched)
 
 
 def write_obj(bsp, out_path):

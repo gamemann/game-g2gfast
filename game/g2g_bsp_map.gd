@@ -170,29 +170,19 @@ func _construct() -> void:
 	# index while no surface is skipped; one empty surface would have given every surface
 	# after it its neighbour's texture.
 	var surfaces: Array = manifest.get("surfaces", [])
-	var drawn: Array[MeshInstance3D] = []
-	var mesh: ArrayMesh = null
-	var sources := PackedInt32Array()
-
-	for i in range(surfaces.size()):
-		var s: Dictionary = surfaces[i]
-		var arrays := _surface_arrays(blob, s)
-		if arrays.is_empty():
-			continue
-		if mesh == null or mesh.get_surface_count() >= RenderingServer.MAX_MESH_SURFACES:
-			if mesh != null:
-				drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap, drawn.size()))
-			mesh = ArrayMesh.new()
-			sources = PackedInt32Array()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		mesh.surface_set_name(mesh.get_surface_count() - 1, str(s.get("material", "?")))
-		sources.append(i)
-
-	if mesh != null:
-		drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap, drawn.size()))
+	# [b]Static props are drawn in their own instances, `Props`, `Props2`...[/b] They are
+	# scenery with no collision of the world's kind, and the probes that sample `World`
+	# for floors and ramps (collision_probe, surf_probe, bhop_probe) must not start asking
+	# a coral or a torch whether a player can stand on it.
+	#
+	# [b]And the 3D skybox in `Sky`[/b], for the same reason: its faces are drawn many
+	# times their compiled size far outside the play space, and nothing stands on them.
+	var drawn := _build_meshes(surfaces, blob, dir, lightmap, "World")
+	var props := _build_meshes(surfaces, blob, dir, lightmap, "Props")
+	props.append_array(_build_meshes(surfaces, blob, dir, lightmap, "Sky"))
 
 	var written := 0
-	for mi in drawn:
+	for mi in drawn + props:
 		written += mi.mesh.get_surface_count()
 
 	var solids := _build_collision(drawn, blob)
@@ -207,18 +197,55 @@ func _construct() -> void:
 		"map": str(manifest.get("id", "?")),
 		"surfaces": written,
 		"surfaces_in_manifest": surfaces.size(),
-		"mesh_instances": drawn.size(),
+		"mesh_instances": drawn.size() + props.size(),
 		"collision_shapes": solids,
 	})
+
+
+## Which instance family a manifest surface is drawn in: `World`, `Props` or `Sky`.
+static func _family(s: Dictionary) -> String:
+	if bool(s.get("skybox", false)):
+		return "Sky"
+	return "Props" if bool(s.get("prop", false)) else "World"
+
+
+## Every manifest surface of one family, as instances of up to 256 surfaces each.
+func _build_meshes(
+	surfaces: Array, blob: PackedByteArray, dir: String, lightmap: Texture2D,
+	base_name: String
+) -> Array[MeshInstance3D]:
+	var drawn: Array[MeshInstance3D] = []
+	var mesh: ArrayMesh = null
+	var sources := PackedInt32Array()
+	for i in range(surfaces.size()):
+		var s: Dictionary = surfaces[i]
+		if _family(s) != base_name:
+			continue
+		var arrays := _surface_arrays(blob, s)
+		if arrays.is_empty():
+			continue
+		if mesh == null or mesh.get_surface_count() >= RenderingServer.MAX_MESH_SURFACES:
+			if mesh != null:
+				drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap,
+					base_name, drawn.size()))
+			mesh = ArrayMesh.new()
+			sources = PackedInt32Array()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_name(mesh.get_surface_count() - 1, str(s.get("material", "?")))
+		sources.append(i)
+	if mesh != null:
+		drawn.append(_mesh_instance(mesh, sources, surfaces, dir, lightmap, base_name,
+			drawn.size()))
+	return drawn
 
 
 ## One drawn chunk of the map: its mesh, and the material each surface's source asks for.
 func _mesh_instance(
 	mesh: ArrayMesh, sources: PackedInt32Array, surfaces: Array, dir: String,
-	lightmap: Texture2D, index: int
+	lightmap: Texture2D, base_name: String, index: int
 ) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
-	mi.name = "World" if index == 0 else "World%d" % (index + 1)
+	mi.name = base_name if index == 0 else "%s%d" % [base_name, index + 1]
 	mi.mesh = mesh
 	add_child(mi)
 	for at in range(sources.size()):
