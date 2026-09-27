@@ -24,7 +24,7 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 100
+const CHECKS := 109
 
 var _passed := 0
 var _failed := 0
@@ -47,6 +47,7 @@ func _run() -> void:
 	_test_a_runner_is_not_shaken()
 	_test_the_sounds_are_the_run()
 	_test_the_sounds_follow_the_timer()
+	_test_a_run_is_drawn()
 	_test_the_landing_is_a_speedometer()
 	_test_console_is_prefixed()
 	_test_a_party_run_is_tainted()
@@ -200,6 +201,103 @@ func _test_the_sounds_follow_the_timer() -> void:
 	timers.player_started.emit(&"me", DotTimerRun.new())
 	_check(sink.count_of(&"timer_start") == 0, "and following nothing hears nothing")
 
+	timers.free()
+	p.queue_free()
+	_done()
+
+
+# --- 1c ---------------------------------------------------------------------
+
+## [b]Both gate effects were refused on every run until 2026-09-27[/b], because
+## `scenes/fx/` did not exist and dot-fx logs a missing scene at DEBUG. Every check here
+## passed throughout: a catalogue validates without its scenes, by design. So this asks
+## the two questions that could not pass then -- are the files there, and does a run,
+## crossed the way the client crosses one, put nodes in the world at the runner's feet.
+func _test_a_run_is_drawn() -> void:
+	_section("A start and a finish are drawn where the runner crossed them")
+
+	var missing := G2GPresentation.fx_catalogue().missing_scenes()
+	_check(
+		missing.is_empty(),
+		"every scene the effect catalogue names is present (missing: %s)" % ", ".join(missing)
+	)
+
+	# No script and no external resource, so a delivered pack has no path inside the scene
+	# to rewrite: `FX_DIR` goes through `G2GPaths.rebase` and that is the only path there is.
+	var self_contained := true
+	for id in [&"start_gate", &"finish_gate"]:
+		var def := G2GPresentation.fx_catalogue().find(id)
+		var text := FileAccess.get_file_as_string(def.scene_path) if def != null else ""
+		if text.is_empty() or text.contains("ext_resource") or text.contains("script"):
+			self_contained = false
+	_check(self_contained, "and each is one file, with no script and nothing it loads")
+
+	var p := _make()
+	var drawn := {}
+	p.fx.spawned.connect(func(id: StringName, node: Node, reason: StringName) -> void:
+		drawn[id] = node if node != null else reason
+	)
+	var timers := DotTimerManager.new()
+	p.follow_runs(timers, &"me")
+
+	# Where the client says the feet are, a tick before the line is crossed.
+	var feet := Vector3(4.0, 2.0, -7.0)
+	p.present(0.016, feet + Vector3(0.0, 1.2, 3.0), Vector3.FORWARD)
+	p.watch_movement(true, 400.0, feet)
+	timers.player_started.emit(&"me", DotTimerRun.new())
+
+	var start: Variant = drawn.get(&"start_gate")
+	_check(
+		start is Node3D and (start as Node3D).is_inside_tree(),
+		"crossing the start line draws the start gate (%s)" % str(start)
+	)
+	_check(
+		start is Node3D and (start as Node3D).global_position.distance_to(feet) < 0.01,
+		"at the runner's feet"
+	)
+	_check(
+		start is Node and (start as Node).find_children("*", "CPUParticles3D").size() > 0,
+		"and it is particles, not an empty node"
+	)
+
+	drawn.clear()
+	timers.player_finished.emit(&"someone_else", DotTimerRun.new())
+	_check(drawn.is_empty(), "somebody else's finish draws nothing on this screen (%s)" % str(drawn))
+
+	var end := feet + Vector3(-30.0, -5.0, 12.0)
+	p.present(0.016, end + Vector3(0.0, 1.2, 3.0), Vector3.FORWARD)
+	p.watch_movement(true, 900.0, end)
+	timers.player_finished.emit(&"me", DotTimerRun.new())
+	var finish: Variant = drawn.get(&"finish_gate")
+	_check(
+		finish is Node3D and (finish as Node3D).global_position.distance_to(end) < 0.01,
+		"the end zone draws the finish gate where the run ended (%s)" % str(finish)
+	)
+	_check(
+		finish is Node and (finish as Node).find_children("*", "CPUParticles3D").size() > 0,
+		"and it is particles too"
+	)
+
+	# [b]Drawn where the scene is, not at the world's origin.[/b] dot-fx adds a scene to the
+	# tree and THEN sets its transform, and a world-space emitter's first burst goes out
+	# from wherever the node was when it entered: the origin. Rendered, the start gate was
+	# a ring of green on some other part of the map and the finish half of one. Local
+	# coordinates follow the node, and a gate never moves, so nothing is lost by them.
+	var world_space := PackedStringArray()
+	for node in [start, finish]:
+		if not node is Node:
+			world_space.append("(not drawn)")
+			continue
+		for c in (node as Node).find_children("*", "CPUParticles3D", true, false):
+			if not (c as CPUParticles3D).local_coords:
+				world_space.append("%s/%s" % [(node as Node).name, c.name])
+	_check(
+		world_space.is_empty(),
+		"and every emitter in both follows its node, so the first burst is not at the origin (%s)"
+		% ", ".join(world_space)
+	)
+
+	p.follow_runs(null, &"")
 	timers.free()
 	p.queue_free()
 	_done()

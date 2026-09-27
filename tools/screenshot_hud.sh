@@ -13,4 +13,4 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p screenshots
-exec xvfb-run -a godot --path . --resolution 1600x900 --script tools/screenshot_hud.gd
+exec xvfb-run -a godot --path . --resolution 1600x900 --script tools/screenshot_hud.gd -- "$@"

@@ -92,6 +92,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
+  fx/               start_gate and finish_gate: particles, no script, nothing loaded
 examples/           headless_run (187), headless_net (157), dedicated (179),
                     headless_imported (35 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
@@ -483,7 +484,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 187 checks
-godot --headless --path . res://examples/headless_presentation.tscn  # 100 checks
+godot --headless --path . res://examples/headless_presentation.tscn  # 109 checks
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
@@ -1418,6 +1419,8 @@ fires on the authority, which on a netted client is somewhere else, so a client 
 a signal would be silent online and perfectly noisy offline.
 
 **And that landing made no sound at all until now.** The catalogue named seven `.ogg` files nobody has produced, so the speedometer above was arithmetic reaching a path that does not exist — a decision made carefully and then inaudible. `sound_recipes()` maps each of the seven to a `DotAudioSynth` voice and `DotAudioSinkGodot` falls through to that bank when the path resolves to nothing, so the rhythm is audible without this repository shipping a byte of audio. The same restraint as the camera shake applies to the choice of voices: `land` is an impact rather than a thud with a body, because a long tail smears the rhythm it is there to mark. `tools/audio_probe.sh` is the only thing here that can tell "this game would make a noise" apart from "this game has a table of sounds" — a headless run has no audio device, so every assertion about audio in `headless_presentation` passes on a silent build.
+
+**Both gate effects were refused on every run until 2026-09-27 (`[fx-scenes-1]`).** `fx_catalogue()` named `start_gate` and `finish_gate` under `scenes/fx/`, which did not exist, and dot-fx refuses a missing scene at DEBUG, so no suite noticed. They exist now as two script-free scenes with no external resource, so a delivered pack has nothing inside them to rewrite and `FX_DIR` (through `G2GPaths.rebase`) is the only path: a green ring of motes rising from the runner's feet in the start colour, and a warm column plus a spray of sparks for the finish. `_build_fx` warns when a scene the catalogue names is missing. **Every emitter is `local_coords`, and that is a bug fix, not a style:** dot-fx adds a scene to the tree and then sets its transform, and a world-space `CPUParticles3D`'s first burst goes out from where the node entered -- the world origin. Rendered, the start gate was drawn on another part of the map and the finish's column half there; nothing headless could see it, because the node itself is in the right place. `headless_presentation`'s *a start and a finish are drawn* asserts `missing_scenes()` is empty, that driving the timer's own signals through `follow_runs` puts particles in the tree at the feet `watch_movement` last saw, that somebody else's finish draws nothing, and that every emitter follows its node; armed by removing a scene (5 fired), by dropping the start's origin (1) and by removing one `local_coords` (1). `tools/screenshot_hud.sh --fx` renders `g2gfast_fx_start`, `_finish` and `_both`. **In first person a runner mostly does not see their own start gate:** it is drawn at their feet and rises to about knee height, below a level view; the finish's sparks do reach eye level. Spectators and third person see both.
 
 **The server's console is bridged in with a prefix here and unprefixed everywhere else.**
 The two consoles share names that mean opposite things — `!s3` on a client is a local

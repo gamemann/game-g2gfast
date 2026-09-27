@@ -4,6 +4,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GHud := preload("../game/g2g_hud.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
+const G2GPresentation := preload("../game/g2g_presentation.gd")
 
 ## Renders this game's HUD to `screenshots/` so a person can look at it.
 ##
@@ -26,6 +27,15 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ## hud_blind      the same view after an admin's blind: black, with the HUD still on it
 ## [/codeblock]
 ##
+## [b]`--fx` renders the two gate effects instead[/b] (`tools/screenshot_hud.sh --fx`):
+## `g2gfast_fx_start` and `g2gfast_fx_finish`, each drawn by the real presentation layer's
+## `on_run_started` / `on_run_finished` at a point on the floor three metres in
+## front of the camera, and `g2gfast_fx_both` with the two side by side. The particles are
+## slowed to a tenth of real speed and captured at a fixed point in the effect's own time,
+## because a software renderer under xvfb is slower than the effect and a capture on the
+## Nth frame would be a different moment of it on every machine. `--debug` prints where each
+## emitter's particles are at the capture, which is how the origin bug in `scenes/fx/` showed.
+##
 ## Run through `tools/screenshot_hud.sh`. [b]Not `--headless`[/b]: that gives a null
 ## renderer, a 64 x 64 viewport, and every frame it saves is empty — which is worse than
 ## no screenshot because it looks like one.
@@ -46,9 +56,20 @@ var _at := 0
 var _wait := SETTLE
 var _done := false
 
+## Set by `--fx`. See the class documentation.
+var _fx_only := false
+var _presentation: G2GPresentation = null
+
+## How far into its own life each effect is captured, in seconds of the effect's time, and
+## the slow-down that makes that moment reachable under a software renderer.
+const FX_AT := 0.22
+const FX_SLOW := 0.1
+var _fx_since := 0
+
 
 func _initialize() -> void:
-	DotLog.set_level(DotLog.Level.ERROR)
+	DotLog.set_level(DotLog.Level.WARN)
+	_fx_only = "--fx" in OS.get_cmdline_user_args()
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 
 	# The movement actions, because the sampler reads them and an unregistered action
@@ -102,6 +123,11 @@ func _process(delta: float) -> bool:
 		# state before the change. The first version did exactly that and produced a
 		# `hud_practice` with no PRACTICE on it: the flag was set, the picture was of
 		# the frame before it, and nothing about either was wrong enough to notice.
+		# A gate is drawn at the feet, so the player has to have landed from the spawn
+		# first, or the first one hangs in the air where they were falling.
+		if shot.has("fx") and not bool(shot["arranged"]) and not _player.controller.state.is_grounded():
+			return false
+
 		if not bool(shot["arranged"]):
 			var callable: Callable = shot["arrange"]
 			callable.call()
@@ -113,6 +139,13 @@ func _process(delta: float) -> bool:
 			_wait -= 1
 			return false
 
+		# An effect frame waits for the effect's own clock, not for a frame count.
+		if shot.has("fx") and Time.get_ticks_msec() - _fx_since < int(FX_AT / FX_SLOW * 1000.0):
+			return false
+
+		if _fx_only and "--debug" in OS.get_cmdline_user_args():
+			for c in _presentation.fx.find_children("*", "CPUParticles3D", true, false):
+				print("[dbg] ", c.get_parent().name, "/", c.name, " ", (c as CPUParticles3D).global_position, " ", (c as CPUParticles3D).capture_aabb(), " emitting=", (c as CPUParticles3D).emitting, " pitch=", _player.controller.state.pitch)
 		_capture(String(shot["name"]))
 		_at += 1
 		return false
@@ -124,6 +157,10 @@ func _process(delta: float) -> bool:
 
 ## The three states, and what each is for.
 func _stage() -> void:
+	if _fx_only:
+		_stage_fx()
+		return
+
 	_shots = [
 		{"name": "hud_run", "arrange": _arrange_run, "arranged": false},
 		{"name": "hud_practice", "arrange": _arrange_practice, "arranged": false},
@@ -196,6 +233,61 @@ func _arrange_beacon() -> void:
 ## The same view, blinded: nothing of the course, and the clock and keys still drawn.
 func _arrange_blind() -> void:
 	_player.blinded = true
+
+
+# --- --fx -------------------------------------------------------------------
+
+func _stage_fx() -> void:
+	_presentation = G2GPresentation.new()
+	_presentation.name = "Presentation"
+	root.add_child(_presentation)
+	var built := _presentation.setup()
+	if not built.ok:
+		push_error("the presentation layer: %s" % built.error.message)
+	# Never the player's own settings file: a tool that writes `user://` changes the next
+	# run of the real client.
+	_presentation.settings.local_store = DotSettingsStoreMemory.new()
+	_presentation.settings.load_now()
+	_presentation.apply_all()
+	_presentation.fx.spawned.connect(func(id: StringName, node: Node, why: StringName) -> void:
+		if node == null:
+			print("[fx] %s refused: %s" % [id, why])
+		else:
+			print("[fx] %s drawn at %s" % [id, str((node as Node3D).global_position)])
+	)
+
+	_shots = [
+		{"name": "g2gfast_fx_start", "arrange": _arrange_fx.bind([&"start"]), "arranged": false, "fx": true},
+		{"name": "g2gfast_fx_finish", "arrange": _arrange_fx.bind([&"finish"]), "arranged": false, "fx": true},
+		{"name": "g2gfast_fx_both", "arrange": _arrange_fx.bind([&"start", &"finish"]), "arranged": false, "fx": true},
+	]
+
+
+## The player stood still at the spawn, and each named gate drawn on the floor ahead.
+func _arrange_fx(which: Array) -> void:
+	_presentation.fx.clear()
+	_player.controller.state.velocity = Vector3.ZERO
+	# Looking down a little, through the command because the command is what the tick
+	# applies: a gate is drawn at the feet, and level from the eye the floor ahead is
+	# behind the clock.
+	var look := DotFpsCommand.new()
+	look.yaw = _player.controller.state.yaw
+	look.pitch = -24.0
+	_player.controller.current_command = look
+	var feet := _player.controller.state.position
+	var yaw := deg_to_rad(_player.controller.state.yaw)
+	var forward := Vector3(-sin(yaw), 0.0, -cos(yaw))
+	var side := forward.cross(Vector3.UP)
+	for i in range(which.size()):
+		var offset := 0.0 if which.size() == 1 else (float(i) - 0.5) * 1.6
+		var at := feet + forward * 3.0 + side * offset
+		if which[i] == &"start":
+			_presentation.on_run_started(at)
+		else:
+			_presentation.on_run_finished(at, false)
+	for particles in _presentation.fx.find_children("*", "CPUParticles3D", true, false):
+		(particles as CPUParticles3D).speed_scale = FX_SLOW
+	_fx_since = Time.get_ticks_msec()
 
 
 func _capture(name: String) -> void:
