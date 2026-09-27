@@ -43,6 +43,7 @@ from bsp_read import (Bsp, SKIP_MASK, clean_material, to_godot, yaw_to_godot,  #
                       LUMP_ENTITIES, MASK_PLAYERSOLID, CONTENTS_PLAYERCLIP,
                       SOLID_BRUSH_ENTITIES, NONSOLID_BRUSH_ENTITIES)
 import vtf  # noqa: E402
+import bsp_props  # noqa: E402
 
 LUMP_LIGHTING, LUMP_PAKFILE, LUMP_PLANES = 8, 40, 1
 ATLAS_W = 1024
@@ -197,8 +198,16 @@ def vmt_basetexture(src):
     """
     txt = src.decode("ascii", "replace")
     txt = re.sub(r"//[^\n]*", "", txt)
-    m = re.search(r'"?\$basetexture"?\s+"?([^"\s]+)"?', txt, re.I)
-    base = m.group(1).replace("\\", "/").lower().strip() if m else None
+    # [b]A quoted value runs to the closing quote, spaces and all.[/b] Matching up to the
+    # first space read `"hammer textures/bhop_eazy/31_e_brick_blue"` as `hammer`, found no
+    # such VTF, and drew every face of bhop_eazy in the prototype grid with its own
+    # textures sitting in the pakfile. A leading `/` goes for `clean_material`'s reason
+    # (bhop_tesquo_v2's `/cncr04s/...`, a quarter of that map).
+    m = (re.search(r'"?\$basetexture"?\s+"([^"\n]+)"', txt, re.I)
+         or re.search(r'"?\$basetexture"?\s+([^"\s]+)', txt, re.I))
+    base = m.group(1).replace("\\", "/").lower().strip().lstrip("/") if m else None
+    if base and base.endswith(".vtf"):
+        base = base[:-4]
     translucent = bool(re.search(r'"?\$(translucent|alphatest)"?\s+"?1', txt, re.I))
     return base, translucent
 
@@ -281,7 +290,7 @@ def lightmap_quantile(light, lit, q, stride=7):
     return max(vals[min(int(q * (len(vals) - 1)), len(vals) - 1)], 1e-6)
 
 
-def build_lightmap(bsp, faces, path):
+def build_lightmap(bsp, faces, path, blocks=()):
     """Pack every lit face's luxels into one atlas and return its placements.
 
     Source stores lighting as RGBE -- three bytes and a shared signed exponent -- so a
@@ -321,6 +330,11 @@ def build_lightmap(bsp, faces, path):
     light = bsp._lump(LUMP_LIGHTING)
     lit = [f for f in faces if f[9] >= 0 and (f[9] + 4) <= len(light)]
     lit.sort(key=lambda f: -(f[14] + 1))
+    # `blocks` are square tiles of linear light that are not faces -- a static prop's
+    # light probe, see bsp_props.light_block. Packed after the faces on the same shelves
+    # and exposed by the same white point, so a prop and the floor it stands on are lit
+    # on one scale. Their placements come back keyed by position in `blocks`.
+    tile = bsp_props.LIGHT_TILE
 
     # A 2x2 white patch first, so unlit faces have somewhere to point. Without it they
     # sample whatever face happens to sit at the atlas origin and wear its lighting.
@@ -333,6 +347,13 @@ def build_lightmap(bsp, faces, path):
         place[id(f)] = (x + LM_PAD, y + LM_PAD)
         x += w + LM_PAD * 2
         shelf = max(shelf, h + LM_PAD * 2)
+    block_place = []
+    for _b in blocks:
+        if x + tile + LM_PAD * 2 > ATLAS_W:
+            x, y, shelf = 0, y + shelf, 0
+        block_place.append((x + LM_PAD, y + LM_PAD))
+        x += tile + LM_PAD * 2
+        shelf = max(shelf, tile + LM_PAD * 2)
     height = max(4, y + shelf)
     height = 1 << (height - 1).bit_length()
 
@@ -368,10 +389,19 @@ def build_lightmap(bsp, faces, path):
                         v = 1.0
                         clipped += 1
                     atlas[p + k] = int(255.0 * (v ** inv_gamma))
+    for (px, py), block in zip(block_place, blocks):
+        for j in range(tile):
+            row = (py + j) * ATLAS_W
+            for i in range(tile):
+                p = (row + px + i) * 4
+                for k in range(3):
+                    v = min(1.0, block[j][i][k] / white)
+                    atlas[p + k] = int(255.0 * (v ** inv_gamma))
     vtf.write_png(path, ATLAS_W, height, bytes(atlas), opaque=True)
     # Reported because it is the one number that says whether a map's exposure is sane:
     # a few per cent is light sources doing what light sources do, and a large fraction
     # is a map whose midtones have been pushed off the top of the range.
+    place["blocks"] = block_place
     return place, ATLAS_W, height, (100.0 * clipped / total if total else 0.0)
 
 
@@ -482,13 +512,18 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
 
         def at(p, off=off):
             # Where the vertex IS; `p` stays where vbsp stored it, for the UVs.
+            if len(off) == 4:
+                # A 3D skybox face: drawn `scale` times larger about the sky camera,
+                # which is where the engine draws it from. See `skybox_of`.
+                o, k = off[:3], off[3]
+                return ((p[0] - o[0]) * k, (p[1] - o[1]) * k, (p[2] - o[2]) * k)
             return (p[0] + off[0], p[1] + off[1], p[2] + off[2])
         n = face_normal(bsp, f)
         role = role_for_normal(n[2], cos_limit)
         # `all` repaints the map's own textures too; `auto` keeps them and only fills
         # in the ones that lived in the game's VPKs and were never in this file.
         use_prototype = prototype == "all" or (prototype == "auto" and mat not in textured)
-        key = (mat, role, use_prototype)
+        key = (mat, role, use_prototype, len(off) == 4)
 
         ti = bsp.texinfo[f[5]]
         tw, th = 1, 1
@@ -553,7 +588,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
 
     surfaces, blob = [], bytearray()
     for key in sorted(groups):
-        mat, role, use_prototype = key
+        mat, role, use_prototype, sky = key
         verts, idx = groups[key]
         if not idx:
             continue
@@ -565,6 +600,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
         for i in idx:
             blob += struct.pack("<I", i)
         entry = {"material": mat, "role": role, "prototype": use_prototype,
+                 **({"skybox": True} if sky else {}),
                  "vertex_offset": voff, "vertex_count": len(verts),
                  "index_offset": ioff, "index_count": len(idx)}
         colour = surface_colour(reflectivity.get(mat), mat)
@@ -574,8 +610,187 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
     return surfaces, bytes(blob)
 
 
+def load_props(bsp, pak, notes):
+    """The static props this map can draw: [(prop, meshes)], plus what was skipped.
+
+    Only models the pakfile carried; a stock model is counted, not drawn. A prop the
+    map marked no-draw (flag 0x4) is left out the way the engine leaves it out.
+    """
+    props = bsp_props.static_props(bsp)
+    cache, drawn, stock = {}, [], collections.Counter()
+    for pr in props:
+        if not pr["model"]:
+            continue
+        path = pr["model"]
+        if path not in cache:
+            try:
+                cache[path] = bsp_props.read_model(pak, path)
+            except (struct.error, ValueError, IndexError) as e:
+                notes.append("static prop model %s could not be read (%s)" % (path, e))
+                cache[path] = None
+        if cache[path] is None:
+            stock[path] += 1
+            continue
+        drawn.append((pr, cache[path]))
+    return props, drawn, stock
+
+
+def prop_materials(pak, drawn):
+    """{(model path, mesh index, skin): material name} -- the first candidate the pak has.
+
+    A studio model names a texture and a list of directories to look for it in, and the
+    engine takes the first directory that has it; so does this. A mesh none of whose
+    candidates shipped keeps the first name, and is drawn in the prototype set.
+    """
+    out = {}
+    for pr, meshes in drawn:
+        for mi, mesh in enumerate(meshes):
+            fams = mesh["materials"]
+            cands = fams[pr["skin"]] if 0 <= pr["skin"] < len(fams) else fams[0]
+            pick = next((c for c in cands if ("materials/%s.vmt" % c) in pak), cands[0] if cands else "")
+            out[(pr["model"], mi, pr["skin"])] = clean_material(pick)
+    return out
+
+
+def build_props(drawn, materials, block_of, lm_place, lm_w, lm_h):
+    """The props' triangles, one surface per material, in the manifest's vertex format.
+
+    World position is Source's own: AngleMatrix(angles) times the model-space vertex, plus
+    the origin, then the one axis swap. Winding is reversed for the reason build_mesh
+    reverses a brush face's. The second UV is the vertex's normal, octahedrally encoded,
+    inside that prop's light tile -- see bsp_props.light_block.
+    """
+    groups = collections.defaultdict(lambda: ([], []))
+    tile = bsp_props.LIGHT_TILE
+    blocks = lm_place.get("blocks", [])
+    for n, (pr, meshes) in enumerate(drawn):
+        m = bsp_props.angle_matrix(pr["angles"])
+        o, sc = pr["origin"], pr["scale"]
+        b = block_of[n]
+        bx, by = blocks[b] if b is not None and b < len(blocks) else (None, None)
+        for mi, mesh in enumerate(meshes):
+            mat = materials[(pr["model"], mi, pr["skin"])]
+            verts, idx = groups[mat]
+            base = len(verts)
+            for pos, nrm, uv in zip(mesh["positions"], mesh["normals"], mesh["uvs"]):
+                w = bsp_props.transform(m, pos)
+                w = (w[0] * sc + o[0], w[1] * sc + o[1], w[2] * sc + o[2])
+                wn = bsp_props.transform(m, nrm)
+                if bx is None:
+                    uv2 = (2.0 / lm_w, 2.0 / lm_h)
+                else:
+                    ou, ov = bsp_props.octahedral_encode(wn)
+                    # Kept half a texel inside the tile, so filtering never reads the
+                    # neighbour's light.
+                    ou = 0.5 + ou * (tile - 1)
+                    ov = 0.5 + ov * (tile - 1)
+                    uv2 = ((bx + ou) / lm_w, (by + ov) / lm_h)
+                verts.append((to_godot(w), to_godot(wn), uv, uv2))
+            for a, bb, c in mesh["triangles"]:
+                idx.extend((base + a, base + c, base + bb))
+    return groups
+
+
+def emit_prop_surfaces(groups, textured, offset):
+    """Manifest entries and the blob for build_props' groups, offsets shifted by `offset`."""
+    surfaces, blob = [], bytearray()
+    for mat in sorted(groups):
+        verts, idx = groups[mat]
+        if not idx:
+            continue
+        voff = len(blob)
+        for g, gn, uv, uv2 in verts:
+            blob += struct.pack("<10f", g[0], g[1], g[2], gn[0], gn[1], gn[2],
+                                uv[0], uv[1], uv2[0], uv2[1])
+        ioff = len(blob)
+        blob += struct.pack("<%dI" % len(idx), *idx)
+        entry = {"material": mat, "role": "FLOOR", "prototype": mat not in textured,
+                 "prop": True,
+                 "vertex_offset": offset + voff, "vertex_count": len(verts),
+                 "index_offset": offset + ioff, "index_count": len(idx)}
+        if entry["prototype"]:
+            entry["colour"] = [0.5, 0.5, 0.5]
+        surfaces.append(entry)
+    return surfaces, bytes(blob)
+
+
 # ---------------------------------------------------------------- collision ---
-def build_collision(bsp, notes):
+def solid_piece(points, least=0.5):
+    """True when a convex piece has volume: four points not within `least` of a plane.
+
+    [b]Godot's convex hull builder crashes the process on a flat one[/b] -- an assertion
+    (`dot <= 0`) and then signal 11, from inside `build_from`, on bhop_interloper. A
+    brush cannot be flat by construction; a .phy ledge can, so this is asked of props.
+    """
+    pts = list(dict.fromkeys((round(p[0], 2), round(p[1], 2), round(p[2], 2)) for p in points))
+    if len(pts) < 4:
+        return False
+    a = pts[0]
+    b = max(pts, key=lambda q: sum((q[i] - a[i]) ** 2 for i in range(3)))
+    ab = [b[i] - a[i] for i in range(3)]
+    best, c = 0.0, None
+    for q in pts:
+        aq = [q[i] - a[i] for i in range(3)]
+        cr = [ab[1] * aq[2] - ab[2] * aq[1], ab[2] * aq[0] - ab[0] * aq[2],
+              ab[0] * aq[1] - ab[1] * aq[0]]
+        d = sum(x * x for x in cr)
+        if d > best:
+            best, c, n = d, q, cr
+    if c is None or best < 1e-6:
+        return False
+    ln = math.sqrt(sum(x * x for x in n))
+    return max(abs(sum(n[i] * (q[i] - a[i]) for i in range(3))) / ln for q in pts) >= least
+
+
+def prop_hulls(pak, drawn):
+    """The solid static props' collision, as convex hulls in world (Hammer) coordinates.
+
+    `solid` 6 is SOLID_VPHYSICS, the default for a static prop: its .phy is the shape.
+    2 is SOLID_BBOX, the model's own box. 0 is not solid. A prop whose model the pak did
+    not carry has no collision here either -- it is not drawn, and an invisible wall is
+    the one outcome worse than a missing one.
+    """
+    cache, out = {}, []
+    for pr, meshes in drawn:
+        if pr["solid"] not in (2, 6) or pr.get("skybox"):
+            continue
+        path = pr["model"]
+        if pr["solid"] == 6:
+            if path not in cache:
+                try:
+                    cache[path] = bsp_props.read_phy(pak, path) or []
+                except (struct.error, ValueError, IndexError):
+                    cache[path] = []
+            pieces = cache[path]
+            # A ledge whose points run far outside the model's own drawn extent is a
+            # misread, not a shape: two models of 346 on surf_summit parse to points
+            # of 1e38. It is dropped rather than trusted, and so is the model's whole
+            # collision if nothing sane is left.
+            pts = [p for m in meshes for p in m["positions"]]
+            if pts:
+                lim = max(abs(c) for p in pts for c in p) * 1.5 + 32.0
+                pieces = [pc for pc in pieces
+                          if all(abs(c) <= lim for q in pc for c in q)]
+        else:
+            pts = [p for m in meshes for p in m["positions"]]
+            lo = [min(p[a] for p in pts) for a in range(3)]
+            hi = [max(p[a] for p in pts) for a in range(3)]
+            pieces = [[(x, y, z) for x in (lo[0], hi[0]) for y in (lo[1], hi[1])
+                       for z in (lo[2], hi[2])]]
+        m = bsp_props.angle_matrix(pr["angles"])
+        o, sc = pr["origin"], pr["scale"]
+        for piece in pieces:
+            if not solid_piece(piece):
+                continue
+            world = []
+            for p in piece:
+                w = bsp_props.transform(m, p)
+                world.append((w[0] * sc + o[0], w[1] * sc + o[1], w[2] * sc + o[2]))
+            out.append(world)
+    return out
+
+
+def build_collision(bsp, notes, props=()):
     """Every solid in the map as convex hulls, plus the displacements as triangles.
 
     [b]This is the half the importer did not have, and the one a player notices.[/b]
@@ -634,6 +849,14 @@ def build_collision(bsp, notes):
                 notes.append("%s is a brush entity neither list in bsp_read knows; "
                              "treated as non-solid" % name)
 
+    # Solid static props, after the brushes. They are convex pieces already (a .phy
+    # ledge is a hull), so they go in as more of the same. Not in `solids`: the zone
+    # rules were measured against the brushes, and what a prop does to a pit is a
+    # question for when a map needs it.
+    first_prop = len(hulls)
+    for pts in props:
+        hulls.append((pts, (0.0, 0.0, 0.0), 0))
+
     # No count in front of the hulls: the manifest already carries `hull_count`, and a
     # second copy of a number is a second thing that can be wrong. The block is a bare
     # run of <point count><points>, the way the surface blocks above are bare arrays.
@@ -643,9 +866,10 @@ def build_collision(bsp, notes):
     # from anything a player stands on (see Zoner.add), and this is the one place that
     # has already solved every brush into its corners.
     solids = []
-    for pts, off, contents in hulls:
-        solids.append(([min(p[a] for p in pts) + off[a] for a in range(3)],
-                       [max(p[a] for p in pts) + off[a] for a in range(3)]))
+    for n, (pts, off, contents) in enumerate(hulls):
+        if n < first_prop:
+            solids.append(([min(p[a] for p in pts) + off[a] for a in range(3)],
+                           [max(p[a] for p in pts) + off[a] for a in range(3)]))
         if contents & CONTENTS_PLAYERCLIP:
             clips += 1
         blob += struct.pack("<I", len(pts))
@@ -685,6 +909,7 @@ def build_collision(bsp, notes):
         "displacement_index_offset": index_offset,
         "displacement_index_count": len(tris),
         "playerclip_hulls": clips,
+        "prop_hulls": len(hulls) - first_prop,
     }
     return bytes(blob), info, skipped, solids
 
@@ -762,6 +987,44 @@ def entity_origin(e):
 DRAWN_BRUSH_ENTITIES = (SOLID_BRUSH_ENTITIES - {"func_clip_vphysics"}) | {
     "func_illusionary", "func_wall_illusionary",
 }
+
+
+def skybox_of(bsp):
+    """The 3D skybox: (sky camera origin, scale, (lo, hi) of its room), or None.
+
+    [b]A map's 3D skybox is a small room somewhere outside the play space, built at a
+    sixteenth of the size (the `sky_camera`'s `scale`) and drawn by the engine behind
+    everything, that many times larger, as if it surrounded the map.[/b] Ten of the 26
+    maps have one. Imported as ordinary faces it was two faults at once: the backdrop
+    was missing -- the maps floated in the procedural sky -- and a miniature of it hung
+    in the distance where the mapper had compiled it.
+
+    The room is the area the sky camera stands in: every leaf with that area number,
+    boxed. A face all of whose corners are inside that box belongs to it.
+    """
+    cams = [e for e in bsp.entities if e.get("classname") == "sky_camera"]
+    if not cams:
+        return None
+    o = entity_origin(cams[0])
+    try:
+        k = float(cams[0].get("scale", "16"))
+    except ValueError:
+        k = 16.0
+    leaf = bsp_props._leaf_of(bsp, o)
+    if not 0 <= leaf < len(bsp.leafs):
+        return None
+    area = bsp.leafs[leaf][2] & 0x1FF
+    boxes = [(lf[3:6], lf[6:9]) for lf in bsp.leafs
+             if (lf[2] & 0x1FF) == area and not lf[0] & 1]
+    if not boxes or area == 0:
+        return None
+    lo = [min(b[0][a] for b in boxes) - 1 for a in range(3)]
+    hi = [max(b[1][a] for b in boxes) + 1 for a in range(3)]
+    return o, k, (lo, hi)
+
+
+def in_box(p, box):
+    return all(box[0][a] <= p[a] <= box[1][a] for a in range(3))
 
 
 def drawn_faces(bsp):
@@ -1850,6 +2113,14 @@ def lighting_of(bsp):
     if world is not None and world.get("skyname"):
         out["sky_name"] = str(world["skyname"])
 
+    # The 3D skybox's camera, read here from the entity and not from `skybox_of`, so the
+    # suite has a second path to "this map has a skybox" that does not trust the one
+    # that draws it.
+    cam = next((e for e in bsp.entities if e.get("classname") == "sky_camera"), None)
+    if cam is not None:
+        out["sky_camera"] = {"origin": _numbers(cam.get("origin", ""), 3),
+                             "scale": (_numbers(cam.get("scale", "16"), 1) or [16.0])[0]}
+
     # The count only, not the lights. A point light in Source is an input to vrad and
     # its output is already in the lightmap this importer bakes down -- placing 148 real
     # lights would light the map twice. It is carried because "this map has 148 lights
@@ -1922,29 +2193,84 @@ def main(argv=None):
     drawn = [(f, o) for f, o in drawn_faces(bsp)
              if not (bsp.face_material(f)[1] & SKIP_MASK)
              and "skybox" not in clean_material(bsp.face_material(f)[0])]
+    # A map's zones file can turn the backdrop off (`"skybox": false`) where drawing it
+    # is measurably not what the map looks like -- see maps/zones/README.md. Its faces are
+    # then left out entirely: drawing the miniature where it was compiled is never right.
+    sky = skybox_of(bsp)
+    sky_off = sky is not None and doc.get("skybox", True) is False
+    sky_faces = 0
+    if sky is not None:
+        o, k, box = sky
+        moved = []
+        for f, off in drawn:
+            pts = bsp.face_points(f)
+            if pts and all(in_box((p[0] + off[0], p[1] + off[1], p[2] + off[2]), box)
+                           for p in pts):
+                sky_faces += 1
+                if not sky_off:
+                    moved.append((f, (o[0] - off[0], o[1] - off[1], o[2] - off[2], k)))
+            else:
+                moved.append((f, off))
+        drawn = moved
     faces = [f for f, _ in drawn]
 
+    notes = []
+    pak = read_pak(bsp, notes)
+
+    # Static props, and one light probe per prop drawn -- they have to be known before
+    # the atlas is packed, because their light goes into it.
+    all_props, props_drawn, props_stock = load_props(bsp, pak, notes)
+    if sky is not None:
+        o, k, box = sky
+        if sky_off:
+            props_drawn = [(pr, m) for pr, m in props_drawn if not in_box(pr["origin"], box)]
+        for pr, _m in props_drawn:
+            if in_box(pr["origin"], box):
+                pr["skybox"] = True
+                pr["origin"] = tuple((pr["origin"][a] - o[a]) * k for a in range(3))
+                pr["scale"] = pr["scale"] * k
+    probes = bsp_props.AmbientProbes(bsp)
+    ground = bsp_props.GroundLight(bsp, faces, bsp._lump(LUMP_LIGHTING)) if props_drawn else None
+    blocks, block_of, block_index = [], [], {}
+    for pr, _meshes in props_drawn:
+        cube = bsp_props.lit_cube(probes.cube(pr["lighting_origin"]),
+                                  ground.at(pr["lighting_origin"]))
+        if cube is None:
+            block_of.append(None)
+            continue
+        key = tuple(round(c, 3) for col in cube for c in col)
+        if key not in block_index:
+            block_index[key] = len(blocks)
+            blocks.append(bsp_props.light_block(cube))
+        block_of.append(block_index[key])
+
     lm_path = os.path.join(d, map_id + "_lightmap.png")
-    place, lm_w, lm_h, lm_clipped = build_lightmap(bsp, faces, lm_path)
+    place, lm_w, lm_h, lm_clipped = build_lightmap(bsp, faces, lm_path, blocks)
 
     # The textures are decoded BEFORE the mesh, because which of them the pakfile
     # actually carried is what decides whether a surface gets the map's own UVs or a
     # world-placed prototype grid, and a vertex can only carry one of the two.
-    notes = []
-    pak = read_pak(bsp, notes)
-    materials = sorted({clean_material(bsp.face_material(f)[0]) for f in faces})
+    prop_mats = prop_materials(pak, props_drawn)
+    materials = sorted({clean_material(bsp.face_material(f)[0]) for f in faces}
+                       | set(prop_mats.values()))
     tex = extract_textures(pak, materials, os.path.join(d, "textures"))
     textured = {m for m, (png, _) in tex.items() if png}
 
     cos_limit = math.cos(math.radians(a.max_slope))
     surfaces, mesh_blob = build_mesh(bsp, place, lm_w, lm_h, textured, cos_limit,
                                      a.prototype, drawn)
+    prop_surfaces, prop_blob = emit_prop_surfaces(
+        build_props(props_drawn, prop_mats, block_of, place, lm_w, lm_h),
+        textured, len(mesh_blob))
+    surfaces += prop_surfaces
+    mesh_blob += prop_blob
     for s in surfaces:
         png, translucent = tex.get(s["material"], (None, False))
         s["texture"] = None if s["prototype"] else png
         s["translucent"] = translucent and not s["prototype"]
 
-    collision_blob, collision, skipped_entities, solids = build_collision(bsp, notes)
+    collision_blob, collision, skipped_entities, solids = build_collision(
+        bsp, notes, prop_hulls(pak, props_drawn))
     # The collision block lives in the same .bin, after the mesh, so a map is still the
     # four files it was. Its offsets are written relative to its own block and shifted
     # here, which keeps build_collision independent of what precedes it.
@@ -1961,6 +2287,7 @@ def main(argv=None):
         s.pop("origin_src", None)
         s.pop("yaw_src", None)
 
+    world_ids = {id(f) for f in bsp.model_faces(0)}
     lo, hi = bsp.model_bounds(0)
     manifest = {
         "id": map_id,
@@ -1975,12 +2302,27 @@ def main(argv=None):
         # Two counts from two code paths, so a suite can tell "this map has no brush
         # entities" from "this importer stopped drawing them": the solid ones come from
         # the classname list collision uses, the drawn faces from `drawn_faces`.
+        # Counted from the lump, not from what was drawn, so "this map has no props" and
+        # "this importer stopped drawing them" are two different numbers.
+        "skybox": None if sky is None else {
+            "camera": list(sky[0]), "scale": sky[1], "faces": sky_faces,
+            "drawn": not sky_off,
+            "props": sum(1 for pr, _m in props_drawn if pr.get("skybox")),
+        },
+        "static_props": {
+            "placed": len(all_props),
+            "drawn": len(props_drawn),
+            "stock_models": sum(props_stock.values()),
+            "surfaces": len(prop_surfaces),
+        },
         "brush_entities": {
             "solid": sum(1 for e in bsp.entities
                          if e.get("model", "").startswith("*")
                          and e.get("classname") in SOLID_BRUSH_ENTITIES),
-            "faces_drawn": len(drawn) - sum(
-                1 for f in bsp.model_faces(0) if not (bsp.face_material(f)[1] & SKIP_MASK)),
+            # Counted, not subtracted: the 3D skybox takes world faces out of `drawn`
+            # (surf_kitsune's, which it leaves undrawn), and a difference of two totals
+            # then goes negative and says a map draws no brush entities when it does.
+            "faces_drawn": sum(1 for f, _o in drawn if id(f) not in world_ids),
         },
         "units_per_square": UNITS_PER_SQUARE,
         "max_slope": a.max_slope,
@@ -2017,15 +2359,24 @@ def main(argv=None):
     print("  roles at %g degrees: %s" % (a.max_slope, ", ".join(
         "%s %d%%" % (r, by_role[r] * 100 // max(1, tris))
         for r in ("PLATFORM", "RAMP", "FLOOR"))))
-    print("  collision: %d convex hulls (%d of them playerclip), %d displacement tris"
-          % (collision["hull_count"], collision["playerclip_hulls"],
+    print("  collision: %d convex hulls (%d of them playerclip, %d from static props), "
+          "%d displacement tris"
+          % (collision["hull_count"], collision["playerclip_hulls"], collision["prop_hulls"],
              collision["displacement_index_count"] // 3))
     if skipped_entities:
         print("  %d brush entities left non-solid: %s"
               % (sum(skipped_entities.values()),
                  ", ".join("%s x%d" % kv for kv in skipped_entities.most_common(6))))
     print("  lightmap %dx%d, %d lit faces, %.1f%% of luxels clipped to white"
-          % (lm_w, lm_h, len(place), lm_clipped))
+          % (lm_w, lm_h, len(place) - 1, lm_clipped))
+    if sky is not None:
+        print("  3D skybox: %d faces and %d props %s %gx about the sky camera at %s"
+              % (sky_faces, sum(1 for pr, _m in props_drawn if pr.get("skybox")),
+                 "NOT drawn (the zones file says so), would be" if sky_off else "drawn",
+                 sky[1], [round(v) for v in sky[0]]))
+    print("  static props: %d placed, %d drawn (%d light probes), %d of stock models "
+          "the map did not carry" % (len(all_props), len(props_drawn), len(blocks),
+                                     sum(props_stock.values())))
     inflated = sum(1 for v in respawn if v.get("inflated"))
     hung = sum(1 for v in respawn if v.get("hung"))
     cleared = sum(1 for v in respawn if v.get("cleared"))

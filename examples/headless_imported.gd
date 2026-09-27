@@ -91,8 +91,18 @@ const ARRIVES_IN_PIT := {
 ## that gains a pit or loses one fails here and the list cannot outlive its reason.
 const BONUSES_WITHOUT_PITS := {}
 
+## The share of a map's triangles drawn in the texture its own pakfile carried, at least,
+## for the maps where a parsing bug was measured taking it away (2026-09-27): a leading
+## `/` on the material name and a `$basetexture` with a space in it. Measured after the
+## fix at 99%, 97% and 100%; before it, 2%, 8% and 0%.
+const OWN_TEXTURES := {
+	"surf_interference": 0.9,
+	"surf_aquaflow": 0.9,
+	"bhop_eazy": 0.9,
+}
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 31
+const CHECKS_PER_MAP := 35
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -242,12 +252,46 @@ func _test_geometry() -> void:
 	# collision and standing check passed, because collision is built from the brushes.
 	var drawn := 0
 	for child in node.get_children():
-		if child is MeshInstance3D and String(child.name).begins_with("World") \
+		if child is MeshInstance3D and (String(child.name).begins_with("World")
+				or String(child.name).begins_with("Props")
+				or String(child.name).begins_with("Sky")) \
 				and (child as MeshInstance3D).mesh != null:
 			drawn += (child as MeshInstance3D).mesh.get_surface_count()
 	var listed: int = (node as G2GBspMap).manifest.get("surfaces", []).size()
 	_check(drawn == listed, "and every surface the manifest lists is drawn",
 		"%d of %d" % [drawn, listed])
+
+	# [b]Static props are drawn (2026-09-27).[/b] 17 of the 26 maps place them and every
+	# one was absent: surf_aquaflow's whole reef, surf_greensway's forest, surf_summit's
+	# trees and arches. The count of props the importer DREW is from the models it read,
+	# the count PLACED is from the lump; a map that placed props it carried and drew none
+	# is an importer that stopped reading them.
+	var manifest_props: Dictionary = (node as G2GBspMap).manifest.get("static_props", {})
+	var carried := int(manifest_props.get("placed", 0)) - int(manifest_props.get("stock_models", 0))
+	var prop_surfaces := 0
+	for child in node.get_children():
+		if child is MeshInstance3D and String(child.name).begins_with("Props") \
+				and (child as MeshInstance3D).mesh != null:
+			prop_surfaces += (child as MeshInstance3D).mesh.get_surface_count()
+	_check(carried <= 0 or (int(manifest_props.get("drawn", 0)) > 0 and prop_surfaces > 0),
+		"and the static props its pakfile carried are drawn",
+		"%s; %d prop surfaces drawn" % [manifest_props, prop_surfaces])
+
+	# [b]And a 3D skybox is a backdrop, not a miniature (2026-09-27).[/b] Ten maps have one;
+	# its faces were drawn at a sixteenth of their size where they were compiled and no
+	# backdrop at all. Drawn, they are their own `Sky` instances, scaled about the camera.
+	var sky: Variant = (node as G2GBspMap).manifest.get("skybox", null)
+	var sky_node := node.get_node_or_null("Sky") as MeshInstance3D
+	# "Has one" is read from the lighting block's sky_camera, a second code path, so a
+	# skybox the importer stopped handling at all is a failure and not a map without one.
+	var has_camera := ((node as G2GBspMap).manifest.get("lighting", {}) as Dictionary) \
+		.has("sky_camera")
+	var told_off := sky is Dictionary and (not bool((sky as Dictionary).get("drawn", true))
+		or int((sky as Dictionary).get("faces", 0)) == 0)
+	var wants_sky := has_camera and not told_off
+	_check(sky_node != null if wants_sky else sky_node == null,
+		"and its 3D skybox is drawn as a backdrop exactly when it has one to draw",
+		"skybox %s, Sky node %s" % [sky, sky_node != null])
 
 	var verts := 0
 	var has_uv2 := true
@@ -310,6 +354,34 @@ func _test_lighting() -> void:
 	_check(prototype == 0 or coloured * 2 >= prototype,
 		"and a surface whose texture did not ship is painted the map's own colour for it",
 		"%d of %d prototype surfaces coloured" % [coloured, prototype])
+
+	# [b]A texture the pakfile carried is drawn, not replaced by the prototype grid.[/b]
+	# Two spellings the importer did not read: a material typed with a leading `/`
+	# (`/SURFACE`, looked up as `materials//surface.vmt`) and a `$basetexture` with a
+	# space in it (`"hammer textures/..."`, cut at the space). Between them they cost
+	# surf_interference 97% of its own textures, surf_aquaflow a third and bhop_eazy all
+	# of them, and nothing said so: a prototype surface is a correctly configured
+	# material. A name with the slash still on it fails every map; the share is asserted
+	# for the maps it was measured on, see [constant OWN_TEXTURES].
+	var tris := 0
+	var own := 0
+	var slashed := PackedStringArray()
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		# The map's own faces: a static prop's stock texture is a different question.
+		if bool(entry.get("prop", false)):
+			continue
+		var n := int(entry.get("index_count", 0)) / 3
+		tris += n
+		if entry.get("texture", null) is String and not str(entry["texture"]).is_empty():
+			own += n
+		if str(entry.get("material", "")).begins_with("/"):
+			slashed.append(str(entry["material"]))
+	var share := float(own) / float(maxi(tris, 1))
+	var floor_share: float = OWN_TEXTURES.get(String(_map_id), 0.0)
+	_check(slashed.is_empty() and share >= floor_share,
+		"and the textures its pakfile carried are drawn",
+		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"
+			% [share * 100.0, floor_share * 100.0, slashed])
 	_done()
 
 
@@ -508,6 +580,24 @@ func _test_stands_on_it() -> void:
 	var drop := floor_y - bot.global_position.y
 	_check(drop < 8.0, "and is still standing on the map three seconds later",
 		"fell %.1f m" % drop)
+
+	# [b]And where it came to rest is inside the start zone (2026-09-27).[/b] The timer asks
+	# the zone about the player's own position every tick; a start box that stops short of
+	# the floor contains the spawn in mid-air and not the player standing under it, so the
+	# run starts as they fall out of it and a player on the pad can never be "in the
+	# start". surf_arcade was that: its start is a box around `s1_reset`, which stands
+	# 240 units over the pad, and at +/-128 the player rested 112 units under it. Armed
+	# by putting the old box back.
+	var start_zone := game.timers.zones.first_of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN) \
+		if game.timers.zones != null else null
+	if start_zone == null:
+		_check(NOT_COURSES.has(_map_id), "and comes to rest inside the start zone",
+			"no start zone on the main track")
+	else:
+		var at := bot.controller.state.position
+		_check(start_zone.contains(at), "and comes to rest inside the start zone",
+			"at %s, zone %s..%s" % [at / G2GUnits.METRES_PER_UNIT,
+				start_zone.from / G2GUnits.METRES_PER_UNIT, start_zone.to / G2GUnits.METRES_PER_UNIT])
 
 	var bounds: Dictionary = (node as G2GBspMap).manifest.get("bounds", {})
 	var min_y: float = float((bounds.get("min", [0, -16384, 0]) as Array)[1]) * G2GUnits.METRES_PER_UNIT

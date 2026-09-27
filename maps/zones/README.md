@@ -30,6 +30,8 @@ A `STAGE` with a `"number"` and a `"destination"` and **no volume rule** does no
 
 `"doorways": {"max_horizontal": 512}` opts a map into the rule that a teleport volume narrower than that is a **door the player walks through** rather than the pit — `TELEPORT`, which keeps the run, rather than `RESPAWN`, which ends it. It is not on by default because it is only true of a map whose sections are joined by doors.
 
+`"skybox": false` leaves the map's 3D skybox out. By default it is drawn as the engine draws it -- its faces and props `scale` times their compiled size about the `sky_camera` -- which is what surrounds ten of these maps with their mountains and cities. Turn it off only against a reference frame that shows the map without it, and say which in `"skybox_why"`; its miniature is never drawn where it was compiled either way.
+
 Anything a rule cannot resolve is an error and stops the import. That is deliberate: a finish line that silently resolved to nothing is a map that cannot be finished, and nothing about playing it would say so.
 
 ## Filters, doors and credit

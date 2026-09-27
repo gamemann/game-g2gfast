@@ -8,6 +8,8 @@
  "doorways": {
   "max_horizontal": 512
  },
+ "skybox": false,
+ "skybox_why": "The 3D skybox (261 faces, 709 triangles, nearly all tools/toolsblack, sky camera at -8192 -4096 0) drawn 16x about its camera is a black cage around the whole map with the sky showing through the gaps, and the reference frame of the map in its own engine (inspirations/g2gfast/extracted/kitsune_ingame_spawn.png) shows open pale sky behind the silhouettes. Rendered both ways on 2026-09-27; off until somebody has a reference that shows it.",
  "zones": [
   {
    "kind": "START",
