@@ -3,7 +3,7 @@ extends "../game/g2g_map.gd"
 const G2GGeometry := preload("../game/g2g_geometry.gd")
 const G2GReach := preload("../game/g2g_reach.gd")
 
-## `bhop_g2g_intro` — sixteen blocks with widening gaps, three stages, and a bonus.
+## `bhop_g2g_intro` — sixteen blocks with widening gaps, three stages, and three bonuses.
 ##
 ## Built in genre units so it reads like a brush list. The gaps grow from 96
 ## to 288 units: at 250 u/s a standing jump clears about 190, so from the tenth block
@@ -38,6 +38,9 @@ const G2GReach := preload("../game/g2g_reach.gd")
 ## margin bleeds a little every landing. A gap a standing jump clears is not the same
 ## as a gap a chain of them clears, which is the number this map's main route encodes in
 ## its first block and nowhere says out loud.
+##
+## [b]Bonus 3, `the hairpin`, is the one route here that turns.[/b] See
+## [constant HAIRPIN_LEGS].
 
 const BLOCKS := 16
 const BLOCK_LENGTH := 160.0
@@ -56,6 +59,44 @@ const NEEDLE_BLOCKS := 10
 const NEEDLE_GAP := 96.0
 const NEEDLE_FIRST_WIDTH := 192.0
 const NEEDLE_LAST_WIDTH := 48.0
+
+## Bonus 3, `the hairpin`: out, across and back, a U of RUN jumps east of the warm-up.
+##
+## [b]Every other route on this map is a straight line down -Z.[/b] The hairpin asks for
+## the one thing none of them does: land, turn, and leave in a new direction. It goes
+## out along -Z, turns right on a square corner block onto a climbing traverse along +X,
+## turns right again on a second corner at the top, and comes back along +Z down a stair
+## of drops onto blocks that narrow from 160 to 96, finishing beside where it started.
+## The two corners are the two stage lines (drawn in the finish colour, as `the ridge`'s
+## are), and each faces the direction the route LEAVES it in, which is the direction a
+## restarting player has to go.
+##
+## [b]Every gap is a RUN gap, sized with [G2GReach] under the shipped cvars[/b] — 189
+## flat, 166 onto +24, 222 down 48 — and each is at least 29 units inside it, so a
+## player who lands anywhere can run to the lip and take the next one. That is what a
+## corner needs: a turn costs the speed a chain would be carrying, so a turning route
+## sized for a CHAIN would be one only a strafer who turns in the air could run.
+##
+## One list, read by the geometry, the zones and `headless_run`'s bot ([method
+## hairpin_blocks]). `heading` is [code]Vector2(x, z)[/code]; a leg's `turn` is the
+## heading its corner leaves in, and `corner_gap` / `corner_rise` the jump onto it.
+const HAIRPIN_X := 2304.0
+const HAIRPIN_PAD_LENGTH := 512.0
+const HAIRPIN_PAD_WIDTH := 256.0
+const HAIRPIN_CORNER := 256.0
+const HAIRPIN_FINISH_GAP := 160.0
+const HAIRPIN_FINISH_RISE := -48.0
+const HAIRPIN_FINISH_LENGTH := 384.0
+const HAIRPIN_LEGS: Array = [
+	{"name": "out", "heading": Vector2(0.0, -1.0), "blocks": 4, "rise": 0.0,
+		"first_gap": 112.0, "last_gap": 160.0, "first_width": 192.0, "last_width": 192.0,
+		"corner_gap": 144.0, "corner_rise": 0.0, "turn": Vector2(1.0, 0.0)},
+	{"name": "across", "heading": Vector2(1.0, 0.0), "blocks": 4, "rise": 24.0,
+		"first_gap": 96.0, "last_gap": 128.0, "first_width": 176.0, "last_width": 176.0,
+		"corner_gap": 128.0, "corner_rise": 24.0, "turn": Vector2(0.0, 1.0)},
+	{"name": "back", "heading": Vector2(0.0, 1.0), "blocks": 4, "rise": -48.0,
+		"first_gap": 128.0, "last_gap": 192.0, "first_width": 160.0, "last_width": 96.0},
+]
 
 
 func _build() -> void:
@@ -135,6 +176,113 @@ func _build() -> void:
 	# RUN, and it is the whole design of the route: "no hop on it is ever about carrying
 	# speed", which is what makes it the one a scripted bot finishes.
 	add_course("the needle", DotTimerTrack.of_bonus(2), G2GReach.Kind.RUN, needle)
+
+	_build_hairpin()
+
+
+## Bonus 3, `the hairpin`. See [constant HAIRPIN_LEGS].
+func _build_hairpin() -> void:
+	var bodies: Array = [G2GGeometry.box(
+		self,
+		Vector3(HAIRPIN_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + HAIRPIN_PAD_LENGTH * 0.5),
+		Vector3(HAIRPIN_PAD_WIDTH, BLOCK_THICKNESS, HAIRPIN_PAD_LENGTH), G2GGeometry.COLOUR_START
+	)]
+
+	for block: Dictionary in hairpin_blocks():
+		var centre: Vector3 = block["centre"]
+		var extent: Vector2 = block["extent"]
+		bodies.append(G2GGeometry.box(
+			self,
+			Vector3(centre.x, centre.y - BLOCK_THICKNESS * 0.5, centre.z),
+			Vector3(extent.x, BLOCK_THICKNESS, extent.y),
+			# A corner carries a stage line and is drawn in the finish colour: a split a
+			# player can see, and the block they are about to turn on.
+			G2GGeometry.COLOUR_END if int(block["stage"]) > 0 else G2GGeometry.COLOUR_BONUS
+		))
+
+	var pad := hairpin_pad()
+	bodies.append(G2GGeometry.box(
+		self, Vector3(pad.x, pad.y - BLOCK_THICKNESS * 0.5, pad.z),
+		Vector3(HAIRPIN_PAD_WIDTH, BLOCK_THICKNESS, HAIRPIN_FINISH_LENGTH), G2GGeometry.COLOUR_END
+	))
+
+	# RUN, for the reason in [constant HAIRPIN_LEGS]: every corner spends the speed.
+	add_course("the hairpin", DotTimerTrack.of_bonus(3), G2GReach.Kind.RUN, bodies)
+
+
+## Every block of the hairpin in order, corners included: `centre` is the middle of its
+## top face (units), `extent` its size in world X and Z, `heading` the direction a player
+## LEAVES it in, `exit` the middle of the edge they leave it over (x, z), and `stage` the
+## stage split drawn across it, 0 for none.
+##
+## [b]Static, and the only place the hairpin's arithmetic is done[/b], for the reason
+## `bhop_g2g_stages.ridge_blocks` is: a gap changed here moves the block, the split on
+## it and the bot's aim and jump together.
+static func hairpin_blocks() -> Array:
+	var out: Array = []
+	var at := Vector2(HAIRPIN_X, START_Z)   # the pad's far edge: the route leaves it here
+	var y := FLOOR_Y
+	var stage := 0
+
+	for leg: Dictionary in HAIRPIN_LEGS:
+		var heading: Vector2 = leg["heading"]
+		var blocks := int(leg["blocks"])
+
+		for i in range(blocks):
+			var t := float(i) / float(maxi(blocks - 1, 1))
+			at += heading * lerpf(float(leg["first_gap"]), float(leg["last_gap"]), t)
+			y += float(leg["rise"])
+			var width := lerpf(float(leg["first_width"]), float(leg["last_width"]), t)
+			out.append(_hairpin_block(at + heading * BLOCK_LENGTH * 0.5, y,
+				_extent(heading, BLOCK_LENGTH, width), heading, at + heading * BLOCK_LENGTH, 0))
+			at += heading * BLOCK_LENGTH
+
+		if not leg.has("turn"):
+			continue
+
+		# The corner: square, entered along the leg and left along `turn`.
+		at += heading * float(leg["corner_gap"])
+		y += float(leg["corner_rise"])
+		var turn: Vector2 = leg["turn"]
+		var middle := at + heading * HAIRPIN_CORNER * 0.5
+		stage += 1
+		out.append(_hairpin_block(middle, y, Vector2(HAIRPIN_CORNER, HAIRPIN_CORNER), turn,
+			middle + turn * HAIRPIN_CORNER * 0.5, stage))
+		at = middle + turn * HAIRPIN_CORNER * 0.5
+
+	return out
+
+
+static func _hairpin_block(
+	middle: Vector2, y: float, extent: Vector2, heading: Vector2, exit: Vector2, stage: int
+) -> Dictionary:
+	return {
+		"centre": Vector3(middle.x, y, middle.y), "extent": extent,
+		"heading": heading, "exit": exit, "stage": stage,
+	}
+
+
+## A block's size in world X and Z, from its length along [param heading] and its width.
+static func _extent(heading: Vector2, length: float, width: float) -> Vector2:
+	return Vector2(length, width) if absf(heading.x) > 0.5 else Vector2(width, length)
+
+
+## The middle of the hairpin's finish pad's top face: one more drop past the last block.
+static func hairpin_pad() -> Vector3:
+	var blocks := hairpin_blocks()
+	var last: Dictionary = blocks[blocks.size() - 1]
+	var heading: Vector2 = last["heading"]
+	var middle: Vector2 = (last["exit"] as Vector2) \
+		+ heading * (HAIRPIN_FINISH_GAP + HAIRPIN_FINISH_LENGTH * 0.5)
+	var top: float = (last["centre"] as Vector3).y + HAIRPIN_FINISH_RISE
+	return Vector3(middle.x, top, middle.y)
+
+
+## The yaw that faces [param heading] ([code]Vector2(x, z)[/code]). Yaw 0 is -Z on this
+## map and a positive yaw turns left (`Basis(UP, yaw)`), so +X is -90 — what the
+## warm-up's spawn uses.
+static func yaw_facing(heading: Vector2) -> float:
+	return rad_to_deg(atan2(-heading.x, -heading.y))
 
 
 static func gap_at(index: int) -> float:
@@ -290,5 +438,41 @@ static func build_zones() -> DotTimerZoneSet:
 
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, needle, fall_low, fall_high))
 	zones.add(zone_spawn(needle, Vector3(NEEDLE_X, FLOOR_Y + 8.0, START_Z + 400.0), 0.0))
+
+	# Bonus 3, the hairpin: a start, a split on each corner, a finish, a spawn and a pit,
+	# every one read off `hairpin_blocks()`.
+	var hairpin := DotTimerTrack.of_bonus(3)
+	var pad := hairpin_pad()
+	var pad_half := HAIRPIN_PAD_WIDTH * 0.5
+
+	zones.add(zone_box(DotTimerZone.Kind.START, hairpin,
+		Vector3(HAIRPIN_X - pad_half, FLOOR_Y, START_Z),
+		Vector3(HAIRPIN_X + pad_half, FLOOR_Y + 128.0, START_Z + HAIRPIN_PAD_LENGTH)))
+	# The pad's last 320 units, so a player has landed rather than grazed its lip when
+	# the clock stops. The route comes home along +Z, so "last" is the high-Z end.
+	zones.add(zone_box(DotTimerZone.Kind.END, hairpin,
+		Vector3(pad.x - pad_half, pad.y, pad.z - HAIRPIN_FINISH_LENGTH * 0.5 + 64.0),
+		Vector3(pad.x + pad_half, pad.y + 128.0, pad.z + HAIRPIN_FINISH_LENGTH * 0.5)))
+
+	for block: Dictionary in hairpin_blocks():
+		if int(block["stage"]) == 0:
+			continue
+		var centre: Vector3 = block["centre"]
+		var half: Vector2 = (block["extent"] as Vector2) * 0.5
+		zones.add(zone_stage(
+			hairpin, int(block["stage"]),
+			Vector3(centre.x - half.x, centre.y, centre.z - half.y),
+			Vector3(centre.x + half.x, centre.y + 128.0, centre.z + half.y),
+			centre + Vector3(0.0, 8.0, 0.0),
+			# Facing the way the route LEAVES the corner, which is the way a restarting
+			# player has to go. Not the main route's 180 (`[stage-yaw-1]`).
+			yaw_facing(block["heading"])
+		))
+
+	zones.add(zone_spawn(hairpin,
+		Vector3(HAIRPIN_X, FLOOR_Y + 8.0, START_Z + HAIRPIN_PAD_LENGTH - 112.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, hairpin,
+		Vector3(-4096.0, FLOOR_Y - 1024.0, -4096.0),
+		Vector3(8192.0, pad.y - BLOCK_THICKNESS - 256.0, 4096.0)))
 
 	return zones

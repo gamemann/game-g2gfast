@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 178
+const CHECKS := 187
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 19
+const SECTIONS := 20
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -66,6 +66,7 @@ func _run() -> void:
 	await _test_bhop_run()
 	await _test_needle_bonus()
 	await _test_ridge_bonus()
+	await _test_hairpin_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
 	await _test_the_fall_line()
@@ -399,7 +400,7 @@ func _test_boot() -> void:
 
 	var zones := game.timers.zones
 	_check(zones != null and zones.problems().is_empty(), "the map's zones are well formed", ", ".join(zones.problems()) if zones else "no zones")
-	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2]), "with a main track and two bonuses", str(zones.playable_tracks()) if zones else "")
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3]), "with a main track and three bonuses", str(zones.playable_tracks()) if zones else "")
 	_check(zones != null and zones.stage_count(0) == 3, "and three stages")
 	# [b]Stages on a track that is not the main one.[/b] `stage_count` takes a track and
 	# every stage zone in this repository was on track 0, so the argument had only ever
@@ -1111,6 +1112,154 @@ func _test_ridge_bonus() -> void:
 	_check(resets == 0, "without ever being put back", "%d resets" % resets)
 	_check(
 		finished.size() == 1 and finished[0].track == ridge,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())]
+	)
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+## Which hairpin piece a bot at [param at] (x, z units) is over, never going backwards
+## from [param current]: -1 is the start pad. A piece counts once the bot is inside its
+## footprint, which it is only on landing or on the way down to it.
+func _hairpin_piece(blocks: Array, current: int, at: Vector2) -> int:
+	for i in range(blocks.size() - 1, current, -1):
+		var centre: Vector3 = blocks[i]["centre"]
+		var half: Vector2 = (blocks[i]["extent"] as Vector2) * 0.5
+		if absf(at.x - centre.x) <= half.x and absf(at.y - centre.z) <= half.y:
+			return i
+	return current
+
+
+## `the hairpin`, `bhop_g2g_intro` bonus 3, run end to end by a bot that cannot strafe:
+## out, a right turn onto a climb, a right turn at the top, and back down a stair of
+## drops, through both corner splits into the finish without once being put back.
+##
+## [b]The first route here a bot has to STEER.[/b] The needle's and the ridge's bots
+## hold forward along -Z; this one reads the map's own list of blocks, aims at the edge
+## of whichever block it is over that the route leaves by, and jumps in the last twenty
+## units before that edge — so on a corner it lands going one way, runs a diagonal to
+## the exit edge and leaves going the other. Moving a block or a corner moves the aim
+## and the jump with it.
+func _test_hairpin_bonus() -> void:
+	_section("the hairpin, run end to end")
+
+	var changed: DotResult = await game.change_map(&"bhop_g2g_intro")
+	_check(changed.ok, "the intro map loads")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var hairpin := DotTimerTrack.of_bonus(3)
+	var zones := game.timers.zones
+	_check(zones != null and zones.stage_count(hairpin) == 2,
+		"with a third bonus that has two stages",
+		str(zones.stage_count(hairpin)) if zones else "no zones")
+	_check(game.timers.set_player_track(&"bot", hairpin), "a player can switch to the hairpin")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var blocks: Array = BhopIntro.hairpin_blocks()
+	var pad := BhopIntro.hairpin_pad()
+
+	# The route's length along its centre line: pad edge, block to block, into the pad.
+	var route_length := 0.0
+	var last := Vector2(BhopIntro.HAIRPIN_X, BhopIntro.START_Z)
+	for block: Dictionary in blocks:
+		var middle := Vector2((block["centre"] as Vector3).x, (block["centre"] as Vector3).z)
+		route_length += last.distance_to(middle)
+		last = middle
+	route_length += last.distance_to(Vector2(pad.x, pad.z))
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	var reset := false
+
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset = true
+
+	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
+
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	var started := false
+	var resets := 0
+	var top := 0.0
+	var highest := -INF
+	var furthest := -1
+	var piece := -1
+	var covered := 0.0
+	var previous := G2GUnits.vector_to_units(bot.global_position)
+
+	for _i in range(5000):
+		var here := G2GUnits.vector_to_units(bot.global_position)
+		var at := Vector2(here.x, here.z)
+		piece = _hairpin_piece(blocks, piece, at)
+
+		var exit := Vector2(BhopIntro.HAIRPIN_X, BhopIntro.START_Z)
+		var heading := Vector2(0.0, -1.0)
+		if piece >= 0:
+			exit = blocks[piece]["exit"]
+			heading = blocks[piece]["heading"]
+
+		# Aim through the middle of the edge the route leaves by, and past it, so the bot
+		# arrives at the lip square to the gap rather than sliding along it. Once past
+		# the lip it is in the air over the gap, and aims at the far edge of the next
+		# piece instead: a point it has already reached is a point it hovers over.
+		var to_lip := (exit - at).dot(heading)
+		var aim := exit + heading * 96.0 - at
+		if to_lip < 0.0:
+			aim = ((blocks[piece + 1]["exit"] as Vector2) if piece + 1 < blocks.size()
+				else Vector2(pad.x, pad.z)) - at
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.yaw = rad_to_deg(atan2(-aim.x, -aim.y))
+		c.set_button(DotFpsCommand.BUTTON_JUMP, to_lip >= 0.0 and to_lip <= 20.0)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+
+		var now := G2GUnits.vector_to_units(bot.global_position)
+		covered += Vector2(now.x - previous.x, now.z - previous.z).length()
+		previous = now
+		top = maxf(top, G2GUnits.to_units(bot.speed()))
+		highest = maxf(highest, now.y)
+		furthest = maxi(furthest, piece)
+		if reset:
+			resets += 1
+			reset = false
+			piece = -1
+		if bot.timer.run.is_active():
+			started = true
+		if not finished.is_empty():
+			break
+
+	print("  ..    hairpin: covered %.0f u of a %.0f u route, top %.0f u/s, highest %.0f u, block %d of %d, %d resets, %s" % [
+		covered, route_length, top, highest, furthest + 1, blocks.size(), resets,
+		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
+	])
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	_check(started, "leaving its pad starts a run on the hairpin's own track")
+	_check(furthest == blocks.size() - 1, "the bot reaches the last block, both corners behind it",
+		"block %d of %d" % [furthest + 1, blocks.size()])
+	_check(highest >= 112.0, "and climbs to the top corner", "highest %.0f u" % highest)
+	_check(splits == [1, 2], "crossing both of its stage lines, in order", str(splits))
+	_check(resets == 0, "without ever being put back", "%d resets" % resets)
+	_check(
+		finished.size() == 1 and finished[0].track == hairpin,
 		"and the finish line ends the run, on the bonus's own track",
 		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())]
 	)
