@@ -2,5 +2,7 @@
  "id": "surf_aquaflow",
  "display_name": "surf: aquaflow",
  "tier": 2,
+ "author": "NvC_DmN_CH",
+ "attribution": {"author": "NvC_DmN_CH", "source": "https://gamebanana.com/mods/137715 (confirmed: Page: submitter NvC_DmN_CH, credits 'Map: NvC_DmN_CH', Testers Leesriize, maz64, Xbmann, Warp. No local archive; downloaded the page's surf_aquaflow.rar (31587882 bytes) and its surf_aquaflow.bsp is SHA1-identical to ours (2e9b9028...). In-map: packed materials/specialthanks.vtf reads 'SPECIAL THANKS: Leesriize, maz, Xbmann, Warp' -- the page's tester list; the author's own name is not in the BSP. Second source: SurfHeaven map info author 'NvC_DmN_CH'.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "Labelled throughout: zone_start, zone_end, checkpoint_1 and checkpoint_2. Nothing to add but the tier, which is an operator's call and is here to be edited rather than because the map said so."
 }

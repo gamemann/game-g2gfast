@@ -2,6 +2,8 @@
  "id": "surf_beginner2",
  "display_name": "surf: beginner2",
  "tier": 1,
+ "author": "Kiiru",
+ "attribution": {"author": "Kiiru", "source": "https://gamebanana.com/mods/137722 (confirmed: Page: submitter Kiiru, 'Creator: Kiiru - Mapper', bonuses by S a g a n, Koga73, Spy Complex, NM-Frag. No local archive; the page's surf_beginner2.zip (16135499 bytes) contains a BSP SHA1-identical to ours (5e8a609a...). In-map: 35 textures under materials/kiiru/, incl. beginner2_spawn_kiiru.vtf reading 'KIIRU' and beginner2_twitch.vtf 'TWITCH.TV/KHERUBAE'. Also the YouTube title 'surf_beginner2 by kiiru' (REFERENCE.md) and SurfHeaven author 'Kiiru'.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "Seven stages and four bonuses, all of which the map labels itself as startzone_s1..s7 and start/endzone_koga|sagan|spy|frag. The only thing missing is the main track's finish, because the map does not end in a zone: the end of stage 7 is a trigger_teleport into 'heaven', the reward room beside the spawn. That teleport is the finish line.",
  "zones": [
   {

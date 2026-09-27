@@ -2,6 +2,8 @@
  "id": "surf_kitsune",
  "display_name": "surf: kitsune",
  "tier": 2,
+ "author": "Arblarg",
+ "attribution": {"author": "Arblarg", "source": "https://gamebanana.com/mods/122382 (page only: Page: submitter Arblarg, 'Creator: Arblarg'. No local archive; the page's surf_kitsune.rar (4964921 bytes) contains a BSP SHA1-identical to ours (41ff082a...). Second source: https://ksf.surf/maps/surf_kitsune 'made by Arblarg'. In-map: nothing names an author (no worldspawn comment, no game_text; pakfile is grids/neons/one rainbow texture and a song).)", "archive": null, "recorded": "2026-09-27"},
  "notes": "Nine sections named after colours, and not one label in the map: kitsune drives its progression with `OnTrigger !activator,AddOutput,targetname X` and a filter chain, which is a program rather than a description. What IS in the file is a teleport graph, and it is completely regular. Every trigger_teleport aims at one of the nine colour destinations. The ones the size of a room are the pit under that colour's section; the ones the size of a door are how you leave one section for the next -- and 512 units separates the two with nothing near the boundary. So the colour destinations are the stage starts, in the order the doors chain them, and the single teleport aimed back at `start` -- at the far end of the white section -- is the finish.",
  "doorways": {
   "max_horizontal": 512

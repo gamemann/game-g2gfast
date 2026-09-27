@@ -1,0 +1,6 @@
+{
+ "id": "surf_greensway",
+ "author": "NvC_DmN_CH",
+ "attribution": {"author": "NvC_DmN_CH", "source": "https://gamebanana.com/mods/137798 (confirmed: Page: submitter NvC_DmN_CH, 'Map: NvC_DmN_CH - map & stuff', Karatekaefer (skybox); testers dreams, Joey, maz64, mrdeadguy34, Xbmann, _xen; Other bonjorno7 (SourceOps), Momentum Mod; KSF Spring 2020 contest entry. Archive 16260263 bytes matches page's surf_greensway_e1e4c.rar exactly. In-map: packed materials/special_thanks.vtf lists testers 'dreams, Joey, maz, mrdeadguy34, Xbmann, _xen', 'bonjorno7 - made SourceOps', 'Momentum Mod - for existing' -- the page's lists exactly; the author's own name is not in the BSP (thanks-list precedent, as bhop_pit/surf_aquaflow). Archive's dontreadme.txt says only 'why u read me >:('. Second source: SurfHeaven author 'NvC_DmN_CH'.)", "archive": "surf_greensway_e1e4c.rar", "recorded": "2026-09-27"},
+ "notes": "Credit only. Everything else about this map comes from the .bsp itself; see README.md."
+}

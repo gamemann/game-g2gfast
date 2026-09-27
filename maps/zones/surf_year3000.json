@@ -2,6 +2,8 @@
  "id": "surf_year3000",
  "display_name": "surf: year3000",
  "tier": 3,
+ "author": "ArchAngel",
+ "attribution": {"author": "ArchAngel", "source": "https://gamebanana.com/mods/123298 (confirmed: Page: submitted by 'robin' on the author's behalf -- 'This map was made by ArchAngel, I'm just submitting it'; Key Authors 'archangel'. No local archive; the page's surf_year3000_2.zip (4357198 bytes) contains surf_year3000.bsp, .nav and .res all SHA1-identical to our three local files. In-map: packed materials/year3000/logo.vtf is a 'SURF SOURCE http://www.surfsource.peteruk.net' logo signed 'ArchAngel' in script. Note the page is a third-party re-upload, so the page's authority is weaker than an author's own upload.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "A 2007 map, older than any convention for labelling a zone, and built for two teams: everything on the route exists twice, once per side, mirrored about x. Its own names are the only ordering there is -- stage02_t/stage02_ct and stage03_t/stage03_ct -- so stage 1 is the start room and the stage zones cover both sides of the pair. It ends in a prison: finishing the last section teleports to jail_pro and failing it teleports to jail_noob, which is as clear a statement of which one is the finish as a map from 2007 is going to make.",
  "doorways": {
   "max_horizontal": 512

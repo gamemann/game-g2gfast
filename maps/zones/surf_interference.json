@@ -2,5 +2,7 @@
  "id": "surf_interference",
  "display_name": "surf: interference",
  "tier": 3,
+ "author": "NvC_DmN_CH",
+ "attribution": {"author": "NvC_DmN_CH", "source": "https://gamebanana.com/mods/137815 (confirmed: Page: submitter NvC_DmN_CH, 'Map: NvC_DmN_CH - Mapper', skyboxes Mr.Who and komaokc. No local archive; the page's surf_interference_17f40.rar (40762993 bytes) contains a BSP SHA1-identical to ours (e9b26393...) plus 'readme pls.txt' beginning 'mapper - nvc_dmn_ch'. In-map: packed materials/totally_not_encoded_map_maker_info.vtf is an 8x16 I8 bitmap whose rows, read as inverted bits (per its .vmt comment 'white=0, black=1'), decode to ASCII 'NvC_DmN_CH'. Second source: SurfHeaven author 'NvC_DmN_CH'.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "map_start_zone and map_end_zone are the map's own. Its three checkpoints are named rather than numbered -- center, left and right -- because they are three routes through one section and a player takes exactly one, so they are reported and not counted as splits."
 }

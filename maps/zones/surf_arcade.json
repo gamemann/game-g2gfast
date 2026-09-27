@@ -2,6 +2,8 @@
  "id": "surf_arcade",
  "display_name": "surf: arcade",
  "tier": 3,
+ "author": "maz64 (maz)",
+ "attribution": {"author": "maz64 (maz)", "source": "https://gamebanana.com/mods/137716 (confirmed: Page: submitter maz64, 'Map Maker: maz64', KSF Fall 2020 mapping contest entry; Special Thanks/Shoutout nmroxy, nyronic, qr, NvC_DmN_CH, granis_, Highquality, Moltard, DomiTibingen, Karatekaefer. No local archive; the page's surf_arcade_5ba37.zip (26589540 bytes) contains a surf_arcade.bsp SHA1-identical to ours (cff2c291...). In-map: packed materials/comp/arcadecredits.vtf lists exactly 'nmroxy, nyro, qr, NvC_DmN_CH, granis, Highquality, Moltard, Domitibingen, Karatekaefer' and a game_text '...Thank you...'; maz64 himself is not named in the BSP. Second source: SurfHeaven author 'maz'.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "Six stages and a bonus, and the map labels exactly one of them (b_startzone). What it does label is where a FAILED stage puts you back: s1_reset .. s6_reset. That is the start of each stage by definition, which is what the stage zones are built around here. The finish is the teleport into the end room, the one the '...Thank you...' game_text sits in. The player spawns in a hub off the route, so the main spawn is moved to the start of stage 1 -- a player left in the hub can walk about for ever without crossing a start line.",
  "zones": [
   {"kind": "START", "track": 0, "around": {"point": "s1_reset", "extents": [256, 256, 128]},

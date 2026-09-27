@@ -2,6 +2,8 @@
  "id": "bhop_monster_jam",
  "display_name": "bhop: monster jam",
  "tier": 3,
+ "author": "monster jam and Aoki",
+ "attribution": {"author": "monster jam and Aoki", "source": "https://gamebanana.com/mods/125558 (confirmed: Page: submitter Aoki, Key Authors 'monster jam - Sound, textures, mapping' and 'Aoki - Mapping'; archive 20584549 bytes matches page's bhop_monster_jam.rar exactly. In-map: packed decals/monsterjam/credits_lowres texture is a mock film credit, every role 'MONSTER JAM' except 'EDITED BY AOKI'.)", "archive": "bhop_monster_jam.rar", "recorded": "2026-09-27"},
  "notes": "One trigger_teleport out of 62 is aimed at the destination named `end`, and it is a 71x43 gate rather than one of the room-sized pits the other 61 are -- so it is a thing a player walks through on purpose, which is what a finish is. There is no matching start label: the map's 24 info_player_* spawns sit in a tight 291x755 cluster at [4318 1146 6852] and that cluster is the start platform, so the start line is drawn around it rather than around a name.",
  "zones": [
   {"kind": "START", "track": 0, "around": {"point": [4318, 1146, 6852], "extents": [420, 640, 180]},

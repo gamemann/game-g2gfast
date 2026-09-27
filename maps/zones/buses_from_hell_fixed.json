@@ -1,0 +1,6 @@
+{
+ "id": "buses_from_hell_fixed",
+ "author": "siXMan",
+ "attribution": {"author": "siXMan", "source": "https://gamebanana.com/mods/127607 (page only: Page (buses_from_hell_fixed, CS:S): submitter siXMan, Key Authors 'siXMan - Mapping', Contributors 'JasenM - Bus Prefab'. The page's only file, buses_from_hell_fixed.zip, is 778638 bytes, which matches the local buses_from_hell.zip exactly (the file was renamed locally). The .bsp inside is dated 2009-04-16, the same day as the page's 'UPDATE 4/16/09'. In-map: nothing names an author. The worldspawn has no comment/message, there is no game_text, the pakfile holds only 1 file (cubemap materials), and no custom textures are used. The bus entities are named schoolbusssssssssssssss{aani,rengas,valo,heli...}; these are Finnish words (sound, tyre, light) and likely come from the bus prefab, but they name no one. Later version: https://gamebanana.com/mods/127608 (buses_from_hell_redux, also siXMan; JasenM credited for the bus prefab).)", "archive": "buses_from_hell.zip", "recorded": "2026-09-27"},
+ "notes": "Credit only. A vehicle map rather than a course (see README.md); everything else comes from the .bsp itself."
+}

@@ -2,6 +2,8 @@
  "id": "surf_summit",
  "display_name": "surf: summit",
  "tier": 4,
+ "author": "Juxtapo and Phurix",
+ "attribution": {"author": "Juxtapo and Phurix", "source": "https://gamebanana.com/mods/137705 (confirmed: Page (Surf Summit (CS:S)): submitter Phurix, Key Authors Juxtapo and Phurix (mapping, optimization), Contributors Syncronyze (bonus 1); 'Started by Juxtapo, finished by Phurix'. No local archive; the page's surf_summit.7z (40364517 bytes) contains a BSP SHA1-identical to ours (bca495c0...). In-map: packed materials/surf_summit/credits1.vtf reads 'Summit / Made by Juxtapo and Phurix / with help from Syncronyze'. Second source: SurfHeaven author 'Juxtapo & Phurix'.)", "archive": null, "recorded": "2026-09-27"},
  "notes": "Three bonuses labelled, a main route that is not. Every fail on the main route -- and there are thirty of them -- teleports to td_mapstart, so td_mapstart is the start line whatever the info_player_* entities say; the spawn is moved onto it for the same reason. The finish is the seamless portal at the far -X end of the ride, which lands the player in td_end_room: the map is longer than Source's 16384-unit world and the end room is folded back into the other corner of it. Its third bonus has a start zone, eight checkpoints and no finish anywhere in the map, so it is dropped rather than offered as a track nobody can complete.",
  "zones": [
   {"kind": "START", "track": 0, "around": {"point": "td_mapstart", "extents": [320, 320, 160]},
