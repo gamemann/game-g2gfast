@@ -9,6 +9,7 @@ const G2GBeacon := preload("../game/g2g_beacon.gd")
 const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GHud := preload("../game/g2g_hud.gd")
+const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 
 ## Settings, audio, effects, the console and the practice session.
@@ -23,7 +24,7 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 96
+const CHECKS := 100
 
 var _passed := 0
 var _failed := 0
@@ -56,6 +57,7 @@ func _run() -> void:
 	_test_every_sound_has_a_voice()
 	_test_the_vote_is_heard()
 	await _test_blind_and_beacon()
+	_test_a_map_credits_its_author()
 
 	print("")
 	_check(
@@ -954,6 +956,38 @@ func _test_party_over_http() -> void:
 
 
  # --- Harness ---------------------------------------------------------------
+
+
+# --- 13 ---------------------------------------------------------------------
+
+## `[credit-1]`: an imported map is somebody else's work, and the line a map change puts
+## on screen names them. Asserted on the catalogue's own defs rather than on a made-up
+## one, so a zones file that loses its author fails here and not only in a review.
+func _test_a_map_credits_its_author() -> void:
+	_section("A map change names the map's author")
+
+	var bare := DotMapDef.new()
+	bare.id = &"bhop_g2g_intro"
+	_check(G2GHud.now_playing_text(bare) == "Now playing bhop_g2g_intro",
+		"a hand-built map with no author reads as it always did", G2GHud.now_playing_text(bare))
+
+	var defs: Array[DotMapDef] = G2GMapCatalogue.scan()
+	var imported := defs.filter(func(m: DotMapDef) -> bool:
+		return FileAccess.file_exists("res://maps/imported/%s/%s.json" % [m.id, m.id]))
+	var uncredited := imported.filter(func(m: Variant) -> bool: return G2GMapCatalogue.credit(m as DotMapDef).is_empty())
+	_check(imported.size() > 0, "the catalogue holds imported maps to ask", "%d defs" % defs.size())
+	_check(uncredited.is_empty(), "and every one of them has an author to name",
+		", ".join(uncredited.map(func(m: Variant) -> String: return String((m as DotMapDef).id))))
+
+	var mesa: DotMapDef = null
+	for m: Variant in imported:
+		if (m as DotMapDef).id == &"surf_mesa":
+			mesa = m
+	_check(mesa != null and G2GHud.now_playing_text(mesa).ends_with(", by Arblarg"),
+		"so surf_mesa's line credits Arblarg",
+		G2GHud.now_playing_text(mesa) if mesa != null else "no surf_mesa")
+	_done()
+
 
 
 func _section(title: String) -> void:

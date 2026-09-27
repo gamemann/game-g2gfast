@@ -2,6 +2,7 @@ extends Control
 
 const G2GConfig := preload("g2g_config.gd")
 const G2GGame := preload("g2g_game.gd")
+const G2GMapCatalogue := preload("g2g_map_catalogue.gd")
 const G2GPlayer := preload("g2g_player.gd")
 
 ## The competitive-shooter timer HUD: the clock, the speed in u/s, the keys, the strafes.
@@ -170,7 +171,7 @@ func bind(p_game: G2GGame, p_player: StringName) -> void:
 	player_id = p_player
 
 	game.run_filed.connect(_on_run_filed)
-	game.map_ready.connect(func(map: DotMapDef) -> void: notice("Now playing %s" % map.name_or_id()))
+	game.map_ready.connect(func(map: DotMapDef) -> void: notice(now_playing_text(map)))
 	game.movement_changed.connect(
 		func(config: G2GConfig) -> void:
 			notice("Movement changed: autobhop %s, airaccel %.0f" % [
@@ -312,6 +313,23 @@ func present_blind(delta: float) -> void:
 		var inverse := get_global_transform().affine_inverse()
 		blind_overlay.position = inverse * Vector2.ZERO
 		blind_overlay.size = inverse.basis_xform(get_viewport_rect().size)
+
+
+## The line a map change puts on screen: the map, and who made it when that is known.
+##
+## [b]The credit is the point.[/b] The imported maps are other people's work, kept on the
+## condition that their authors are credited, and `DotMapDef.author` carried each name
+## from its zones file into the catalogue while nothing ever drew it (`[credit-1]`). A
+## credit nobody can see is not a credit. A hand-built map has no author field and reads
+## as it always did, and so does an import nobody has credited yet.
+static func now_playing_text(map: DotMapDef) -> String:
+	if map == null:
+		return ""
+	var line := "Now playing %s" % map.name_or_id()
+	var who := G2GMapCatalogue.credit(map)
+	if not who.is_empty():
+		line += ", by %s" % who
+	return line
 
 
 ## What the status line says about the map's time left: the server's clock when it has

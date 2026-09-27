@@ -50,6 +50,21 @@ static var IMPORTED_ROOTS := [G2GPaths.rebase("res://maps/imported"), "user://ma
 const STRIPPED := [".remap", ".import"]
 
 
+## What [member DotMapDef.author] reads when nobody wrote an author down: a hand-built
+## map is this game's own, and an import with no credit in its zones file says so. Both
+## are placeholders rather than names, and [method credit] is how anything that shows a
+## player who made a map tells the two apart (`[credit-1]`).
+const BUILT_IN_AUTHOR := "g2gfast"
+const IMPORTED_AUTHOR := "imported"
+
+
+## The person to credit for [param map], or "" when there is nobody to name.
+static func credit(map: DotMapDef) -> String:
+	if map == null:
+		return ""
+	var who := map.author.strip_edges()
+	return "" if who == BUILT_IN_AUTHOR or who == IMPORTED_AUTHOR else who
+
 ## Every map on disk, as a fresh catalogue.
 ##
 ## [param extra_roots] are searched for imported maps after [constant IMPORTED_ROOTS] —
@@ -123,7 +138,7 @@ static func _built_in() -> Array[DotMapDef]:
 	var out: Array[DotMapDef] = []
 	for id in _scene_ids(BUILT_IN_DIR):
 		var scene := "%s/%s.tscn" % [BUILT_IN_DIR, id]
-		out.append(_define(id, scene, "%s/%s.zones.json" % [BUILT_IN_DIR, id], "g2gfast"))
+		out.append(_define(id, scene, "%s/%s.zones.json" % [BUILT_IN_DIR, id], BUILT_IN_AUTHOR))
 	return out
 
 
@@ -150,7 +165,7 @@ static func _imported(root: String) -> Array[DotMapDef]:
 		# which is the normal case for a root an operator also keeps .bsp files in.
 		if not FileAccess.file_exists(manifest):
 			continue
-		var map := _define(StringName(id), IMPORTED_SCENE, manifest, "imported")
+		var map := _define(StringName(id), IMPORTED_SCENE, manifest, IMPORTED_AUTHOR)
 		# Without the mesh the map loads to an empty world and nothing says why, so a
 		# half-copied directory is skipped rather than offered.
 		if not FileAccess.file_exists("%s/%s/%s.bin" % [root, id, id]):
@@ -230,7 +245,7 @@ static func at_directory(id: StringName, dir: String) -> DotMapDef:
 		})
 		return null
 
-	return _define(id, IMPORTED_SCENE, manifest, "imported")
+	return _define(id, IMPORTED_SCENE, manifest, IMPORTED_AUTHOR)
 
 
 static func _define(
