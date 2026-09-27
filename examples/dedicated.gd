@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 177
+const CHECKS := 179
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -1225,6 +1225,23 @@ func _test_live_tools() -> void:
 	var described := await _run_command_later("modtools")
 	_check(_said(described, "abilities") and _said(described, "burn (there is no fire"),
 		"`modtools` lists what a timer server supports and why it refuses the rest")
+
+	# `return` after a map change. Moved once by a moderator, so `return` has somewhere to
+	# put them: a position on THIS map, which a change frees. The change is announced the
+	# way every change ends, on `DotMapSession.changed`, rather than made: `change_map`
+	# goes through the map-sync host, which waits on every peer and an adopted session has
+	# none (arena's first draft of this check hung there). Armed 2026-09-27: without the
+	# clear, `return One` put them back at the spot on the previous map.
+	var module: Object = server.modules.get_module("g2gfast")
+	var tools: DotModTools = (module.get("services") as G2GServices).mod_tools if module != null else null
+	var _moved: DotResult = await tools.teleport(&"", &"1", player.global_position + Vector3(6.0, 0.0, 0.0))
+	_check(tools.can_return(&"1"), "a moderator moves One, so `return` has somewhere to put them")
+	game.maps.changed.emit(game.maps.current, game.current_map_node())
+	await _physics(2)
+	var returned: DotResult = await tools.return_player(&"", &"1")
+	_check(not tools.can_return(&"1") and not returned.ok,
+		"and after a map change `return` has nowhere to put them",
+		"it put them at %s, a spot on the previous map" % (str(returned.value) if returned.ok else "-"))
 
 	player.timer.run_stopped.disconnect(on_stop)
 	player.timer.stop()

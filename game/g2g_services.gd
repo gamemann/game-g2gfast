@@ -196,6 +196,27 @@ func _build_mod_tools() -> void:
 
 	add_child(mod_tools)
 
+	# [b]A map change clears the return history, for everybody.[/b] Every position in it
+	# is a point on the map the change just freed, so without this `return One` after a
+	# `changelevel` put them where they had stood on a different course -- in mid-air, or
+	# inside the new map's geometry. `DotMapSession.changed` because every change ends at
+	# it, whoever asked for it (`[modtools-return-1]`; arena, playground, hungario and the
+	# lobby do the same).
+	if not game.maps.changed.is_connected(_on_map_changed_for_mod_tools):
+		game.maps.changed.connect(_on_map_changed_for_mod_tools)
+
+
+func _on_map_changed_for_mod_tools(_map: DotMapDef, _world: Node) -> void:
+	if mod_tools != null:
+		mod_tools.clear_history()
+
+
+func _exit_tree() -> void:
+	# The game outlives this layer (a module unload frees the services and keeps the
+	# game), so the connection is taken back rather than left to a freed receiver.
+	if game != null and game.maps.changed.is_connected(_on_map_changed_for_mod_tools):
+		game.maps.changed.disconnect(_on_map_changed_for_mod_tools)
+
 
 # --- Chat ------------------------------------------------------------------
 
