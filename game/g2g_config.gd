@@ -149,6 +149,26 @@ const G2GUnits := preload("g2g_units.gd")
 ## nothing. Set it from `sv_content_maps`, space- or comma-separated.
 @export var content_maps: PackedStringArray = PackedStringArray()
 
+## Whose namespace a map is fetched from. `sv_map_content_owner`.
+##
+## [b]A map id and a content id are not the same thing any more, and this is the whole
+## difference.[/b] The id is what a player types (`map surf_mesa`), what every record,
+## zone file and vote is filed under, and it must not move. The content id is where the
+## pack lives on the origin, and a pack on a shared origin belongs to somebody:
+## `gamemann/surf_mesa`, the `<owner>/<name>` shape the site gives every pack it
+## publishes. So the owner is prefixed where a map is FETCHED and nowhere else. Empty
+## keeps the old unowned layout (`surf_mesa`), which is what an origin that predates
+## owners still serves.
+@export var map_content_owner: String = ""
+
+
+## The content id map [param id] is fetched as. See [member map_content_owner].
+func map_content_id(id: StringName) -> String:
+	var name := String(id)
+	if map_content_owner.strip_edges().is_empty() or name.contains("/"):
+		return name
+	return "%s/%s" % [map_content_owner.strip_edges(), name]
+
 ## Seconds a map runs before the next is chosen. 0 disables it.
 @export_range(0.0, 86400.0, 30.0) var map_seconds: float = 1800.0
 

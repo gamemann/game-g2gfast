@@ -923,7 +923,7 @@ func ensure_map_content(id: StringName) -> DotResult:
 
 	DotLog.info(CHANNEL, "fetching a map this build does not have", {"map": String(id)})
 
-	var got: Variant = await cloud.call("ensure", id)
+	var got: Variant = await cloud.call("ensure", StringName(config.map_content_id(id)))
 
 	if not (got is DotResult):
 		return DotResult.fail(
@@ -974,14 +974,23 @@ func ensure_map_content(id: StringName) -> DotResult:
 ## [code]res://dot_cloud/<content_id>/<version>[/code], so both come off the directory
 ## rather than out of a second record that could disagree with it.
 func _mark_delivered(map: DotMapDef, dir: String) -> void:
+	# `res://dot_cloud/<content id>/<version>`, where the content id is the map id or,
+	# with an owner, `<owner>/<map id>` -- read off the path rather than rebuilt from the
+	# config, so a map fetched under one owner is not re-announced under another if an
+	# operator changes the cvar mid-session.
+	var root := "res://dot_cloud/"
 	var base := dir.rstrip("/")
-	var prefix := "res://dot_cloud/%s/" % map.id
-	if not base.begins_with(prefix):
+	if not base.begins_with(root):
 		return                            # a directory on disk, not a mount
-	var version := base.substr(prefix.length())
-	if version.is_empty() or version.contains("/"):
+	var rest := base.substr(root.length())
+	var cut := rest.rfind("/")
+	if cut <= 0:
 		return
-	map.content_id = map.id
+	var content := rest.substr(0, cut)
+	var version := rest.substr(cut + 1)
+	if version.is_empty() or (content != String(map.id) and not content.ends_with("/" + String(map.id))):
+		return
+	map.content_id = StringName(content)
 	map.content_version = version
 
 
@@ -1008,6 +1017,14 @@ func fetch_content_maps() -> void:
 		return
 
 	_fetching_content_maps = true
+
+	# One frame before the first request, because a descriptor's cvars are applied in one
+	# pass in FILE order: `sv_content_maps` listed above `sv_map_content_owner` would
+	# start this sweep before the owner arrived and fetch every map from the unowned
+	# path. Waiting a frame lets the whole pass land, whatever order it was written in.
+	if is_inside_tree():
+		await get_tree().process_frame
+
 	var wanted := config.content_maps
 	var added: Array[StringName] = []
 	var failed := 0

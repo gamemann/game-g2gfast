@@ -1191,6 +1191,8 @@ worth having — but nothing will time a run on it.
 
 and on a running server, `g2g_maps_reload` rescans without a restart.
 
+**A delivered map belongs to somebody (2026-09-26).** The map id is what a player types and every record is filed under, and it does not change; the pack is `<owner>/<map id>` on the origin, the shape the site gives every pack. `sv_map_content_owner` (`G2GConfig.map_content_owner`) is the owner, prefixed only where a map is fetched (`map_content_id`), and `_mark_delivered` reads the content id back off the mount path so a client is announced the id that was actually fetched. Empty keeps the old unowned layout. Both descriptors set `gamemann`. `tools/publish_maps.sh --owner gamemann --key ../dot-server-deploy/keys/content.key` signs every imported map with the key clients trust as `default` (the one the unowned packs were signed with; measured) into `<out>/<owner>/<id>/`, for uploading to the origin's `content/` as it stands. The map sweep waits one frame before its first request so an owner set by the same descriptor pass lands first whatever order the cvars are written in. `headless_net`'s *a map published under an owner* fetches, marks and follows one; armed by fetching the bare id.
+
 **The rescan mutates the catalogue in place rather than replacing it.**
 [DotMapRotation] holds the catalogue by reference and reads its pool live, so swapping
 the object leaves the rotation offering exactly the maps that are no longer there.

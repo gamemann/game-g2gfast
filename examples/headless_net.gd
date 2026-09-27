@@ -35,7 +35,7 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 153
+const CHECKS := 157
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -85,6 +85,7 @@ func _run() -> void:
 		await _test_lossy()
 		await _test_map_change()
 		await _test_map_delivered()
+		await _test_map_owned()
 		await _test_map_straggler()
 		await _test_map_refused()
 		_test_ghost()
@@ -719,6 +720,10 @@ class SlowCloud:
 
 const SYNC_FIXTURE := &"g2g_sync_fixture"
 const DELIVERED_FIXTURE := &"g2g_delivered_fixture"
+const OWNED_FIXTURE := &"g2g_owned_fixture"
+
+## The signing key the delivered-map section made, which the content client trusts.
+var _fixture_keys: Dictionary = {}
 const SYNC_FIXTURE_ROOT := "user://g2g_headless_net_sync"
 const SYNC_TIMEOUT := 1.0
 const SLOW_FETCH := 2.0
@@ -784,7 +789,7 @@ func _until_client_on(id: StringName, seconds: float) -> bool:
 
 ## A map as a signed pack: a manifest and a mesh, published into `user://`. Empty of
 ## geometry on purpose — this suite is about who has it, not what is in it.
-func _publish_map_fixture(id: StringName, version: String, keys: Dictionary) -> DotResult:
+func _publish_map_fixture(id: StringName, version: String, keys: Dictionary, owner := "") -> DotResult:
 	var source := SYNC_FIXTURE_ROOT.path_join("src").path_join(String(id))
 	DirAccess.make_dir_recursive_absolute(source)
 	var manifest := {
@@ -798,15 +803,16 @@ func _publish_map_fixture(id: StringName, version: String, keys: Dictionary) -> 
 	bin.store_8(0)
 	bin.close()
 
+	var content := String(id) if owner.is_empty() else "%s/%s" % [owner, id]
 	var publisher := DotCloudPublisher.new()
-	publisher.content_id = String(id)
+	publisher.content_id = content
 	publisher.version = version
 	publisher.signing_key_pem = str(keys["private"])
 	publisher.signing_key_id = "headless_net"
 	# Published at `<base>/<id>/`, the layout a server's version-less `ensure(id)` finds —
 	# `G2GGame.ensure_map_content` asks for whatever version the origin has, and a client
 	# asks for the version its announce named; both reach the same manifest.
-	return publisher.publish(source, "%s/dist/%s" % [SYNC_FIXTURE_ROOT, id])
+	return publisher.publish(source, "%s/dist/%s" % [SYNC_FIXTURE_ROOT, content])
 
 
 ## One content client for both ends, behind [SlowCloud], trusting only this suite's key.
@@ -915,6 +921,7 @@ func _test_map_delivered() -> void:
 	_check(keys.ok, "a signing key is made for this suite's content")
 	if not keys.ok:
 		return
+	_fixture_keys = keys.value
 	var published := _publish_map_fixture(DELIVERED_FIXTURE, "1.2.0", keys.value)
 	var slow_one := _publish_map_fixture(SYNC_FIXTURE, "1.0.0", keys.value)
 	_check(published.ok and slow_one.ok, "two imported maps publish as signed packs",
@@ -957,6 +964,41 @@ func _test_map_delivered() -> void:
 	var kept := _client_game.maps.catalogue.get_map(DELIVERED_FIXTURE)
 	_check(kept != null and kept.content_id == DELIVERED_FIXTURE,
 		"and keeps it, as delivered content, for next time")
+	_done()
+
+
+## A map on an origin that keeps packs under an owner: the map id stays what a player
+## types, the pack is `<owner>/<id>`. See [member G2GConfig.map_content_owner].
+func _test_map_owned() -> void:
+	_section("changing the map: a map published under an owner")
+
+	# The key the delivered section made and the content client already trusts. A fresh
+	# one here replaced it, and every fixture signed before it stopped verifying.
+	var published := _publish_map_fixture(OWNED_FIXTURE, "1.0.0", _fixture_keys, "someone") \
+		if not _fixture_keys.is_empty() else DotResult.fail(DotError.CODE_STATE, "no key")
+	_check(published.ok, "a map publishes as someone/<id>", str(published.error))
+	if not published.ok:
+		_done()
+		return
+
+	_server_game.config.map_content_owner = "someone"
+	var fetched: DotResult = await _server_game.ensure_map_content(OWNED_FIXTURE)
+	var on_server := _server_game.maps.catalogue.get_map(OWNED_FIXTURE)
+	_check(fetched.ok and on_server != null,
+		"the server fetches it by the map id alone, with the owner from its config",
+		str(fetched.error) if not fetched.ok else "")
+	_check(on_server != null and String(on_server.content_id) == "someone/%s" % OWNED_FIXTURE
+		and str(on_server.meta.get("manifest", "")).begins_with(
+			"res://dot_cloud/someone/%s/1.0.0/" % OWNED_FIXTURE),
+		"and files it under the map id, marked as the owned content it came from",
+		str(on_server.describe()) if on_server != null else "none")
+
+	var outcome := await _change_and_pump(OWNED_FIXTURE, 8.0)
+	var followed := await _until_client_on(OWNED_FIXTURE, 3.0)
+	_check(bool(outcome["ok"]) and followed,
+		"and a client follows it there, fetching the owned pack the announce names",
+		"%s" % outcome["reason"])
+	_server_game.config.map_content_owner = ""
 	_done()
 
 

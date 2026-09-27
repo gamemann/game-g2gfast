@@ -26,6 +26,9 @@ client_scene: game/g2g.tscn
 module: game/g2g_module.gd
 
 cvars:
+  # Maps are fetched as <owner>/<map id> (gamemann/surf_mesa); the id a player types is
+  # unchanged. Publish them with game-g2gfast's tools/publish_maps.sh before relying on it.
+  sv_map_content_owner: "gamemann"
   sv_content_maps:
     - surf_mesa
     - surf_beginner2

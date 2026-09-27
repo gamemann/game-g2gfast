@@ -187,6 +187,13 @@ func _module_load() -> DotResult:
 	# Set live as well as at load. The sweep is in the background either way, so an
 	# operator adding a map id to a running server gets it without a restart, which is
 	# the same promise `g2g_maps_reload` makes for the disk.
+	add_cvar("sv_map_content_owner", game.config.map_content_owner,
+		"Whose namespace maps are fetched from: gamemann makes surf_mesa gamemann/surf_mesa."
+	).changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.map_content_owner = new_value.strip_edges()
+	)
+
 	add_cvar("sv_content_maps", " ".join(game.config.content_maps),
 		"Map ids to fetch from the content origin, space- or comma-separated."
 	).changed.connect(
