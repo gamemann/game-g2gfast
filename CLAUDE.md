@@ -91,7 +91,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
                     and what the IMPORTED maps draw in. See its README
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
-examples/           headless_run (178), headless_net (153), dedicated (177),
+examples/           headless_run (187), headless_net (153), dedicated (177),
                     headless_imported (29 per map, plus one per track and stage),
                     headless_maps (27), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -479,7 +479,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 178 checks
+godot --headless --path . res://examples/headless_run.tscn   # 187 checks
 godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
 godot --headless --path . res://examples/headless_net.tscn   # 153 checks, 22 sections
 godot --headless --path . res://examples/dedicated.tscn      # 177 checks, 16 sections
@@ -1620,6 +1620,12 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 
 `bhop_g2g_stages` bonus 2 (2026-09-24) is the stages map's practice line: five blocks climbing 24 units each, a crest of four that narrows from 176 to 80 units, and five drops of 48 onto a finish pad 168 units under the start, with a stage split on the first block of the crest and the first block of the descent (drawn in the finish colour, as the main route's are). It sits at x = 3072, between the main course and the surf bonus. Every gap is a **RUN** gap, sized with `G2GReach` and at least 29 units inside it — 128 onto +24 against 166, 160 flat against 189, 192 down 48 against 222 — so it asks for a climb, a line and a drop and never for speed a player has not got. `RIDGE_SECTIONS` and `ridge_blocks()` are the one list: the geometry, the zones and `headless_run`'s bot read it, and the bot jumps in the last twenty units of each block read off it. `_test_ridge_bonus` drives it from the pad through both splits into the finish with no reset: 17.60 s, 0 resets, top 250 u/s. Render: `tools/route_preview.sh bhop_g2g_stages 2`.
 
+## `the hairpin`, and the first route here a bot has to steer
+
+`bhop_g2g_intro` bonus 3 (2026-09-27) is the one route on this map that turns. From a pad at x = 2304, east of the warm-up, it goes out four level blocks along -Z (gaps 112 to 160), onto a 256-square corner, right along +X up four 24-unit climbs (gaps 96 to 128) onto a second corner 24 higher at 120 u, right again, and back along +Z down four 48-unit drops onto blocks narrowing 160 to 96 (gaps 128 to 192), then a 160 gap down 48 onto a finish at -120 u beside the start. 14 blocks, 15 jumps, about 4,700 u of centre line. The two corners are the stage splits, drawn in the finish colour as the ridge's are, and each split's `!s<n>` faces the way the route LEAVES the corner (yaw -90, then 180: `yaw_facing`), never `[stage-yaw-1]`'s back-up-the-course 180. Every gap is a **RUN** gap at least 29 u inside `G2GReach` (160 flat against 189, 128 onto +24 against 166, 192 down 48 against 222) because a corner spends the speed a chain would be carrying. `HAIRPIN_LEGS` and `hairpin_blocks()` are the one list: geometry, zones and bot.
+
+`_test_hairpin_bonus` is the first bot here that is not holding forward along -Z. It reads `hairpin_blocks()`, aims through the middle of the edge the block it is over is left by, jumps in the last twenty units before that edge, and once past the lip aims at the next block's exit (aiming at a point just past the lip, it hovered there and fell: a bot that has reached its target stops). It drives pad to finish through both splits: 17.76 s, 0 resets, 4,858 u covered (including the 400 u from the spawn to the pad's edge) against a 4,688 u route. Armed by widening the jump onto the top corner to 200: the reach sweep, the zone-file match and three of the bot's checks fail. Render: `tools/route_preview.sh bhop_g2g_intro 3` (and `... 3 out.png 25 45 40` for the whole U from above).
+
 ## The bonus tracks had no respawn zone
 
 A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
@@ -1644,6 +1650,7 @@ What `headless_run` prints, all passing:
 | `bhop_g2g_intro` main | CHAIN, 17 hops | 288 | 44% of a perfect strafe |
 | `bhop_g2g_intro` warm-up | RUN, 3 | 128 | inside 189 |
 | `bhop_g2g_intro` the needle | RUN, 11 | 96 | inside 189 |
+| `bhop_g2g_intro` the hairpin | RUN, 15 | 192 down 48 | inside 222 |
 | `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
 | `bhop_g2g_stages` the ridge | RUN, 15 | 192 down 48 | inside 222 |
 
