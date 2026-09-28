@@ -657,8 +657,12 @@ have a peer** — a bot is driven by something else, and an empty command applie
 top of a replay stands the ghost still. That rule was found by `dedicated`, whose
 driven bots stopped hopping the moment the bridge started adopting them.
 
-`!r`, `!wr`, `!top`, `!style`, `!track`, `!rtv` are chat triggers as well as console
-commands, because twenty years of bhop servers taught everybody's fingers those.
+`!r`, `!wr`, `!top`, `!style`, `!track`, `!rtv`, `!s <n>` / `!stage <n>` and `!rs` are
+chat triggers as well as console commands, because twenty years of bhop servers taught
+everybody's fingers those. The last three go through `DotTimerManager.request_stage`,
+which stops the run, and `G2GGame._on_stage_requested` moves the player to the stage
+zone's destination and yaw. Until 2026-09-28 nothing listened to that signal, so no
+stage destination on any map could be reached (`[stage-yaw-1]`).
 `g2g_map` is not: changing the map from chat is an admin's, through the console.
 
 ## Decision 7: the client counts at the SERVER's tick rate
