@@ -422,8 +422,8 @@ func _survey_declared(id: String) -> Array:
 		{
 			"box": AABB(Vector3(SurfIntro.BONUS_X - SurfIntro.BONUS_FINISH_SIZE * 0.5,
 				SurfIntro.BONUS_FINISH_Y - 16.0,
-				SurfIntro.BONUS_FINISH_Z - SurfIntro.BONUS_FINISH_SIZE * 0.5),
-				Vector3(SurfIntro.BONUS_FINISH_SIZE, 32.0, SurfIntro.BONUS_FINISH_SIZE)),
+				SurfIntro.BONUS_FINISH_Z - SurfIntro.BONUS_FINISH_LENGTH * 0.5),
+				Vector3(SurfIntro.BONUS_FINISH_SIZE, 32.0, SurfIntro.BONUS_FINISH_LENGTH)),
 			"why": "bonus 1's finish pad: reached by the flight off the bank's end, which is speed and so a rider's, not a survey's; `headless_run`'s single bank rides it into the finish with no reset",
 		},
 	]

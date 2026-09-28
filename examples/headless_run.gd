@@ -26,7 +26,7 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 188
+const CHECKS := 190
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -1678,8 +1678,50 @@ func _test_single_bank() -> void:
 		]
 	)
 
+	await _test_fast_bank_exit(line)
+
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame
+
+
+## A rider leaving bonus 1's bank at 900 u/s comes down in its finish (`[surf-finish-1]`).
+##
+## [b]Launched rather than ridden[/b], because the bot above holds a line and never
+## strafes, so it leaves the bank at a few hundred u/s and could not find out that the
+## pad only caught those. Put on the bank's far end at the ridden line and at the top of
+## the strip over the pad, just past the bank's end, given 900 u/s along the run and no
+## input, and followed until it lands. Armed against the 512-unit pad this replaced: both
+## came down in the pit.
+func _test_fast_bank_exit(line: float) -> void:
+	var bot: G2GPlayer = game.players[&"bot"]
+	var finish := game.timers.zones.first_of_kind(DotTimerZone.Kind.END, 1)
+	# Just clear of the bank's end, so the hull is in the air rather than half on the
+	# slab's corner, which snags a launch into a drop straight down past the pad.
+	var end_z := SurfIntro.bonus_bank_end_z() - G2GUnits.PLAYER_HALF_WIDTH - 4.0
+	var top_x := SurfIntro.BONUS_X + SurfIntro.BONUS_FINISH_SIZE * 0.5 - G2GUnits.PLAYER_HALF_WIDTH
+	for x: float in [line, top_x]:
+		var from := Vector3(x, SurfIntro.bonus_bank_surface_y(x) + 2.0, end_z)
+		bot.teleport(from * G2GUnits.METRES_PER_UNIT, 0.0)
+		await get_tree().physics_frame
+		bot.controller.state.velocity = Vector3(0.0, 0.0, -900.0 * G2GUnits.METRES_PER_UNIT)
+		var landed := Vector3.INF
+		for _i in range(300):
+			var c := DotFpsCommand.new()
+			c.yaw = 0.0
+			bot.controller.apply_command(c)
+			await get_tree().physics_frame
+			var at := G2GUnits.vector_to_units(bot.global_position)
+			if at.y < SurfIntro.BONUS_FINISH_Y + 2.0 or (
+					bot.controller.state.is_grounded() and at.y < SurfIntro.BONUS_FINISH_Y + 64.0):
+				landed = at
+				break
+		_check(
+			finish != null and landed.is_finite() and finish.contains(landed * G2GUnits.METRES_PER_UNIT + Vector3.UP * 0.1),
+			"a rider leaving the bank at 900 u/s from x %.0f comes down in its finish" % x,
+			"came down at %s; the finish is z %.0f to %.0f" % [
+				str(landed.round()), SurfIntro.BONUS_FINISH_NEAR_Z,
+				SurfIntro.BONUS_FINISH_NEAR_Z - SurfIntro.BONUS_FINISH_LENGTH]
+		)
 
 
 ## Bonus 2 on the surf map: two ramps banked opposite ways, with a gap.

@@ -44,8 +44,16 @@ const BONUS_BANK_Z := START_Z - 800.0
 const BONUS_BANK_WIDTH := 768.0
 const BONUS_BANK_LENGTH := 2048.0
 const BONUS_FINISH_Y := START_Y - 1200.0
-const BONUS_FINISH_Z := START_Z - 2200.0
-const BONUS_FINISH_SIZE := 512.0
+const BONUS_FINISH_SIZE := 512.0              ## across (X)
+## Along the run (Z). [b]Was 512, the same as across[/b], and only a rider leaving the
+## bank under about 450 u/s came down on it: one that strafed properly left at 866 u/s
+## and fell into the pit 1,578 units past it (`[surf-finish-1]`). The near edge is where
+## it always was, so every landing the old pad caught it still catches and old times
+## stay comparable; the far edge takes a rider leaving at 1,100 u/s from anywhere on the
+## strip over the pad (measured: 900 u/s lands at -3,050 to -3,245, 1,100 at -3,560).
+const BONUS_FINISH_LENGTH := 1792.0
+const BONUS_FINISH_NEAR_Z := START_Z - 1944.0
+const BONUS_FINISH_Z := BONUS_FINISH_NEAR_Z - BONUS_FINISH_LENGTH * 0.5  ## its centre
 
 
 ## X of the bank's low lip. `-RAMP_ANGLE` about `Vector3.FORWARD` is a positive turn
@@ -166,7 +174,7 @@ func _build() -> void:
 		Vector3(BONUS_BANK_WIDTH, RAMP_THICKNESS, BONUS_BANK_LENGTH), -RAMP_ANGLE,
 		Vector3.FORWARD, G2GGeometry.COLOUR_BONUS)
 	G2GGeometry.box(self, Vector3(BONUS_X, BONUS_FINISH_Y - 16.0, BONUS_FINISH_Z),
-		Vector3(BONUS_FINISH_SIZE, 32.0, BONUS_FINISH_SIZE), G2GGeometry.COLOUR_END)
+		Vector3(BONUS_FINISH_SIZE, 32.0, BONUS_FINISH_LENGTH), G2GGeometry.COLOUR_END)
 
 	# Bonus 2: the transfer, on the other side of the start.
 	#
@@ -335,7 +343,8 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.START, bonus,
 		Vector3(1344.0, START_Y, START_Z + 64.0), Vector3(1728.0, START_Y + 256.0, START_Z + 448.0)))
 	zones.add(zone_box(DotTimerZone.Kind.END, bonus,
-		Vector3(1280.0, START_Y - 1300.0, START_Z - 2456.0), Vector3(1792.0, START_Y - 900.0, START_Z - 1944.0)))
+		Vector3(BONUS_X - BONUS_FINISH_SIZE * 0.5, START_Y - 1300.0, BONUS_FINISH_NEAR_Z - BONUS_FINISH_LENGTH),
+		Vector3(BONUS_X + BONUS_FINISH_SIZE * 0.5, START_Y - 900.0, BONUS_FINISH_NEAR_Z)))
 	zones.add(zone_spawn(bonus, Vector3(1536.0, START_Y + 8.0, START_Z + 300.0), 0.0))
 
 	var transfer := DotTimerTrack.of_bonus(2)
