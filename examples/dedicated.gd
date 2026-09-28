@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 179
+const CHECKS := 180
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -392,6 +392,13 @@ func _test_commands() -> void:
 	_check(_said(_run_command("g2g_style"), "sideways"), "g2g_style lists the styles")
 	_check(_said(_run_command("g2g_top"), "nobody"), "g2g_top answers with no records")
 	_check(_said(_run_command("thirdperson"), "only a player"), "thirdperson needs a player")
+	# `[stage-yaw-1]`: `!s <n>` did not exist, so no stage destination was reachable.
+	var stage_names: Array[String] = []
+	for name in ["g2g_stage", "s", "stage", "rs"]:
+		if server.console.find_command(name) != null and _said(_run_command(name + " 1"), "only a player"):
+			stage_names.append(name)
+	_check(stage_names.size() == 4, "g2g_stage, !s, !stage and !rs are commands, and need a player",
+		str(stage_names))
 
 	var before := game.timers.zones.zones.size()
 	_run_command("g2g_zone stage main 4")

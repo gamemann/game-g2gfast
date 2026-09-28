@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 190
+const CHECKS := 198
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 21
+const SECTIONS := 22
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -64,6 +64,7 @@ func _run() -> void:
 	await _test_zone_files_match()
 	_test_reach()
 	await _test_bhop_run()
+	await _test_stage_command()
 	await _test_needle_bonus()
 	await _test_ridge_bonus()
 	await _test_stages_descent()
@@ -590,8 +591,32 @@ func _test_zone_files_match() -> void:
 		_check(built.route_problems().is_empty(),
 			"%s's every route has a start, a finish, a spawn and a pit" % id,
 			", ".join(built.route_problems()))
+		var facing := _stage_facing_problems(built)
+		_check(facing.is_empty(), "%s's every stage restart faces the way the route goes on" % id,
+			", ".join(facing))
 	await get_tree().process_frame
 	_done()
+
+
+## Stage zones whose `!s` yaw faces away from where the route goes next: the next stage
+## line on the same track, or its finish. `[stage-yaw-1]`: three maps' main routes
+## faced a restarted player back up the course, and nothing asked.
+static func _stage_facing_problems(zones: DotTimerZoneSet) -> PackedStringArray:
+	var out := PackedStringArray()
+	for zone: DotTimerZone in zones.of_kind(DotTimerZone.Kind.STAGE):
+		var next := zones.stage_zone(zone.track, int(zone.number) + 1)
+		if next == null:
+			next = zones.first_of_kind(DotTimerZone.Kind.END, zone.track)
+		if next == null:
+			continue
+		var ahead := next.centre() - zone.destination
+		ahead.y = 0.0
+		var yaw := deg_to_rad(zone.destination_yaw)
+		var facing := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		if facing.dot(ahead.normalized()) <= 0.0:
+			out.append("%s stage %d (yaw %.0f)" % [
+				DotTimerTrack.name_of(zone.track), int(zone.number), zone.destination_yaw])
+	return out
 
 
 ## The hand-written maps: the ones with a script of their own, discovered rather than
@@ -814,6 +839,35 @@ static func _percent(fraction: float) -> String:
 
 
 # --- Runs ------------------------------------------------------------------
+
+## `!s <n>` and `!rs`: the game moves the player the timer names, facing on, and stops
+## the run. `[stage-yaw-1]` found nothing listened to `stage_requested`.
+func _test_stage_command() -> void:
+	_section("a stage restart")
+	var bot: G2GPlayer = game.players[&"bot"]
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var sent := game.request_stage(&"bot", 2)
+	var zone: DotTimerZone = sent.value if sent.ok else null
+	_check(zone != null and bot.global_position.distance_to(zone.destination) < 0.01,
+		"`!s 2` puts the player on stage 2's own spot",
+		str(bot.global_position) if zone == null else "%s vs %s" % [bot.global_position, zone.destination])
+	_check(zone != null and is_equal_approx(bot.controller.state.yaw, zone.destination_yaw),
+		"facing the stage's own yaw", "%.1f" % bot.controller.state.yaw)
+	_check(not bot.timer.run.is_running(), "and no run is going: a stage restart is practice")
+	_check(not game.request_stage(&"bot", 9).ok, "a stage the track does not have is refused")
+
+	var back := game.restart_stage(&"bot")
+	_check(back.ok and bot.global_position.distance_to((back.value as DotTimerZone).destination) < 0.01
+			and int((back.value as DotTimerZone).number) == 1,
+		"`!rs` before any stage line is stage 1")
+
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
 
 func _test_bhop_run() -> void:
 	_section("a bhop run")

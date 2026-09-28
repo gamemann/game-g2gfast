@@ -423,7 +423,10 @@ static func build_zones() -> DotTimerZoneSet:
 			at - Vector3(224.0, 0.0, 224.0),
 			at + Vector3(224.0, 192.0, 224.0),
 			at + Vector3(0.0, 16.0, 0.0),
-			float(block["yaw"]) + 180.0
+			# The block's own heading, which is the way the course leaves it. It was
+			# heading + 180, which faced a restarted player back up the course
+			# (`[stage-yaw-1]`). A `!s` stops the run, so no record moves.
+			float(block["yaw"])
 		))
 
 	# The pit. Everything below the course, which on a map that climbs and drops has to
@@ -485,8 +488,7 @@ static func build_zones() -> DotTimerZoneSet:
 			Vector3(RIDGE_X - half, float(block["y"]), float(block["far"])),
 			Vector3(RIDGE_X + half, float(block["y"]) + 192.0, float(block["near"])),
 			Vector3(RIDGE_X, float(block["y"]) + 16.0, float(block["near"]) - BLOCK_LENGTH * 0.5),
-			# Facing down the route: yaw 0 is -Z here, as the spawn zones use. The main
-			# route's `yaw + 180` faces back up it and is `[stage-yaw-1]`'s, not copied.
+			# Facing down the route: yaw 0 is -Z here, as the spawn zones use.
 			0.0
 		))
 

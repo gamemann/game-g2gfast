@@ -353,8 +353,8 @@ static func build_zones() -> DotTimerZoneSet:
 	# [b]`!s2` and `!s3` put a player where the next gap cannot be crossed from a
 	# standstill, by anybody.[/b] A restart is a chain that begins at run speed, and from
 	# blocks 10 and 14 the gaps ahead need more than even a perfect strafe adds in the
-	# hops available; `!s1` needs 78% of one. `headless_run` prints all three. Not moved,
-	# because they are the same three destinations `[stage-yaw-1]` is waiting on.
+	# hops available; `!s1` needs 78% of one. `headless_run` prints all three. Not moved:
+	# where a stage restart begins is a design call, and `[stage-yaw-1]` only turned them.
 	var stage_blocks := [5, 10, 14]
 	for i in range(stage_blocks.size()):
 		var bz := block_z(stage_blocks[i])
@@ -363,7 +363,10 @@ static func build_zones() -> DotTimerZoneSet:
 			Vector3(-96.0, FLOOR_Y, bz - BLOCK_LENGTH),
 			Vector3(96.0, FLOOR_Y + 128.0, bz),
 			Vector3(0.0, FLOOR_Y + 8.0, bz - BLOCK_LENGTH * 0.5),
-			180.0
+			# Facing down the course, which is yaw 0 (-Z) like the spawn zones. This was
+			# 180, which faced a restarted player back at the start pad (`[stage-yaw-1]`).
+			# A `!s` stops the run, so no record was ever set from here and none moves.
+			0.0
 		))
 
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, main,
@@ -429,10 +432,8 @@ static func build_zones() -> DotTimerZoneSet:
 			Vector3(NEEDLE_X, FLOOR_Y + 8.0, nz - BLOCK_LENGTH * 0.5),
 			# Facing DOWN the needle. Yaw 0 is -Z here — it is what the spawn zones on
 			# this map use and it is the direction `headless_run` drives a bot to make
-			# progress. The main route's three stage lines say 180.0, which faces a
-			# player back up the course they were about to run; that is not changed
-			# here because it is existing content on a track with records against it,
-			# but it is not copied either.
+			# progress. The main route's three stage lines said 180.0 until
+			# `[stage-yaw-1]`, which faced a player back up the course.
 			0.0
 		))
 
@@ -465,7 +466,7 @@ static func build_zones() -> DotTimerZoneSet:
 			Vector3(centre.x + half.x, centre.y + 128.0, centre.z + half.y),
 			centre + Vector3(0.0, 8.0, 0.0),
 			# Facing the way the route LEAVES the corner, which is the way a restarting
-			# player has to go. Not the main route's 180 (`[stage-yaw-1]`).
+			# player has to go.
 			yaw_facing(block["heading"])
 		))
 

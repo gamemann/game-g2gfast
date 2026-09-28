@@ -129,6 +129,7 @@ func _module_load() -> DotResult:
 	add_command("g2g_restart", _cmd_restart, "Back to the start", "").with_chat()
 	add_command("g2g_style", _cmd_style, "List styles, or switch", "").with_chat()
 	add_command("g2g_track", _cmd_track, "main, or bonus <n>", "").with_chat()
+	add_command("g2g_stage", _cmd_stage, "To the start of stage <n>, or of this stage", "").with_chat()
 	add_command("g2g_top", _cmd_top, "Fastest times here", "").with_chat()
 	# **Not `.with_chat()`, and reachable from chat anyway.** Every other command in this
 	# block marks itself; this one carries CHANGEMAP instead and lets the flag answer, which
@@ -227,6 +228,9 @@ func _module_load() -> DotResult:
 	add_command("top", _cmd_top, "Fastest times here (alias)", "").with_chat()
 	add_command("style", _cmd_style, "List styles, or switch (alias)", "").with_chat()
 	add_command("track", _cmd_track, "main, or bonus <n> (alias)", "").with_chat()
+	add_command("s", _cmd_stage, "To the start of stage <n> (alias)", "").with_chat()
+	add_command("stage", _cmd_stage, "To the start of stage <n> (alias)", "").with_chat()
+	add_command("rs", _cmd_stage, "To the start of this stage (alias)", "").with_chat()
 	add_command("g2g_zone", _cmd_zone, "Draw a zone: g2g_zone <kind> [track] [number]", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_mark", _cmd_zone_mark, "Mark a corner where you stand", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_save", _cmd_zone_save, "Write the zones to disk", DotAdminFlags.CHANGEMAP)
@@ -963,6 +967,27 @@ func _cmd_restart(ctx: DotCmdContext) -> void:
 		return
 	game.spawn_player(id)
 	ctx.reply("Back at the start.")
+
+
+## `!s <n>` / `!stage <n>` to a stage's own spot, and `!rs` (or either with no number)
+## back to the start of the stage the player is in. Either stops the run.
+func _cmd_stage(ctx: DotCmdContext) -> void:
+	var id := _caller_id(ctx)
+	if not game.players.has(id):
+		ctx.reply("Only a player can go to a stage.")
+		return
+	var res: DotResult
+	if ctx.args.is_empty():
+		res = game.restart_stage(id)
+	elif not ctx.args[0].is_valid_int():
+		ctx.reply("Usage: !s <stage number>")
+		return
+	else:
+		res = game.request_stage(id, ctx.args[0].to_int())
+	if not res.ok:
+		ctx.reply_error(res)
+		return
+	ctx.reply("Stage %d. The run is stopped." % int((res.value as DotTimerZone).number))
 
 
 func _cmd_style(ctx: DotCmdContext) -> void:

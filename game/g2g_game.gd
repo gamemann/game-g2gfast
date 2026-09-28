@@ -377,6 +377,7 @@ func _build_timers() -> void:
 	timers.record_accepted.connect(_on_record_accepted)
 	timers.record_refused.connect(_on_record_refused)
 	timers.effect_requested.connect(_on_effect_requested)
+	timers.stage_requested.connect(_on_stage_requested)
 	timers.player_finished.connect(_on_player_finished)
 
 
@@ -1139,6 +1140,30 @@ func _on_effect_requested(player_id: StringName, zone: DotTimerZone) -> void:
 			player.teleport(zone.destination, zone.destination_yaw, true)
 		_:
 			pass
+
+
+## `!s <n>` and `!rs` land here: [method DotTimerManager.request_stage] has already
+## stopped the run and handed over the stage zone, and moving the player is the game's
+## half. [b]Nothing listened until 2026-09-28[/b], so every stage destination on every
+## map -- authored, imported, and checked for standability by `headless_imported` -- was
+## a spot no command ever sent anybody to.
+func _on_stage_requested(player_id: StringName, _number: int, zone: DotTimerZone) -> void:
+	var player: G2GPlayer = players.get(player_id)
+	if player == null:
+		return
+	player.teleport(zone.destination, zone.destination_yaw)
+
+
+## Sends a player to stage [param number]'s spot on the track they are on. The run
+## stops: a stage restart is practice, never a time.
+func request_stage(id: StringName, number: int) -> DotResult:
+	return timers.request_stage(id, number)
+
+
+## Sends a player back to the start of the stage they are in (stage 1 before the first
+## line). Shavit's `!rs`.
+func restart_stage(id: StringName) -> DotResult:
+	return timers.restart_stage(id)
 
 
 func _on_player_finished(player_id: StringName, run: DotTimerRun) -> void:

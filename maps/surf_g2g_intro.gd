@@ -331,7 +331,10 @@ static func build_zones() -> DotTimerZoneSet:
 			Vector3(-1200.0, y - 900.0, z - 96.0),
 			Vector3(1200.0, y + 900.0, z + 96.0),
 			Vector3(0.0, y + 192.0, z + 64.0),
-			180.0
+			# Facing down the course, which is yaw 0 (-Z) like the spawn zones. This was
+			# 180, which faced a restarted player back at the start (`[stage-yaw-1]`).
+			# A `!s` stops the run, so no record was ever set from here and none moves.
+			0.0
 		))
 
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, main,
@@ -378,12 +381,8 @@ static func build_zones() -> DotTimerZoneSet:
 		Vector3(FALL_X - 512.0, foot.y, foot.z - 1536.0),
 		Vector3(FALL_X + 512.0, foot.y + 512.0, foot.z)))
 
-	# [b]Yaw 0, and this route says why rather than copying the three above it.[/b] Yaw
-	# 0 is -Z, which is the direction every route on this map runs and what its SPAWN
-	# zones already use; the main track's two stage lines pass 180 and face a restarting
-	# player back up the map. That is `[stage-yaw-1]`, it is live on this map as well as
-	# on `bhop_g2g_intro`, and it is not changed here because those two lines are on a
-	# scored track.
+	# Yaw 0 is -Z, which is the direction every route on this map runs and what its
+	# SPAWN zones already use. `headless_run` asserts every stage line faces the next.
 	for i in FALL_SPLITS:
 		var t := float(i) / float(FALL_SPLITS.size() + 1)
 		var at := fall_point(t)
