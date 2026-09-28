@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 187
+const CHECKS := 188
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 20
+const SECTIONS := 21
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -66,6 +66,7 @@ func _run() -> void:
 	await _test_bhop_run()
 	await _test_needle_bonus()
 	await _test_ridge_bonus()
+	await _test_stages_descent()
 	await _test_hairpin_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
@@ -721,9 +722,12 @@ func reach_sweep(t: DotFpsTunables, tick_rate: int) -> Dictionary:
 				out["refused"].append("%s body %d" % [label, index])
 
 			var widest := 0.0
+			var widest_route: G2GReach.Route = null
 
 			for route: G2GReach.Route in routes:
 				widest = maxf(widest, route.gap)
+				if widest_route == null or route.gap > widest_route.gap:
+					widest_route = route
 
 				if G2GReach.walked(route, t):
 					continue
@@ -737,9 +741,13 @@ func reach_sweep(t: DotFpsTunables, tick_rate: int) -> Dictionary:
 					if route.gap > reach:
 						out["too_far"].append("%s %s is %.0f u against %.0f" % [label, route.name, route.gap, reach])
 
+			# [b]Against the reach from the widest gap's OWN height[/b], which is what the
+			# check above asks. This printed the flat reach whatever the landing, so the
+			# ridge read "widest 192 u against a standing jump's 189" -- a failure on the
+			# page for a gap that is a drop of 48 with 222 to spare, and passing.
 			if int(course.get("kind")) == G2GReach.Kind.RUN:
-				out["lines"].append("  ..    %s: RUN, %d jumps, widest %.0f u against a standing jump's %.0f"
-					% [label, routes.size(), widest, G2GReach.run_reach(0.0, t)])
+				out["lines"].append("  ..    %s: RUN, %d jumps, widest %s" % [
+					label, routes.size(), _reach_text(widest_route, t)])
 				continue
 
 			var needed := G2GReach.strafe_needed(routes, t, tick_rate)
@@ -780,6 +788,21 @@ func reach_sweep(t: DotFpsTunables, tick_rate: int) -> Dictionary:
 		map.free()
 
 	return out
+
+
+## "192 u down 48, inside the 222 a jump from its lip reaches": a RUN gap beside the
+## reach [method reach_sweep] judges it by, which depends on the landing's height.
+static func _reach_text(route: G2GReach.Route, t: DotFpsTunables) -> String:
+	if route == null:
+		return "none"
+	var height := ""
+	if route.rise > 0.5:
+		height = " onto +%.0f" % route.rise
+	elif route.rise < -0.5:
+		height = " down %.0f" % -route.rise
+	var reach := G2GReach.run_reach(route.rise, t)
+	return "%.0f u%s, %s the %.0f a jump from its lip reaches there" % [
+		route.gap, height, "inside" if route.gap <= reach else "PAST", reach]
 
 
 static func _percent(fraction: float) -> String:
@@ -1075,6 +1098,8 @@ func _test_ridge_bonus() -> void:
 	var top := 0.0
 	var deepest := 0.0
 	var highest := -INF
+	var entry := G2GUnits.vector_to_units(bot.global_position)
+	var descent := _DescentLedger.new()
 
 	for _i in range(4000):
 		var c := DotFpsCommand.new()
@@ -1083,9 +1108,12 @@ func _test_ridge_bonus() -> void:
 			DotFpsCommand.BUTTON_JUMP,
 			_ridge_jumps_at(G2GUnits.vector_to_units(bot.global_position).z)
 		)
+		var before := G2GUnits.vector_to_units(bot.global_position)
 		bot.controller.apply_command(c)
 		await get_tree().physics_frame
 		var at := G2GUnits.vector_to_units(bot.global_position)
+		if not reset:
+			descent.add(before.y - at.y, bot.controller.state)
 		top = maxf(top, G2GUnits.to_units(bot.speed()))
 		deepest = minf(deepest, at.z)
 		highest = maxf(highest, at.y)
@@ -1101,6 +1129,11 @@ func _test_ridge_bonus() -> void:
 		top, highest, deepest, resets,
 		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
 	])
+
+	# `[surf-ramp-1]`'s question, asked of this route: where its descent comes from.
+	var pad := BhopStages.ridge_pad()
+	print("  ..    ridge descent: %.0f u covered of a %.0f u route, %s" % [
+		entry.z - deepest, entry.z - pad.z, descent.describe()])
 
 	game.timers.player_staged.disconnect(on_split)
 	game.timers.effect_requested.disconnect(on_effect)
@@ -1120,6 +1153,114 @@ func _test_ridge_bonus() -> void:
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame
 	_done()
+
+## Where every timed route on `bhop_g2g_stages` gets its descent from (`[surf-ramp-1]`).
+##
+## [b]Printed, not asserted, as `surf_g2g_intro`'s was.[/b] A check named after surf
+## is satisfied by a player falling, so the honest detector is the numbers themselves:
+## how far a bot got against how long the route is, and how much of the height it lost
+## while standing on the surface the route is named after, against in the air.
+##
+## The main route is a CHAIN nobody scripted can run (it needs a strafe), so its answer
+## is read off `_course()`; the ridge's is from `_test_ridge_bonus`'s own drive; the
+## surf bonus is driven here. That bonus's slabs are 45°, under the 45.57° a player can
+## stand on (`[stages-slabs-1]`), so the expected answer is "standing on a slope, then
+## falling" -- printed as it is. Whether the slabs become surf is Christian's call and
+## nothing here reshapes a scored route.
+func _test_stages_descent() -> void:
+	_section("where bhop_g2g_stages' descent comes from")
+
+	var course := BhopStages._course()
+	var up := 0.0
+	var down := 0.0
+	var y := BhopStages.FLOOR_Y
+	for block: Dictionary in course:
+		var step := float(block["y"]) - y
+		if step > 0.0:
+			up += step
+		else:
+			down -= step
+		y = float(block["y"])
+	print("  ..    main: not ridden (a CHAIN needs a strafe no scripted bot has); the finish is %.0f u under the start, %.0f u down in stage 4's drops and %.0f u up in stage 3's climb, every unit of it between blocks, in the air" % [
+		BhopStages.FLOOR_Y - y, down, up])
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var surf := DotTimerTrack.of_bonus(1)
+	_check(game.timers.set_player_track(&"bot", surf), "a player can switch to the surf bonus")
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var reset: Array[bool] = [false]
+	var finished: Array[bool] = [false]
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+	var on_finished := func(_run: DotTimerRun) -> void: finished[0] = true
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	# Off the pad's front edge over the west slab rather than down the middle: the two
+	# slabs' low edges are 318 u apart, and a player walking straight off the pad falls
+	# between them into the pit. So sideways first, to 200 u west of the centre line,
+	# then forward along -Z and nothing else.
+	var entry := G2GUnits.vector_to_units(bot.global_position)
+	var deepest := entry.z
+	var descent := _DescentLedger.new()
+	var ticks := 0
+
+	for i in range(2400):
+		var at := G2GUnits.vector_to_units(bot.global_position)
+		var c := DotFpsCommand.new()
+		c.yaw = 0.0
+		c.move = Vector2(-1.0, 0.0) if at.x > BhopStages.BONUS_X - 200.0 and at.y > 900.0 \
+			else Vector2(0.0, 1.0)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+		ticks = i + 1
+		var now := G2GUnits.vector_to_units(bot.global_position)
+		if reset[0] or finished[0]:
+			break
+		descent.add(at.y - now.y, bot.controller.state)
+		deepest = minf(deepest, now.z)
+
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	var finish_z := BhopStages.START_Z - 3072.0
+	print("  ..    surf bonus: %.0f u covered of a %.0f u route in %d ticks, %s; %s" % [
+		entry.z - deepest, entry.z - finish_z, ticks, descent.describe(),
+		"finished" if finished[0] else ("put back by the pit" if reset[0] else "not finished")])
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+
+## Height lost, split by what the player was on when it was lost: a face tilted more
+## than 30° (the named surface on a surf route), level ground, or nothing. Height
+## GAINED is not subtracted from any bucket -- a jump's rise is not descent -- so the
+## three add up to more than start minus finish on a route that climbs.
+class _DescentLedger:
+	var on_slope := 0.0
+	var on_flat := 0.0
+	var in_air := 0.0
+
+	func add(dropped: float, state: DotFpsState) -> void:
+		if dropped <= 0.0:
+			return
+		if not state.is_grounded():
+			in_air += dropped
+		elif state.ground_normal.angle_to(Vector3.UP) > deg_to_rad(30.0):
+			on_slope += dropped
+		else:
+			on_flat += dropped
+
+	func describe() -> String:
+		var total := on_slope + on_flat + in_air
+		return "%.0f u of descent: %.0f standing on a slope, %.0f on level ground, %.0f in the air (%d%%)" % [
+			total, on_slope, on_flat, in_air, int(round(100.0 * in_air / maxf(total, 1.0)))]
+
 
 ## Which hairpin piece a bot at [param at] (x, z units) is over, never going backwards
 ## from [param current]: -1 is the start pad. A piece counts once the bot is inside its
