@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 198
+const CHECKS := 206
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 22
+const SECTIONS := 23
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -67,6 +67,7 @@ func _run() -> void:
 	await _test_stage_command()
 	await _test_needle_bonus()
 	await _test_ridge_bonus()
+	await _test_weave_bonus()
 	await _test_stages_descent()
 	await _test_hairpin_bonus()
 	await _test_surf_run()
@@ -1002,7 +1003,9 @@ func _test_needle_bonus() -> void:
 
 	var splits: Array[int] = []
 	var finished: Array[DotTimerRun] = []
-	var reset := false
+	# An array, not a bool: a lambda captures a local by value, so `reset = true` inside
+	# one never reached this function and "without ever being put back" could not fail.
+	var reset: Array[bool] = [false]
 
 	var on_split := func(id: StringName, number: int, _split: float) -> void:
 		if id == &"bot":
@@ -1010,7 +1013,7 @@ func _test_needle_bonus() -> void:
 
 	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
 		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
-			reset = true
+			reset[0] = true
 
 	game.timers.player_staged.connect(on_split)
 	game.timers.effect_requested.connect(on_effect)
@@ -1047,9 +1050,9 @@ func _test_needle_bonus() -> void:
 		top = maxf(top, G2GUnits.to_units(bot.speed()))
 		deepest = minf(deepest, G2GUnits.vector_to_units(bot.global_position).z)
 
-		if reset:
+		if reset[0]:
 			resets += 1
-			reset = false
+			reset[0] = false
 
 		if bot.timer.run.is_active():
 			started = true
@@ -1116,9 +1119,9 @@ func _test_ridge_bonus() -> void:
 	var bot: G2GPlayer = game.players[&"bot"]
 	var ridge := DotTimerTrack.of_bonus(2)
 	var zones := game.timers.zones
-	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2])
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3])
 		and zones.stage_count(ridge) == 2,
-		"with a second bonus that has two stages",
+		"with a second bonus that has two stages (and a third, the weave)",
 		str(zones.playable_tracks()) if zones else "no zones")
 	_check(game.timers.set_player_track(&"bot", ridge), "a player can switch to the ridge")
 
@@ -1129,7 +1132,9 @@ func _test_ridge_bonus() -> void:
 
 	var splits: Array[int] = []
 	var finished: Array[DotTimerRun] = []
-	var reset := false
+	# An array, not a bool: a lambda captures a local by value, so `reset = true` inside
+	# one never reached this function and "without ever being put back" could not fail.
+	var reset: Array[bool] = [false]
 
 	var on_split := func(id: StringName, number: int, _split: float) -> void:
 		if id == &"bot":
@@ -1137,7 +1142,7 @@ func _test_ridge_bonus() -> void:
 
 	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
 		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
-			reset = true
+			reset[0] = true
 
 	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
 
@@ -1166,14 +1171,14 @@ func _test_ridge_bonus() -> void:
 		bot.controller.apply_command(c)
 		await get_tree().physics_frame
 		var at := G2GUnits.vector_to_units(bot.global_position)
-		if not reset:
+		if not reset[0]:
 			descent.add(before.y - at.y, bot.controller.state)
 		top = maxf(top, G2GUnits.to_units(bot.speed()))
 		deepest = minf(deepest, at.z)
 		highest = maxf(highest, at.y)
-		if reset:
+		if reset[0]:
 			resets += 1
-			reset = false
+			reset[0] = false
 		if bot.timer.run.is_active():
 			started = true
 		if not finished.is_empty():
@@ -1328,6 +1333,161 @@ func _hairpin_piece(blocks: Array, current: int, at: Vector2) -> int:
 	return current
 
 
+## `the weave`, `bhop_g2g_stages` bonus 3: fourteen blocks, each off to the other side of
+## the one before, run end to end by the hairpin's kind of bot.
+##
+## [b]It takes the line, not the zigzag.[/b] It faces a point just inside the inner edge
+## of the block it is jumping for (the edge on the centre line), and jumps in the last
+## twenty units before its line of travel leaves the block it is on.
+## That is the route's whole question. Holding forward along -Z, as the ridge's bot does,
+## lands between the blocks on the first jump. The pace is asserted as well as the
+## finish: covering the route at under 80% of run speed would mean the bot stopped to
+## line jumps up, and a route that only works at a crawl is not a RUN line.
+func _test_weave_bonus() -> void:
+	_section("the weave, run end to end")
+
+	var changed: DotResult = await game.change_map(&"bhop_g2g_stages")
+	_check(changed.ok, "the stages map loads")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var weave := DotTimerTrack.of_bonus(3)
+	var zones := game.timers.zones
+	_check(zones != null and zones.stage_count(weave) == 2,
+		"with a third bonus that has two stages",
+		str(zones.stage_count(weave)) if zones else "no zones")
+	_check(game.timers.set_player_track(&"bot", weave), "a player can switch to the weave")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var blocks: Array = BhopStages.weave_blocks()
+	var pad := BhopStages.weave_pad()
+	# The start pad as piece -1, so the bot has something to leave from.
+	var start_rect := Rect2(BhopStages.WEAVE_X - 128.0, BhopStages.START_Z - BhopStages.RIDGE_PAD_LENGTH * 0.5,
+		256.0, BhopStages.RIDGE_PAD_LENGTH)
+
+	var route_length := 0.0
+	var last := Vector2(BhopStages.WEAVE_X, BhopStages.START_Z - BhopStages.RIDGE_PAD_LENGTH * 0.5)
+	for block: Dictionary in blocks:
+		var middle := Vector2((block["centre"] as Vector3).x, (block["centre"] as Vector3).z)
+		route_length += last.distance_to(middle)
+		last = middle
+	route_length += last.distance_to(Vector2(pad.x, pad.z + 192.0))
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	# An array, not a bool: a lambda captures a local by value, so a bool set inside
+	# one never reaches this function.
+	var reset: Array[bool] = [false]
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	var resets := 0
+	var furthest := -1
+	var piece := -1
+	var covered := 0.0
+	var run_ticks := 0
+	var previous := G2GUnits.vector_to_units(bot.global_position)
+	var goal := 0
+
+	for _i in range(4000):
+		var here := G2GUnits.vector_to_units(bot.global_position)
+		var at := Vector2(here.x, here.z)
+		piece = _hairpin_piece(blocks, piece, at)
+		var rect := start_rect if piece < 0 else _block_rect(blocks[piece])
+		# The line a player takes: past the blocks' INNER corners, the ones on the
+		# centre line, because that is where one block meets the next. So aim 32 units
+		# in from the inner edge of the block it is jumping for, 48 past its near edge,
+		# on the ground and in the air alike; and keep that block as the aim until
+		# landing on it, because passing over its footprint on the way down is not
+		# reaching it.
+		var grounded := bot.controller.state.is_grounded()
+		if grounded and rect.has_point(at):
+			goal = piece + 1
+		var target := Vector2(pad.x, pad.z + 128.0)
+		if goal < blocks.size():
+			var next: Vector3 = blocks[goal]["centre"]
+			var half: Vector2 = (blocks[goal]["extent"] as Vector2) * 0.5
+			var inward := -signf(next.x - BhopStages.WEAVE_X)
+			target = Vector2(next.x + inward * (half.x - 32.0), next.z + half.y - 48.0)
+		var aim := target - at
+		var to_lip := _rect_exit(rect, at, aim.normalized()) if grounded and rect.has_point(at) else -1.0
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.yaw = rad_to_deg(atan2(-aim.x, -aim.y))
+		c.set_button(DotFpsCommand.BUTTON_JUMP, to_lip >= 0.0 and to_lip <= 20.0)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+
+		var now := G2GUnits.vector_to_units(bot.global_position)
+		if bot.timer.run.is_active():
+			covered += Vector2(now.x - previous.x, now.z - previous.z).length()
+			run_ticks += 1
+		previous = now
+		furthest = maxi(furthest, piece)
+		if reset[0]:
+			resets += 1
+			reset[0] = false
+			piece = -1
+			goal = 0
+		if not finished.is_empty():
+			break
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	var run_speed := G2GUnits.to_units(game.tunables.max_speed)
+	var pace := covered / (float(run_ticks) / float(game.tick_rate)) if run_ticks > 0 else 0.0
+	print("  ..    weave: %.0f u covered of a %.0f u route in %d ticks, %.0f u/s against a run of %.0f, block %d of %d, %d resets, %s" % [
+		covered, route_length, run_ticks, pace, run_speed, furthest + 1, blocks.size(), resets,
+		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
+	])
+
+	_check(furthest == blocks.size() - 1, "the bot reaches the last block", "block %d of %d" % [furthest + 1, blocks.size()])
+	_check(splits == [1, 2], "crossing both of its stage lines, in order", str(splits))
+	_check(resets == 0, "without ever being put back", "%d resets" % resets)
+	_check(finished.size() == 1 and finished[0].track == weave,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())])
+	_check(pace >= run_speed * 0.8, "at no less than 80% of run speed: every jump is taken on the move",
+		"%.0f u/s against %.0f" % [pace, run_speed])
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+
+## A block's footprint as a Rect2 in (x, z).
+static func _block_rect(block: Dictionary) -> Rect2:
+	var centre: Vector3 = block["centre"]
+	var extent: Vector2 = block["extent"]
+	return Rect2(Vector2(centre.x, centre.z) - extent * 0.5, extent)
+
+
+## How far from [param at], along the unit [param direction], until it leaves [param rect].
+static func _rect_exit(rect: Rect2, at: Vector2, direction: Vector2) -> float:
+	var best := INF
+	for axis in 2:
+		var d := direction[axis]
+		if absf(d) < 1e-6:
+			continue
+		var bound := rect.end[axis] if d > 0.0 else rect.position[axis]
+		best = minf(best, (bound - at[axis]) / d)
+	return best
+
+
 ## `the hairpin`, `bhop_g2g_intro` bonus 3, run end to end by a bot that cannot strafe:
 ## out, a right turn onto a climb, a right turn at the top, and back down a stair of
 ## drops, through both corner splits into the finish without once being put back.
@@ -1371,7 +1531,9 @@ func _test_hairpin_bonus() -> void:
 
 	var splits: Array[int] = []
 	var finished: Array[DotTimerRun] = []
-	var reset := false
+	# An array, not a bool: a lambda captures a local by value, so `reset = true` inside
+	# one never reached this function and "without ever being put back" could not fail.
+	var reset: Array[bool] = [false]
 
 	var on_split := func(id: StringName, number: int, _split: float) -> void:
 		if id == &"bot":
@@ -1379,7 +1541,7 @@ func _test_hairpin_bonus() -> void:
 
 	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
 		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
-			reset = true
+			reset[0] = true
 
 	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
 
@@ -1429,9 +1591,9 @@ func _test_hairpin_bonus() -> void:
 		top = maxf(top, G2GUnits.to_units(bot.speed()))
 		highest = maxf(highest, now.y)
 		furthest = maxi(furthest, piece)
-		if reset:
+		if reset[0]:
 			resets += 1
-			reset = false
+			reset[0] = false
 			piece = -1
 		if bot.timer.run.is_active():
 			started = true

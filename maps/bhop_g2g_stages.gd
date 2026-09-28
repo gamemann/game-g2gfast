@@ -6,7 +6,8 @@ const G2GReach := preload("../game/g2g_reach.gd")
 ## `bhop_g2g_stages` — five stages, two bonuses, and a different idea in each stage.
 ##
 ## Bonus 1 is a surf descent; bonus 2, `the ridge`, is a staged RUN line — see
-## [constant RIDGE_SECTIONS].
+## [constant RIDGE_SECTIONS]; bonus 3, `the weave`, is a RUN line that never goes
+## straight — see [constant WEAVE_SECTIONS].
 ##
 ## [b]Why this map exists.[/b] `bhop_g2g_intro` is sixteen blocks in a straight line
 ## over a flat plane. It proves the movement and it is not a map: there is one thing to
@@ -89,6 +90,43 @@ const RIDGE_SECTIONS: Array = [
 	{"kind": "descent", "blocks": 5, "rise": -48.0, "first_gap": 128.0, "last_gap": 192.0,
 		"first_width": 128.0, "last_width": 128.0},
 ]
+
+## Bonus 3, `the weave`: every block is off to one side of the one before, so every jump
+## is a diagonal and a player has to AIM each one. The main route's zigzag stage asks
+## it at chaining speed; this asks it alone, at run speed, for the player the ridge was
+## for. East of the surf bonus, whose ramps end near 6,600, and clear of everything else.
+const WEAVE_X := 9216.0
+
+## The weave's three sections. `offset` is how far each block's centre sits from the
+## line, alternating sides; a block reaches `offset - width / 2` past the line toward
+## the other side, so neighbours overlap across the line by `2 * offset - width`
+## (negative) and a runner who follows the blocks' centres swings 2 * offset every block.
+##
+## [b]The route is a zigzag and its line is not.[/b] Each block's inner edge reaches
+## the centre line or just short of it, so the fast way through is nearly straight,
+## clipping the inner corner of every block, and a player who runs the zigzag the
+## blocks draw covers more ground and has to turn on every one. That is the question:
+## see the line. Every gap is a RUN gap (96 to 160 along, 0 to 16 across the line), at
+## least 61 units inside a jump from the lip at 250 u/s (189 flat, 166 onto +24, 222
+## down 48).
+##
+## [b]Measured, not guessed, in three drafts.[/b] With the centres 192 apart and the
+## inner edges 32 either side of the line, a runner had to swing about 75 degrees on a
+## 160-unit block, and the driven bot came down 20 units wide of the second block
+## every time; at 160 apart on 192-unit blocks it reached block 4. Only once the inner
+## edges met the line did a runner that aims at the next block get to the end.
+const WEAVE_SECTIONS: Array = [
+	{"kind": "weave", "blocks": 6, "rise": 0.0, "offset": 64.0,
+		"first_gap": 96.0, "last_gap": 128.0, "first_width": 128.0, "last_width": 128.0},
+	{"kind": "climb", "blocks": 4, "rise": 24.0, "offset": 64.0,
+		"first_gap": 96.0, "last_gap": 104.0, "first_width": 128.0, "last_width": 112.0},
+	{"kind": "descent", "blocks": 4, "rise": -48.0, "offset": 56.0,
+		"first_gap": 128.0, "last_gap": 160.0, "first_width": 112.0, "last_width": 96.0},
+]
+
+## A weave block's length along the run: longer than the main route's 160, because the
+## turn onto the next diagonal is made on it.
+const WEAVE_BLOCK_LENGTH := 192.0
 
 ## The ridge's start pad: its centre is at START_Z, like the main route's.
 const RIDGE_PAD_LENGTH := 512.0
@@ -179,6 +217,7 @@ func _build() -> void:
 
 	_build_bonus()
 	_build_ridge()
+	_build_weave()
 
 
 ## Bonus 2, `the ridge`. See [constant RIDGE_SECTIONS].
@@ -250,6 +289,71 @@ static func ridge_pad() -> Vector3:
 	var blocks := ridge_blocks()
 	var last: Dictionary = blocks[blocks.size() - 1]
 	return Vector3(RIDGE_X, float(last["y"]) - 48.0, float(last["far"]) - 160.0 - 192.0)
+
+
+## Bonus 3, `the weave`. See [constant WEAVE_SECTIONS].
+func _build_weave() -> void:
+	var bodies: Array = [G2GGeometry.box(
+		self, Vector3(WEAVE_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z),
+		Vector3(256.0, BLOCK_THICKNESS, RIDGE_PAD_LENGTH), G2GGeometry.ROLE_START
+	)]
+
+	for block: Dictionary in weave_blocks():
+		var centre: Vector3 = block["centre"]
+		var extent: Vector2 = block["extent"]
+		bodies.append(G2GGeometry.box(
+			self, Vector3(centre.x, centre.y - BLOCK_THICKNESS * 0.5, centre.z),
+			Vector3(extent.x, BLOCK_THICKNESS, extent.y),
+			G2GGeometry.ROLE_END if bool(block["stage_line"]) else G2GGeometry.ROLE_BONUS
+		))
+
+	var pad := weave_pad()
+	bodies.append(G2GGeometry.box(
+		self, Vector3(pad.x, pad.y - BLOCK_THICKNESS * 0.5, pad.z),
+		Vector3(256.0, BLOCK_THICKNESS, 384.0), G2GGeometry.ROLE_END
+	))
+
+	add_course("the weave", DotTimerTrack.of_bonus(3), G2GReach.Kind.RUN, bodies)
+
+
+## Every block of the weave in order: `centre` (its top face's middle), `extent` (X, Z),
+## `stage_line` and `stage`, as [method ridge_blocks]. Static and the only place the
+## weave's arithmetic is done: the geometry, the zones and the suite's bot read it.
+static func weave_blocks() -> Array:
+	var out: Array = []
+	var near := START_Z - RIDGE_PAD_LENGTH * 0.5
+	var y := FLOOR_Y
+	var side := 1.0
+
+	for section_index in range(WEAVE_SECTIONS.size()):
+		var section: Dictionary = WEAVE_SECTIONS[section_index]
+		var blocks := int(section["blocks"])
+
+		for i in range(blocks):
+			var t := float(i) / float(maxi(blocks - 1, 1))
+			near -= lerpf(float(section["first_gap"]), float(section["last_gap"]), t)
+			y += float(section["rise"])
+			var width := lerpf(float(section["first_width"]), float(section["last_width"]), t)
+			out.append({
+				"centre": Vector3(WEAVE_X + side * float(section["offset"]), y,
+					near - WEAVE_BLOCK_LENGTH * 0.5),
+				"extent": Vector2(width, WEAVE_BLOCK_LENGTH),
+				"stage_line": section_index > 0 and i == 0,
+				"stage": section_index,
+			})
+			near -= WEAVE_BLOCK_LENGTH
+			side = -side
+
+	return out
+
+
+## The middle of the weave's finish pad's top face: on the line, one more descent step
+## below the last block and a 160-unit gap past it, 384 long.
+static func weave_pad() -> Vector3:
+	var blocks := weave_blocks()
+	var last: Dictionary = blocks[blocks.size() - 1]
+	var centre: Vector3 = last["centre"]
+	return Vector3(WEAVE_X, centre.y - 48.0, centre.z - WEAVE_BLOCK_LENGTH * 0.5 - 160.0 - 192.0)
 
 
 ## The bonus: a two-ramp surf descent onto a pad.
@@ -496,6 +600,35 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, ridge,
 		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
 		Vector3(16384.0, pad.y - BLOCK_THICKNESS - 256.0, 16384.0)))
+
+	# Bonus 3, the weave: the ridge's shape of zone set, read off `weave_blocks`.
+	var weave := DotTimerTrack.of_bonus(3)
+	var weave_end := weave_pad()
+
+	zones.add(zone_box(DotTimerZone.Kind.START, weave,
+		Vector3(WEAVE_X - 128.0, FLOOR_Y, START_Z - RIDGE_PAD_LENGTH * 0.5),
+		Vector3(WEAVE_X + 128.0, FLOOR_Y + 192.0, START_Z + RIDGE_PAD_LENGTH * 0.5)))
+	zones.add(zone_box(DotTimerZone.Kind.END, weave,
+		Vector3(WEAVE_X - 128.0, weave_end.y, weave_end.z - 192.0),
+		Vector3(WEAVE_X + 128.0, weave_end.y + 192.0, weave_end.z + 128.0)))
+
+	for block: Dictionary in weave_blocks():
+		if not bool(block["stage_line"]):
+			continue
+		var centre: Vector3 = block["centre"]
+		var half: Vector2 = (block["extent"] as Vector2) * 0.5
+		zones.add(zone_stage(
+			weave, int(block["stage"]),
+			Vector3(centre.x - half.x, centre.y, centre.z - half.y),
+			Vector3(centre.x + half.x, centre.y + 192.0, centre.z + half.y),
+			centre + Vector3(0.0, 16.0, 0.0),
+			0.0
+		))
+
+	zones.add(zone_spawn(weave, Vector3(WEAVE_X, FLOOR_Y + 8.0, START_Z + 128.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, weave,
+		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
+		Vector3(16384.0, weave_end.y - BLOCK_THICKNESS - 256.0, 16384.0)))
 
 	return zones
 

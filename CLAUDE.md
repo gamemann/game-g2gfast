@@ -93,7 +93,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
-examples/           headless_run (187), headless_net (157), dedicated (179),
+examples/           headless_run (206), headless_net (157), dedicated (180),
                     headless_imported (35 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -483,7 +483,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 187 checks
+godot --headless --path . res://examples/headless_run.tscn   # 206 checks, 23 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 109 checks
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
@@ -1626,6 +1626,16 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 
 `bhop_g2g_stages` bonus 2 (2026-09-24) is the stages map's practice line: five blocks climbing 24 units each, a crest of four that narrows from 176 to 80 units, and five drops of 48 onto a finish pad 168 units under the start, with a stage split on the first block of the crest and the first block of the descent (drawn in the finish colour, as the main route's are). It sits at x = 3072, between the main course and the surf bonus. Every gap is a **RUN** gap, sized with `G2GReach` and at least 29 units inside it — 128 onto +24 against 166, 160 flat against 189, 192 down 48 against 222 — so it asks for a climb, a line and a drop and never for speed a player has not got. `RIDGE_SECTIONS` and `ridge_blocks()` are the one list: the geometry, the zones and `headless_run`'s bot read it, and the bot jumps in the last twenty units of each block read off it. `_test_ridge_bonus` drives it from the pad through both splits into the finish with no reset: 17.60 s, 0 resets, top 250 u/s. Render: `tools/route_preview.sh bhop_g2g_stages 2`.
 
+## `the weave`, and a route whose line is not its shape
+
+`bhop_g2g_stages` bonus 3 (2026-09-28) is fourteen blocks, each off to the other side of the one before: six level (gaps 96 to 128), four climbing 24 each (96 to 104), four dropping 48 onto blocks narrowing 128 to 96 (128 to 160), then a 160 gap down 48 onto a finish. Stage splits on the first block of the climb and of the descent, drawn in the finish colour. It sits at x = 9216, east of the surf bonus, with its own pad, spawn and pit. `WEAVE_SECTIONS` and `weave_blocks()` are the one list for geometry, zones and bot; blocks are 192 u long (`WEAVE_BLOCK_LENGTH`), not the map's 160, because the turn is made on them.
+
+**The blocks zigzag and the line does not.** Each block's inner edge reaches the centre line, so the fast way through clips every inner corner and is nearly straight, while a runner who follows the blocks' centres swings 128 u every block and has to turn on each. That is the question the route asks: see the line. It took three drafts, measured each time by driving the bot. Centres 192 apart on 160 u blocks put the next landing 37 degrees off the run, and the bot came down 20 u wide of the second block every time. At 160 apart it reached block 4. Only once the inner edges met the line did a runner that aims at the next block reach the end. A bot cannot strafe, so what it proves is that the route flows at run speed, not that it is hard.
+
+`_test_weave_bonus` aims 32 u inside the inner edge of the block it is jumping for, 48 past its near edge, keeps that block as its aim until it lands, and jumps in the last 20 u before its line leaves the block it is on. It drives pad to finish through both splits: 19.12 s, 0 resets, 245 u/s against a run of 250, and the pace is asserted (at least 80%), so a route that only works at a crawl fails. Armed with the first draft's 96 u offsets, the bot reaches block 3 of 14 with 6 resets. The survey reaches all 33,757 standable cells with no slots. Render: `tools/route_preview.sh bhop_g2g_stages 3 out.png 20 30 0`.
+
+**Building it found that three of this file's own route checks could not fail.** The needle's, the ridge's and the hairpin's bots counted resets with `var reset := false` set inside a signal lambda, and a GDScript lambda captures a local by value. So `reset = true` never reached the loop, and "without ever being put back" passed whatever happened. The weave's first draft respawned at tick 548 and the check still said 0. All four use `var reset: Array[bool] = [false]` now. The three existing routes really do run with 0 resets.
+
 ## `the hairpin`, and the first route here a bot has to steer
 
 `bhop_g2g_intro` bonus 3 (2026-09-27) is the one route on this map that turns. From a pad at x = 2304, east of the warm-up, it goes out four level blocks along -Z (gaps 112 to 160), onto a 256-square corner, right along +X up four 24-unit climbs (gaps 96 to 128) onto a second corner 24 higher at 120 u, right again, and back along +Z down four 48-unit drops onto blocks narrowing 160 to 96 (gaps 128 to 192), then a 160 gap down 48 onto a finish at -120 u beside the start. 14 blocks, 15 jumps, about 4,700 u of centre line. The two corners are the stage splits, drawn in the finish colour as the ridge's are, and each split's `!s<n>` faces the way the route LEAVES the corner (yaw -90, then 180: `yaw_facing`), never `[stage-yaw-1]`'s back-up-the-course 180. Every gap is a **RUN** gap at least 29 u inside `G2GReach` (160 flat against 189, 128 onto +24 against 166, 192 down 48 against 222) because a corner spends the speed a chain would be carrying. `HAIRPIN_LEGS` and `hairpin_blocks()` are the one list: geometry, zones and bot.
@@ -1659,6 +1669,7 @@ What `headless_run` prints, all passing:
 | `bhop_g2g_intro` the hairpin | RUN, 15 | 192 down 48 | inside 222 |
 | `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
 | `bhop_g2g_stages` the ridge | RUN, 15 | 192 down 48 | inside 222 |
+| `bhop_g2g_stages` the weave | RUN, 15 | 161 down 48 | inside 222 |
 
 `surf_g2g_intro` declares nothing, and says why in its header: every way from one surface to the next on it is a drop onto something below, and only riding it answers whether the thing below is there.
 
