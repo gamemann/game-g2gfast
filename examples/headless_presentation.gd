@@ -28,6 +28,8 @@ const CHECKS := 109
 
 var _passed := 0
 var _failed := 0
+## Checks a section declined to run, counted so the total still adds up to [constant CHECKS].
+var _skipped := 0
 var _failures := PackedStringArray()
 var _entered := 0
 var _completed := 0
@@ -67,15 +69,15 @@ func _run() -> void:
 		"a section that aborted stops adding checks and the total cannot show it"
 	)
 	print("")
-	print("%d passed, %d failed" % [_passed, _failed])
+	print("%d passed, %d failed, %d skipped" % [_passed, _failed, _skipped])
 	for f in _failures:
 		print("  %s" % f)
 	# The total the section counter cannot be. A runtime error inside a section aborts
 	# that function, and the counter is satisfied because the section had already
 	# announced itself. See docs/testing.md.
-	if _passed + _failed != CHECKS:
+	if _passed + _failed + _skipped != CHECKS:
 		print("ERROR: %d checks ran, %d expected. A section aborted part-way." % [
-			_passed + _failed, CHECKS
+			_passed + _failed + _skipped, CHECKS
 		])
 		get_tree().quit(1)
 		return
@@ -1072,6 +1074,15 @@ func _test_a_map_credits_its_author() -> void:
 	var defs: Array[DotMapDef] = G2GMapCatalogue.scan()
 	var imported := defs.filter(func(m: DotMapDef) -> bool:
 		return FileAccess.file_exists("res://maps/imported/%s/%s.json" % [m.id, m.id]))
+	# [b]A clean checkout has nothing to ask[/b], and CI is one: `maps/imported/` is
+	# gitignored, and an imported map's author lives only in its manifest there. The
+	# zones files in maps/zones/ are tracked but the catalogue does not read authors from
+	# them, so there is no tracked stand-in to assert on. Skip, as headless_imported does,
+	# and count the skips so a section that aborts still shows in the total.
+	if imported.is_empty():
+		_skip(3, "no imported maps on this checkout, so no author to ask (maps/imported/ is gitignored)")
+		_done()
+		return
 	var uncredited := imported.filter(func(m: Variant) -> bool: return G2GMapCatalogue.credit(m as DotMapDef).is_empty())
 	_check(imported.size() > 0, "the catalogue holds imported maps to ask", "%d defs" % defs.size())
 	_check(uncredited.is_empty(), "and every one of them has an author to name",
@@ -1096,6 +1107,11 @@ func _section(title: String) -> void:
 
 func _done() -> void:
 	_completed += 1
+
+
+func _skip(count: int, why: String) -> void:
+	_skipped += count
+	print("  skip  %d check(s): %s" % [count, why])
 
 
 func _check(condition: bool, what: String, detail: String = "") -> bool:
