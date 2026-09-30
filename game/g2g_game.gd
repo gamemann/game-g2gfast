@@ -85,6 +85,10 @@ signal player_removed(player_id: StringName)
 ## only play maps it already has, which is exactly what a server run from source is.
 @export var map_content_service: StringName = &"dot_cloud_client"
 
+## The dot-server game manager to read a loading game's descriptor from, by registry name.
+## See [method _adopt_descriptor_owner]. Nothing under it is normal: a suite, a client.
+@export var game_manager_service: StringName = DotGameManager.SERVICE
+
 ## Content ids already fetched and registered, so a rotation that comes back round does
 ## not ask dot-cloud again. dot-cloud is itself idempotent; this saves the await.
 var _map_content_seen: Dictionary = {}
@@ -244,8 +248,46 @@ func _ready() -> void:
 	set_physics_process(true)
 
 	if config.initial_map != &"":
+		_adopt_descriptor_owner()
 		var started: DotResult = await change_map(config.initial_map)
 		DotLog.result(CHANNEL, "loading the first map", started)
+
+
+## Takes [member G2GConfig.map_content_owner] from the descriptor of the game dot-server is
+## loading this scene for, before the first map is fetched.
+##
+## [b]The first fetch happens before the cvar that names the owner exists.[/b] dot-server
+## instantiates this scene, and this `_ready` starts on the first map, before it applies the
+## descriptor's `cvars:`; `sv_map_content_owner` belongs to this game's module, which a host
+## loads after the scene is up, so it is only applied on the host's second pass. Without
+## this the boot map was fetched from the unowned path (`surf_mesa` instead of
+## `gamemann/surf_mesa`) and only worked while an origin still carried the legacy pack.
+## The descriptor is already known while the scene is being built (it is the manager's
+## pending game), so the one value the boot fetch depends on is read from there. The
+## module's pass later sets the same value, so nothing disagrees afterwards.
+func _adopt_descriptor_owner() -> void:
+	if not authoritative:
+		return
+
+	var manager: Object = DotRegistry.get_service(game_manager_service)
+
+	if manager == null or not manager.has_method("pending"):
+		return
+
+	var descriptor: Variant = manager.call("pending")
+
+	if not (descriptor is Object) or not (descriptor.get("cvars") is Dictionary):
+		return
+
+	var cvars: Dictionary = descriptor.get("cvars")
+
+	if not cvars.has(G2GConfig.MAP_CONTENT_OWNER_CVAR):
+		return
+
+	config.map_content_owner = str(cvars[G2GConfig.MAP_CONTENT_OWNER_CVAR]).strip_edges()
+	DotLog.info(CHANNEL, "the map owner comes from the game's descriptor", {
+		"owner": config.map_content_owner,
+	})
 
 
 ## Stands up the player-facing addons and binds them to this game.

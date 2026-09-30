@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 206
+const CHECKS := 209
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 23
+const SECTIONS := 24
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -58,6 +58,7 @@ func _run() -> void:
 	_test_source_fov()
 	_test_movement_from_config()
 	await _test_boot()
+	await _test_boot_map_owner()
 	_test_avatars()
 	await _test_cameras()
 	await _test_auto_bhop_gate()
@@ -381,6 +382,73 @@ func _test_movement_from_config() -> void:
 
 
 # --- Boot ------------------------------------------------------------------
+
+## Stands in for dot-cloud: records the content id asked for and has nothing.
+class _RecordingCloud extends RefCounted:
+	var asked: Array[String] = []
+
+	func ensure(id: StringName) -> DotResult:
+		asked.append(String(id))
+		return DotResult.fail(DotError.CODE_HTTP, "Not on this origin.")
+
+
+## Stands in for dot-server's game manager while it is loading a game's scene.
+class _LoadingGames extends RefCounted:
+	var loading: DotGameDescriptor = null
+
+	func pending() -> DotGameDescriptor:
+		return loading
+
+
+## The first map a server fetches is fetched from the owner its game descriptor names.
+##
+## dot-server builds the game's scene before it applies the descriptor's `cvars:`, and
+## `sv_map_content_owner` is the module's, registered later still, so the boot fetch used to
+## run with no owner and ask for the unowned pack. Fails with
+## [method G2GGame._adopt_descriptor_owner] taken out.
+func _test_boot_map_owner() -> void:
+	_section("booting: the first map comes from the owner the game descriptor names")
+	const MISSING := &"surf_not_in_this_build"
+	const CLOUD := &"g2g_headless_run_cloud"
+	const GAMES := &"g2g_headless_run_games"
+
+	var cloud := _RecordingCloud.new()
+	var games := _LoadingGames.new()
+	games.loading = DotGameDescriptor.new()
+	games.loading.cvars = {G2GConfig.MAP_CONTENT_OWNER_CVAR: "someone"}
+	DotRegistry.register(CLOUD, cloud)
+	DotRegistry.register(GAMES, games)
+
+	var booted: Array[G2GGame] = []
+
+	for with_descriptor in [true, false]:
+		var config := G2GConfig.new()
+		config.records_directory = ""
+		config.map_seconds = 0.0
+		config.initial_map = MISSING
+		var g := G2GGame.new()
+		g.config = config
+		g.map_content_service = CLOUD
+		g.game_manager_service = GAMES if with_descriptor else &"g2g_headless_run_nothing"
+		add_child(g)
+		booted.append(g)
+		for _i in range(5):
+			await get_tree().process_frame
+
+	_check(cloud.asked.size() == 2 and cloud.asked[0] == "someone/%s" % MISSING,
+		"a server loaded for a descriptor naming an owner asks for <owner>/<map>", str(cloud.asked))
+	_check(booted[0].config.map_content_owner == "someone",
+		"and keeps that owner for every fetch after", booted[0].config.map_content_owner)
+	_check(cloud.asked.size() == 2 and cloud.asked[1] == String(MISSING),
+		"with no game being loaded the owner is the config's own (none)", str(cloud.asked))
+
+	for g in booted:
+		remove_child(g)
+		g.queue_free()
+	DotRegistry.unregister_instance(CLOUD, cloud)
+	DotRegistry.unregister_instance(GAMES, games)
+	_done()
+
 
 func _test_boot() -> void:
 	_section("booting")

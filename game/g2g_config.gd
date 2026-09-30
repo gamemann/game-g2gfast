@@ -161,6 +161,11 @@ const G2GUnits := preload("g2g_units.gd")
 ## owners still serves.
 @export var map_content_owner: String = ""
 
+## The cvar that sets [member map_content_owner]. One spelling for the module that registers
+## it and for [method G2GGame._adopt_descriptor_owner], which reads it out of a game
+## descriptor before the module exists.
+const MAP_CONTENT_OWNER_CVAR := "sv_map_content_owner"
+
 
 ## The content id map [param id] is fetched as. See [member map_content_owner].
 func map_content_id(id: StringName) -> String:
