@@ -1741,3 +1741,7 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 - **Displacement collision catches a sliding hull** (surf_mesa, measured above); not attempted.
 - **No bot runs any imported map start to finish.** `_test_runnable` drives the timer over the zones, not a player over the geometry. What the probes say per map is in the nightly report of 2026-09-27.
 - The published `surf_*` packs on the content origin predate all of this and need republishing (Christian's).
+
+## The imported maps live in g2gfast-maps
+
+`maps/imported/` is a gitignored link to `../g2gfast-maps/maps/` (`tools/g2gmaps link` there makes it). That repository holds the 26 imported maps, `maps.json` with each map's author and source, and `tools/g2gmaps` to publish each as its own `gamemann/<map id>` pack (through this repository's `tools/publish_maps.sh`) and to mirror them back from the CDN. The zone data stays here in `maps/zones/`, because starts, finishes and stages are this game's, not the map's. A published server fetches a map on a map change from `sv_map_content_owner` (`gamemann`, in `game.yml`); they went to the CDN on 2026-09-30.
