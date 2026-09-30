@@ -57,7 +57,7 @@ Thumbs.db
 # author's permission. The generated <id>.gd and <id>.tscn live INSIDE that directory
 # rather than beside the hand-written maps, so this stays one line and never becomes a
 # list of map names to keep in step -- which is this tree's most repeated bug.
-/maps/imported/
+/maps/imported
 /tools/__pycache__/
 screenshots/
 /addons/dot_spectate
