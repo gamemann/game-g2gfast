@@ -93,7 +93,7 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
-examples/           headless_run (206), headless_net (157), dedicated (180),
+examples/           headless_run (218), headless_net (157), dedicated (180),
                     headless_imported (35 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
@@ -483,7 +483,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 206 checks, 23 sections
+godot --headless --path . res://examples/headless_run.tscn   # 218 checks, 25 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 109 checks
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
@@ -1644,6 +1644,14 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 
 `_test_hairpin_bonus` is the first bot here that is not holding forward along -Z. It reads `hairpin_blocks()`, aims through the middle of the edge the block it is over is left by, jumps in the last twenty units before that edge, and once past the lip aims at the next block's exit (aiming at a point just past the lip, it hovered there and fell: a bot that has reached its target stops). It drives pad to finish through both splits: 17.76 s, 0 resets, 4,858 u covered (including the 400 u from the spawn to the pad's edge) against a 4,688 u route. Armed by widening the jump onto the top corner to 200: the reach sweep, the zone-file match and three of the bot's checks fail. Render: `tools/route_preview.sh bhop_g2g_intro 3` (and `... 3 out.png 25 45 40` for the whole U from above).
 
+## `the stutter`, and a route whose blocks are not one length
+
+`bhop_g2g_intro` bonus 4 (2026-09-30) is a straight line at x = -1280, west of the needle, whose rhythm changes: every block is either a 96 u **stone** or a 224 u **runway**. Three flat stones and a runway; four rollers (up 24, down 24, alternating) onto a runway 24 u up; then five drops of 48 onto stone, stone, runway, stone, stone, and a 160 gap down 48 onto a finish 264 u under the start. The two runways that end a section carry the stage splits, in the finish colour. 14 blocks, 15 jumps. `STUTTER_BLOCKS` (gap and rise into each block, its length, width and split) and `stutter_blocks()`, which returns the hairpin's block shape, are the one list for geometry, zones and bot.
+
+**A stone is sized from the reach, not inside it.** A jump from the lip at run speed lands a fixed distance on (`G2GReach` RUN: 189 flat, 166 onto +24, 222 down 48), so each stone's gap puts that landing 40 to 60 u onto 96: 128 before a flat stone, 112 before a step up, 144 before a step down 24, 160 before a drop. On a stone the next jump goes almost as the player lands, and on a runway there is time to get the speed back. Nothing else on this map asks a player to change the period of their hops mid-route.
+
+`_test_stutter_bonus` holds -Z on the route's centre line and jumps in the last 20 u of whatever it is on. It asserts the bot **stood on every one of the 14 blocks** (grounded, over its footprint, at its height), both splits in order, 0 resets, the finish on track 4, and a pace of at least 80% of run speed: 15.68 s, 250 u/s against 250. Armed by shortening one flat stone to 48 u (zones re-exported, so only the bot could see it): the bot overshoots it. The survey reaches all 9,572 standable cells on the map. Render: `tools/route_preview.sh bhop_g2g_intro 4`.
+
 ## The bonus tracks had no respawn zone
 
 A `DotTimerZone` carries a track, and a RESPAWN zone on track 0 catches nobody running track 1. `bhop_g2g_intro`'s main route has had one since the map was written and **neither of its bonuses had one at all** — so a player who missed a bonus platform fell out of the world for ever, with nothing in the log to say so, while the identical mistake on the main route put them back on the pad. Found by driving a bot off the needle: it was still falling 1,370 metres down.
@@ -1669,6 +1677,7 @@ What `headless_run` prints, all passing:
 | `bhop_g2g_intro` warm-up | RUN, 3 | 128 | inside 189 |
 | `bhop_g2g_intro` the needle | RUN, 11 | 96 | inside 189 |
 | `bhop_g2g_intro` the hairpin | RUN, 15 | 192 down 48 | inside 222 |
+| `bhop_g2g_intro` the stutter | RUN, 15 | 176 down 48 | inside 222 |
 | `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
 | `bhop_g2g_stages` the ridge | RUN, 15 | 192 down 48 | inside 222 |
 | `bhop_g2g_stages` the weave | RUN, 15 | 161 down 48 | inside 222 |
@@ -1704,7 +1713,7 @@ What it found, per map (all passing now):
 
 | map | standable cells | reached | regions | course links | declared |
 | --- | --- | --- | --- | --- | --- |
-| `bhop_g2g_intro` | 4,976 | all | 31 | 8 | 0 |
+| `bhop_g2g_intro` | 9,572 | all | 63 | 8 | 0 |
 | `bhop_g2g_stages` | 31,589 | all | 60 | 16 | 0 |
 | `surf_g2g_intro` | 31,373 | 29,715 | 42 | 0 | 4 |
 

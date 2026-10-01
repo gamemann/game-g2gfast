@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 209
+const CHECKS := 218
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 24
+const SECTIONS := 25
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -71,6 +71,7 @@ func _run() -> void:
 	await _test_weave_bonus()
 	await _test_stages_descent()
 	await _test_hairpin_bonus()
+	await _test_stutter_bonus()
 	await _test_surf_run()
 	await _test_bonus_track()
 	await _test_the_fall_line()
@@ -471,7 +472,7 @@ func _test_boot() -> void:
 
 	var zones := game.timers.zones
 	_check(zones != null and zones.problems().is_empty(), "the map's zones are well formed", ", ".join(zones.problems()) if zones else "no zones")
-	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3]), "with a main track and three bonuses", str(zones.playable_tracks()) if zones else "")
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3, 4]), "with a main track and four bonuses", str(zones.playable_tracks()) if zones else "")
 	_check(zones != null and zones.stage_count(0) == 3, "and three stages")
 	# [b]Stages on a track that is not the main one.[/b] `stage_count` takes a track and
 	# every stage zone in this repository was on track 0, so the argument had only ever
@@ -1694,6 +1695,146 @@ func _test_hairpin_bonus() -> void:
 	await get_tree().physics_frame
 	_done()
 
+
+## `the stutter`, `bhop_g2g_intro` bonus 4, run end to end by the hairpin's kind of bot:
+## three flat stones and a runway, four rollers and a runway, and five drops of 48 onto
+## stones with one runway among them, through both runway splits into the finish.
+##
+## [b]What it proves is that every stone CATCHES a lip jump.[/b] The bot jumps in the last
+## twenty units of whatever it is on, so each landing is where a jump from the lip at the
+## speed it has comes down; a stone sized too short throws it off the far end, one sized
+## too long lands it early, and either way the next jump is taken from the wrong place.
+## The height it reaches at the top of the rollers and the pace are asserted as well as
+## the finish, so a route that only works at a crawl fails.
+func _test_stutter_bonus() -> void:
+	_section("the stutter, run end to end")
+
+	var changed: DotResult = await game.change_map(&"bhop_g2g_intro")
+	_check(changed.ok, "the intro map loads")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var stutter := DotTimerTrack.of_bonus(4)
+	var zones := game.timers.zones
+	_check(zones != null and zones.stage_count(stutter) == 2,
+		"with a fourth bonus that has two stages",
+		str(zones.stage_count(stutter)) if zones else "no zones")
+	_check(game.timers.set_player_track(&"bot", stutter), "a player can switch to the stutter")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var blocks: Array = BhopIntro.stutter_blocks()
+	var pad := BhopIntro.stutter_pad()
+	var route_length := BhopIntro.START_Z - (pad.z - BhopIntro.STUTTER_FINISH_LENGTH * 0.5)
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	# An array, not a bool: a lambda captures a local by value.
+	var reset: Array[bool] = [false]
+
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+
+	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
+
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	var resets := 0
+	var stood: Dictionary = {}
+	# How far onto each block the bot came down, from its near edge: what a stone has to
+	# contain. Printed, not asserted; the assertion is that it stood on every block.
+	var landed_at: Array[float] = []
+	var was_grounded := true
+	var furthest := -1
+	var piece := -1
+	var covered := 0.0
+	var run_ticks := 0
+	var previous := G2GUnits.vector_to_units(bot.global_position)
+
+	for _i in range(4000):
+		var here := G2GUnits.vector_to_units(bot.global_position)
+		var at := Vector2(here.x, here.z)
+		piece = _hairpin_piece(blocks, piece, at)
+
+		var exit := Vector2(BhopIntro.STUTTER_X, BhopIntro.START_Z)
+		if piece >= 0:
+			exit = blocks[piece]["exit"]
+		# Straight down -Z, aimed at the route's centre line so a drift is corrected.
+		var to_lip := at.y - exit.y
+		var aim := Vector2(BhopIntro.STUTTER_X, at.y - 256.0) - at
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.yaw = rad_to_deg(atan2(-aim.x, -aim.y))
+		c.set_button(DotFpsCommand.BUTTON_JUMP, to_lip >= 0.0 and to_lip <= 20.0)
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+
+		var now := G2GUnits.vector_to_units(bot.global_position)
+		if bot.timer.run.is_active():
+			covered += Vector2(now.x - previous.x, now.z - previous.z).length()
+			run_ticks += 1
+		previous = now
+		# Stood ON it: grounded, over its footprint, at its height. Passing over a stone
+		# in the air is not landing on it.
+		if piece >= 0 and bot.controller.state.is_grounded() \
+				and absf(now.y - (blocks[piece]["centre"] as Vector3).y) < 4.0:
+			stood[piece] = true
+		var grounded := bot.controller.state.is_grounded()
+		if grounded and not was_grounded and piece >= 0 \
+				and absf(now.y - (blocks[piece]["centre"] as Vector3).y) < 4.0:
+			var near: float = (blocks[piece]["exit"] as Vector2).y + (blocks[piece]["extent"] as Vector2).y
+			landed_at.append(near - now.z)
+		was_grounded = grounded
+		furthest = maxi(furthest, piece)
+		if reset[0]:
+			resets += 1
+			reset[0] = false
+			piece = -1
+		if not finished.is_empty():
+			break
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	var run_speed := G2GUnits.to_units(game.tunables.max_speed)
+	var shallow := INF
+	var deep := -INF
+	for d in landed_at:
+		shallow = minf(shallow, d)
+		deep = maxf(deep, d)
+	print("  ..    stutter: %d landings on its blocks, %.0f to %.0f u past the near edge: %s" % [
+		landed_at.size(), shallow, deep, str(landed_at.map(func(d: float) -> int: return roundi(d)))])
+	var pace := covered / (float(run_ticks) / float(game.tick_rate)) if run_ticks > 0 else 0.0
+	print("  ..    stutter: %.0f u covered of a %.0f u route in %d ticks, %.0f u/s against a run of %.0f, stood on %d, block %d of %d, %d resets, %s" % [
+		covered, route_length, run_ticks, pace, run_speed, stood.size(), furthest + 1, blocks.size(), resets,
+		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
+	])
+
+	_check(furthest == blocks.size() - 1, "the bot reaches the last stone", "block %d of %d" % [furthest + 1, blocks.size()])
+	_check(stood.size() == blocks.size(), "standing on every one of its blocks: each stone catches a lip jump",
+		"stood on %d of %d: %s" % [stood.size(), blocks.size(), str(stood.keys())])
+	_check(splits == [1, 2], "crossing both of its stage lines, in order", str(splits))
+	_check(resets == 0, "without ever being put back", "%d resets" % resets)
+	_check(finished.size() == 1 and finished[0].track == stutter,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())])
+	_check(pace >= run_speed * 0.8, "at no less than 80% of run speed: every stone is left on the move",
+		"%.0f u/s against %.0f" % [pace, run_speed])
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
 
 func _test_surf_run() -> void:
 	_section("a surf run")

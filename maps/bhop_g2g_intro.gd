@@ -3,7 +3,7 @@ extends "../game/g2g_map.gd"
 const G2GGeometry := preload("../game/g2g_geometry.gd")
 const G2GReach := preload("../game/g2g_reach.gd")
 
-## `bhop_g2g_intro` — sixteen blocks with widening gaps, three stages, and three bonuses.
+## `bhop_g2g_intro` — sixteen blocks with widening gaps, three stages, and four bonuses.
 ##
 ## Built in genre units so it reads like a brush list. The gaps grow from 96
 ## to 288 units: at 250 u/s a standing jump clears about 190, so from the tenth block
@@ -41,6 +41,9 @@ const G2GReach := preload("../game/g2g_reach.gd")
 ##
 ## [b]Bonus 3, `the hairpin`, is the one route here that turns.[/b] See
 ## [constant HAIRPIN_LEGS].
+##
+## [b]Bonus 4, `the stutter`, is the one whose blocks are not all one length.[/b] See
+## [constant STUTTER_BLOCKS].
 
 const BLOCKS := 16
 const BLOCK_LENGTH := 160.0
@@ -96,6 +99,55 @@ const HAIRPIN_LEGS: Array = [
 		"corner_gap": 128.0, "corner_rise": 24.0, "turn": Vector2(0.0, 1.0)},
 	{"name": "back", "heading": Vector2(0.0, 1.0), "blocks": 4, "rise": -48.0,
 		"first_gap": 128.0, "last_gap": 192.0, "first_width": 160.0, "last_width": 96.0},
+]
+
+## Bonus 4, `the stutter`: a straight line whose RHYTHM changes, west of the needle.
+##
+## [b]Every other route here is a run of equal blocks[/b], so once a player has the
+## period of the first hop they have the period of the whole route. The stutter's
+## blocks are either 96 units long (a stone: a jump from the lip lands within about 20
+## units of its far edge, so the next jump goes almost as the player lands) or 224 (a
+## runway: time to land, get the speed back and line the next one up), in an order that
+## never repeats long enough to settle into. Three sections: flat stones, rollers (up 24,
+## down 24, up 24 ...), and stones stepping down 48 at a time with one runway among
+## them. The two runways that end a section carry the stage lines and are drawn in the
+## finish colour, as the ridge's and the hairpin's splits are.
+##
+## [b]A stone is sized FROM the reach, not inside it.[/b] A jump taken at the lip at run
+## speed comes down a fixed distance on (G2GReach RUN: 189 flat, 166 onto +24, 222 down
+## 48), and a stone has to contain the landing: its gap is chosen so that distance
+## lands about 40 to 60 units onto a 96-unit block. A 128 gap before a stone at the same
+## height, 112 before a step up, 144 before a step down 24, 160 before a drop of 48. A
+## gap a player could clear easily is the wrong gap here, because it throws them off the
+## far end. Every gap is still at least 30 units inside RUN, declared with add_course.
+##
+## One list, read by the geometry, the zones and `headless_run`'s bot ([method
+## stutter_blocks]): each entry is the gap and rise INTO the block, its length and width,
+## and the stage split drawn on it (0 for none).
+const STUTTER_X := -1280.0
+const STUTTER_PAD_LENGTH := 512.0
+const STUTTER_PAD_WIDTH := 256.0
+const STUTTER_FINISH_GAP := 160.0
+const STUTTER_FINISH_RISE := -48.0
+const STUTTER_FINISH_LENGTH := 384.0
+const STUTTER_BLOCKS: Array = [
+	# 1. the stones: flat, three short and a runway.
+	{"gap": 128.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 128.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 224.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 144.0, "rise": 0.0, "length": 224.0, "width": 192.0, "stage": 1},
+	# 2. the rollers: up 24, down 24, alternating, onto a runway at the top.
+	{"gap": 112.0, "rise": 24.0, "length": 96.0, "width": 160.0, "stage": 0},
+	{"gap": 144.0, "rise": -24.0, "length": 96.0, "width": 160.0, "stage": 0},
+	{"gap": 112.0, "rise": 24.0, "length": 96.0, "width": 160.0, "stage": 0},
+	{"gap": 144.0, "rise": -24.0, "length": 96.0, "width": 160.0, "stage": 0},
+	{"gap": 112.0, "rise": 24.0, "length": 224.0, "width": 192.0, "stage": 2},
+	# 3. the stutter: down 48 a step, stone, stone, runway, stone, stone.
+	{"gap": 160.0, "rise": -48.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 160.0, "rise": -48.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 176.0, "rise": -48.0, "length": 224.0, "width": 160.0, "stage": 0},
+	{"gap": 160.0, "rise": -48.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 160.0, "rise": -48.0, "length": 96.0, "width": 128.0, "stage": 0},
 ]
 
 
@@ -178,6 +230,7 @@ func _build() -> void:
 	add_course("the needle", DotTimerTrack.of_bonus(2), G2GReach.Kind.RUN, needle)
 
 	_build_hairpin()
+	_build_stutter()
 
 
 ## Bonus 3, `the hairpin`. See [constant HAIRPIN_LEGS].
@@ -208,6 +261,65 @@ func _build_hairpin() -> void:
 
 	# RUN, for the reason in [constant HAIRPIN_LEGS]: every corner spends the speed.
 	add_course("the hairpin", DotTimerTrack.of_bonus(3), G2GReach.Kind.RUN, bodies)
+
+
+## Bonus 4, `the stutter`. See [constant STUTTER_BLOCKS].
+func _build_stutter() -> void:
+	var bodies: Array = [G2GGeometry.box(
+		self,
+		Vector3(STUTTER_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z + STUTTER_PAD_LENGTH * 0.5),
+		Vector3(STUTTER_PAD_WIDTH, BLOCK_THICKNESS, STUTTER_PAD_LENGTH), G2GGeometry.COLOUR_START
+	)]
+
+	for block: Dictionary in stutter_blocks():
+		var centre: Vector3 = block["centre"]
+		var extent: Vector2 = block["extent"]
+		bodies.append(G2GGeometry.box(
+			self,
+			Vector3(centre.x, centre.y - BLOCK_THICKNESS * 0.5, centre.z),
+			Vector3(extent.x, BLOCK_THICKNESS, extent.y),
+			G2GGeometry.COLOUR_END if int(block["stage"]) > 0 else G2GGeometry.COLOUR_BONUS
+		))
+
+	var pad := stutter_pad()
+	bodies.append(G2GGeometry.box(
+		self, Vector3(pad.x, pad.y - BLOCK_THICKNESS * 0.5, pad.z),
+		Vector3(STUTTER_PAD_WIDTH, BLOCK_THICKNESS, STUTTER_FINISH_LENGTH), G2GGeometry.COLOUR_END
+	))
+
+	# RUN: every gap is a jump from the lip, and the stones are sized so that is also
+	# the jump that lands on them. See [constant STUTTER_BLOCKS].
+	add_course("the stutter", DotTimerTrack.of_bonus(4), G2GReach.Kind.RUN, bodies)
+
+
+## Every block of the stutter in order, in the hairpin's shape (`centre`, `extent`,
+## `heading`, `exit`, `stage`), so one bot reads both. The only place its arithmetic is
+## done.
+static func stutter_blocks() -> Array:
+	var out: Array = []
+	var heading := Vector2(0.0, -1.0)
+	var at := Vector2(STUTTER_X, START_Z)   # the pad's far edge
+	var y := FLOOR_Y
+
+	for entry: Dictionary in STUTTER_BLOCKS:
+		at += heading * float(entry["gap"])
+		y += float(entry["rise"])
+		var length := float(entry["length"])
+		out.append(_hairpin_block(at + heading * length * 0.5, y,
+			Vector2(float(entry["width"]), length), heading, at + heading * length,
+			int(entry["stage"])))
+		at += heading * length
+
+	return out
+
+
+## The middle of the stutter's finish pad's top face.
+static func stutter_pad() -> Vector3:
+	var blocks := stutter_blocks()
+	var last: Dictionary = blocks[blocks.size() - 1]
+	var exit: Vector2 = last["exit"]
+	return Vector3(STUTTER_X, (last["centre"] as Vector3).y + STUTTER_FINISH_RISE,
+		exit.y - STUTTER_FINISH_GAP - STUTTER_FINISH_LENGTH * 0.5)
 
 
 ## Every block of the hairpin in order, corners included: `centre` is the middle of its
@@ -475,5 +587,38 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, hairpin,
 		Vector3(-4096.0, FLOOR_Y - 1024.0, -4096.0),
 		Vector3(8192.0, pad.y - BLOCK_THICKNESS - 256.0, 4096.0)))
+
+	# Bonus 4, the stutter: a start, a split on each runway that ends a section, a
+	# finish, a spawn and a pit, every one read off `stutter_blocks()`.
+	var stutter := DotTimerTrack.of_bonus(4)
+	var s_pad := stutter_pad()
+	var s_half := STUTTER_PAD_WIDTH * 0.5
+
+	zones.add(zone_box(DotTimerZone.Kind.START, stutter,
+		Vector3(STUTTER_X - s_half, FLOOR_Y, START_Z),
+		Vector3(STUTTER_X + s_half, FLOOR_Y + 128.0, START_Z + STUTTER_PAD_LENGTH)))
+	# The pad's last 320 units: landed, not grazed.
+	zones.add(zone_box(DotTimerZone.Kind.END, stutter,
+		Vector3(s_pad.x - s_half, s_pad.y, s_pad.z - STUTTER_FINISH_LENGTH * 0.5),
+		Vector3(s_pad.x + s_half, s_pad.y + 128.0, s_pad.z + STUTTER_FINISH_LENGTH * 0.5 - 64.0)))
+
+	for block: Dictionary in stutter_blocks():
+		if int(block["stage"]) == 0:
+			continue
+		var centre: Vector3 = block["centre"]
+		var half: Vector2 = (block["extent"] as Vector2) * 0.5
+		zones.add(zone_stage(
+			stutter, int(block["stage"]),
+			Vector3(centre.x - half.x, centre.y, centre.z - half.y),
+			Vector3(centre.x + half.x, centre.y + 128.0, centre.z + half.y),
+			centre + Vector3(0.0, 8.0, 0.0),
+			0.0   # down the route, -Z, as every straight route here faces
+		))
+
+	zones.add(zone_spawn(stutter,
+		Vector3(STUTTER_X, FLOOR_Y + 8.0, START_Z + STUTTER_PAD_LENGTH - 112.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, stutter,
+		Vector3(-4096.0, FLOOR_Y - 1024.0, s_pad.z - 4096.0),
+		Vector3(4096.0, s_pad.y - BLOCK_THICKNESS - 256.0, START_Z + 4096.0)))
 
 	return zones
