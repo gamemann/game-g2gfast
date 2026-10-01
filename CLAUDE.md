@@ -93,8 +93,8 @@ textures/prototype/ the installed prototype set: one PNG per G2GTextures.Role, C
 scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
-examples/           headless_run (218), headless_net (157), dedicated (180),
-                    headless_imported (35 per map, plus one per track and stage),
+examples/           headless_run (219), headless_net (157), dedicated (180),
+                    headless_imported (36 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -488,7 +488,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 109 check
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 35 per map, +1 per stage: 1069 over the 26
+godot --headless --path . res://examples/headless_imported.tscn  # 36 per map, +1 per stage: 1095 over the 26
 godot --headless --path . res://examples/headless_maps.tscn      # 51 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1745,12 +1745,12 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 
 **Still open, in order of what it would buy:**
 
-- **The sky is white where a map's ambient is the default `255 255 255`** (surf_beginner2, bhop_aztec, bhop_mario_fxd, bhop_evolve): the procedural sky takes its top colour from the ambient. A table from stock sky names to colours would fix it; not done.
-- **Textures have no mipmaps** (`mipmaps/generate=false` in every generated `.import`), so a textured floor shimmers at distance in motion. Writing the `.import` with mipmaps on at import time would fix it; not measured.
+- ~~**The sky is white where a map's ambient is the default `255 255 255`**~~ **Fixed 2026-10-01**, in the game rather than the importer so the packs already on the CDN get it without a republish: `G2GLighting.white_sky_replacement` sees an ambient of exactly white (the map editor's untouched default, so not a statement about the sky) and recolours only the procedural sky's top (and its mirrored bottom) from `SKY_TOPS`, a table by sky name -- stock Source skies by eye, custom ones from another imported map's own `_ambient` for the same name (`space_13` from bhop_supernova, `mpa52` from bhop_lego2, deepened) -- falling back to `CLEAR_SKY`. The environment's ambient light is left as the map says. surf_beginner2 (`sky47`), bhop_aztec (`sky_day01_01`), bhop_mario_fxd (`mpa52`), bhop_evolve (`space_13`). `headless_imported`: *its sky is not a blank white dome* (armed: fails on surf_beginner2 with the call removed). Frames: `~/stack/nightly/archive/screenshots/2026-10-01/sky_sheet_{BEFORE,AFTER}.png` and `sky_<map>_<n>_{BEFORE,AFTER}.png`. bhop_eazy's sky (`militia_hdr`, ambient 242/227/191) is cream rather than white and is left as the mapper set it.
+- **Textures have no mipmaps** (`mipmaps/generate=false` in every `.import` Godot wrote: it only turns them on itself when it sees a texture in a 3D material, and these are bound to shader parameters from a script). **Importer fixed 2026-10-01**: `ask_for_mipmaps` in `tools/bsp_import.py` writes each texture's `.png.import` with `mipmaps/generate=true` (keeping its other params and uid, dropping `[remap]` dest and `[deps]` so the next `--import` rebuilds). **The 26 maps in g2gfast-maps were flipped the same day** (all 967 surface textures' `.png.import`, lightmaps left without, since they are sampled at their own resolution); `headless_imported` still passes 1095 of 1095 against them, and a loaded texture reports `has_mipmaps()`. **The packs on the content origin predate it and need republishing** (`[g2g-maps-mipmaps]`, Christian's). Checked in a scratch copy of the project with bhop_eazy flipped: Godot keeps `generate=true` across `--import` and distant brick loses its moire (edge energy in the far-wall crop 12.5 -> 10.4). Frames: `mip_bhop_eazy_<n>_{BEFORE,AFTER}.png`, `mip_bhop_eazy_distance_crops_BEFORE-AFTER.png` in the same directory.
 - **Static props use the stock texture fallback of a flat 0.5 grey** when the model shipped and its material did not; they have no reflectivity to be tinted by.
 - **Doors do not move** and brush-entity `angles` are not applied (none of the 26 has any).
 - **Displacement collision catches a sliding hull** (surf_mesa, measured above); not attempted.
-- **No bot runs any imported map start to finish.** `_test_runnable` drives the timer over the zones, not a player over the geometry. What the probes say per map is in the nightly report of 2026-09-27.
+- **No bot runs any imported map start to finish.** `_test_runnable` drives the timer over the zones, not a player over the geometry. What the probes say per map is in the nightly report of 2026-09-27. `tools/stage_ride.tscn -- <map> 0 <seconds>` (2026-10-01) rides the whole run from the main spawn with the finish as the only goal, heading straight for the finish off a ramp; tried on eight maps for 120 s and it finishes none. bhop_eazy, bhop_arcane_v2 and bhop_pit pin it against the first wall (the line is not straight), bhop_fur, bhop_grove, bhop_badges and surf_beginner2 drop it into the first pit within 4 s. A start-to-finish bot needs the route as data (waypoints per map, or a recorded run to follow), not a heading.
 - The published `surf_*` packs on the content origin predate all of this and need republishing (Christian's).
 
 ## The imported maps live in g2gfast-maps

@@ -261,9 +261,50 @@ def extract_textures(pak, materials, tex_dir):
             continue
         opaque = not translucent and vtf.is_opaque(px)
         vtf.write_png(os.path.join(tex_dir, name), w, h, px, opaque=opaque)
+        ask_for_mipmaps(os.path.join(tex_dir, name))
         written[base] = name
         out[mat] = (name, translucent and not opaque)
     return out
+
+
+def ask_for_mipmaps(png_path):
+    """Makes Godot import [param png_path] with mipmaps, by writing its `.import` first.
+
+    [b]Every texture the importer wrote was imported without mipmaps[/b] (`g2g-maps-1`):
+    Godot writes a new `.png.import` with `mipmaps/generate=false`, and it would only turn
+    them on itself on noticing the texture in a 3D material, which a texture assigned to a
+    shader parameter from a script never is. The shaders sample with
+    `filter_linear_mipmap_anisotropic` and had one level to sample, so a textured floor
+    shimmered at distance. An existing `.import` keeps everything Godot wrote in it except
+    that one line, and loses its `[remap]` and `[deps]` so the next `--import` rebuilds the
+    texture rather than trusting the cached one; a new one is the two lines Godot needs.
+    Idempotent: a file already asking for mipmaps is left alone.
+    """
+    imp = png_path + ".import"
+    params, uid = {}, None
+    if os.path.exists(imp):
+        with open(imp, encoding="utf-8") as f:
+            text = f.read()
+        if "mipmaps/generate=true" in text:
+            return
+        section = None
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("[") and line.endswith("]"):
+                section = line[1:-1]
+            elif section == "remap" and line.startswith("uid="):
+                uid = line
+            elif section == "params" and "=" in line:
+                k, v = line.split("=", 1)
+                params[k] = v
+    params["mipmaps/generate"] = "true"
+    with open(imp, "w", encoding="utf-8") as f:
+        f.write('[remap]\n\nimporter="texture"\ntype="CompressedTexture2D"\n')
+        if uid:
+            f.write(uid + "\n")
+        f.write("\n[params]\n\n")
+        for k, v in params.items():
+            f.write("%s=%s\n" % (k, v))
 
 
 # --------------------------------------------------------------- lightmap ----

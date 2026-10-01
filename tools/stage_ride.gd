@@ -18,7 +18,10 @@ const G2GUnits := preload("../game/g2g_units.gd")
 ##     godot --headless --path . tools/stage_ride.tscn -- surf_summit 3
 ##     godot --headless --path . tools/stage_ride.tscn -- surf_summit 3 20
 ##     godot --headless --path . tools/stage_ride.tscn -- surf_summit 3 20 2448 -200 0 90
+##     godot --headless --path . tools/stage_ride.tscn -- bhop_eazy 0 120   # the whole run
 ##
+## Stage 0 is the whole run, from the main spawn to the finish, on a map with or without
+## stages; off a ramp the bot then heads straight for the finish.
 ## The third argument is seconds (default 30). Four more are a candidate destination in
 ## the manifest's units (Godot axes: x, up, z) and a yaw, which replaces the stage's own
 ## for this ride only -- so a new destination can be tried before it is written into a
@@ -74,8 +77,11 @@ func _run() -> void:
 
 	var track := DotTimerTrack.MAIN
 	var total := zones.stage_count(track)
-	var from: DotTimerZone = zones.stage_zone(track, number)
-	if from == null:
+	# Stage 0 is the whole run: from the main spawn, with the finish as the only goal, so
+	# the bot has to cross every stage line and every door on the way (`g2g-maps-1`).
+	var whole := number == 0
+	var from: DotTimerZone = null if whole else zones.stage_zone(track, number)
+	if from == null and not whole:
 		print("[ride] %s has no stage %d on main (1..%d)" % [id, number, total])
 		get_tree().quit(1)
 		return
@@ -83,8 +89,9 @@ func _run() -> void:
 	# The stage zone's own destination and yaw: what `DotTimerManager.request_stage`
 	# hands to whoever moves the player. Moved here directly, because nothing in this
 	# game listens to `stage_requested` (see the report of 2026-09-27).
-	var arrival := from.destination
-	var arrival_yaw := from.destination_yaw
+	var map := game.current_map_node()
+	var arrival: Vector3 = map.spawn_for(track) if whole else from.destination
+	var arrival_yaw: float = map.spawn_yaw_for(track) if whole else from.destination_yaw
 	if override:
 		arrival = G2GUnits.vector_to_metres(
 			Vector3(float(args[3]), float(args[4]), float(args[5])))
@@ -99,13 +106,21 @@ func _run() -> void:
 	# What counts as getting somewhere: the next stage's line, or the finish.
 	var goals: Array = []
 	for n in range(number + 1, total + 1):
-		goals.append(["stage %d" % n, zones.stage_zone(track, n)])
+		if not whole:
+			goals.append(["stage %d" % n, zones.stage_zone(track, n)])
 	for zone: DotTimerZone in zones.of_kind(DotTimerZone.Kind.END):
 		if zone.track == track:
 			goals.append(["the finish", zone])
 
 	var events: Array[String] = []
 	var put_back: Array[bool] = [false]
+	var finish: Vector3 = arrival
+	for goal: Array in goals:
+		if goal[0] == "the finish":
+			finish = (goal[1] as DotTimerZone).centre()
+	# Off a ramp the whole-run bot heads for the finish rather than along its own track:
+	# a bhop corridor's line is the straight one, and a door moves it closer.
+	var aim_at_finish := whole and finish != arrival
 	var on_effect := func(pid: StringName, zone: DotTimerZone) -> void:
 		if pid != &"bot":
 			return
@@ -156,6 +171,9 @@ func _run() -> void:
 			c.move = Vector2(signf(right.dot(inward)), 0.0)
 			surfed += 1
 		else:
+			if aim_at_finish:
+				var to := finish - state.position
+				heading = rad_to_deg(atan2(-to.x, -to.z))
 			c.yaw = heading
 			c.move = Vector2(0.0, 1.0)
 			# A jump from a standstill creeps at the air cap for ever (headless_run's

@@ -102,7 +102,7 @@ const OWN_TEXTURES := {
 }
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 35
+const CHECKS_PER_MAP := 36
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -382,6 +382,20 @@ func _test_lighting() -> void:
 		"and the textures its pakfile carried are drawn",
 		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"
 			% [share * 100.0, floor_share * 100.0, slashed])
+
+	# [b]No sky is a blank white dome.[/b] The procedural sky's top is the map's `_ambient`,
+	# and four maps never set theirs and carry the editor's default 255 255 255 (surf_beginner2,
+	# bhop_aztec, bhop_mario_fxd, bhop_evolve); G2GLighting looks those up by sky name.
+	# Armed by taking that out: it fires on exactly those four.
+	var top := Color(0, 0, 0)
+	var world := node.get_node_or_null("Lighting") as WorldEnvironment
+	if world != null and world.environment != null and world.environment.sky != null:
+		var sky_mat := world.environment.sky.sky_material as ProceduralSkyMaterial
+		if sky_mat != null:
+			top = sky_mat.sky_top_color
+	_check(minf(top.r, minf(top.g, top.b)) < 0.99,
+		"and its sky is not a blank white dome", "sky top %s, sky name '%s'"
+			% [top, node.manifest.get("lighting", {}).get("sky_name", "")])
 	_done()
 
 

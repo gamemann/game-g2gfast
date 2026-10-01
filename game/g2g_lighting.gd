@@ -14,9 +14,97 @@ extends RefCounted
 
 ## Applies the lighting a manifest carries and returns the sun.
 static func apply(parent: Node3D, lighting: Dictionary) -> DirectionalLight3D:
-	return DotLightRig.apply(
+	var sun := DotLightRig.apply(
 		parent, DotLightDocument.from_dictionary(lighting), profile()
 	)
+	_recolour_white_sky(parent, lighting)
+	return sun
+
+
+## A clear day's zenith, for a sky this table does not know.
+const CLEAR_SKY := Color(0.36, 0.55, 0.82)
+
+## The colour of the top of a sky, by the name a map gives it, for a map whose ambient
+## cannot say. Lower case, without Source's `_hdr` suffix.
+##
+## Stock Source skies are approximate zeniths of those skies, picked by eye, not measured
+## (the textures are not in any pakfile here); the custom ones are the
+## mapper's own `_ambient` on another imported map that names the same sky, which is the
+## best evidence there is of what that sky looks like.
+const SKY_TOPS := {
+	# The stock skies the format ships with.
+	"sky_day01_01": Color(0.37, 0.56, 0.82),
+	"sky_day01_04": Color(0.40, 0.58, 0.80),
+	"sky_day01_05": Color(0.42, 0.60, 0.82),
+	"sky_day01_06": Color(0.45, 0.55, 0.70),
+	"sky_day01_07": Color(0.40, 0.56, 0.78),
+	"sky_day01_08": Color(0.38, 0.55, 0.80),
+	"sky_day01_09": Color(0.42, 0.57, 0.78),
+	"sky_day02_01": Color(0.52, 0.56, 0.62),
+	"sky_dust": Color(0.55, 0.62, 0.72),
+	"sky_borealis01": Color(0.12, 0.18, 0.30),
+	"sky_wasteland02": Color(0.55, 0.60, 0.62),
+	"militia": Color(0.62, 0.68, 0.76),
+	"italy": Color(0.40, 0.58, 0.84),
+	"office": Color(0.46, 0.52, 0.60),
+	"assault": Color(0.50, 0.58, 0.68),
+	"tides": Color(0.42, 0.62, 0.86),
+	"cx": Color(0.40, 0.56, 0.80),
+	# Custom skies: the ambient another imported map set for the same name.
+	"mpa52": Color(0.53, 0.73, 0.93),  # bhop_lego2's 0.85/0.94/0.98, deepened: near white again
+	"space_13": Color(0.46, 0.42, 0.76),  # bhop_supernova
+	"mpa104": Color(0.49, 0.62, 0.80),  # surf_mesa, surf_greensway, bhop_tesquo_v2
+	"hav": Color(0.56, 0.69, 0.84),  # bhop_arcane_v2, bhop_grove
+}
+
+
+## The sky-top colour a map should have instead of its ambient, or transparent when its
+## ambient is usable.
+##
+## [b]Four maps had a white sky.[/b] dot-lighting takes the top of the procedural sky from
+## the map's `_ambient`, which in Source is the colour the sky lit the map with. A mapper who
+## never set it compiles with the editor's default `255 255 255`, and surf_beginner2, bhop_aztec,
+## bhop_mario_fxd and bhop_evolve are drawn under a blank white dome. That white is not a
+## statement about the sky, so here the sky is looked up by its name instead (the name is
+## in the file; the texture set is another game's and is not). Only the sky changes: the
+## rest of the environment keeps the map's ambient as it stands.
+static func white_sky_replacement(lighting: Dictionary) -> Color:
+	var sun: Dictionary = lighting.get("sun", {}) if lighting.get("sun") is Dictionary else {}
+	var ambient: Variant = sun.get("ambient_colour", null)
+
+	if not (ambient is Array) or (ambient as Array).size() < 3:
+		return Color(0, 0, 0, 0)
+
+	for c: Variant in (ambient as Array).slice(0, 3):
+		if float(c) < 0.99:
+			return Color(0, 0, 0, 0)
+
+	var name := str(lighting.get("sky_name", "")).to_lower().trim_suffix("_hdr")
+	return SKY_TOPS.get(name, CLEAR_SKY)
+
+
+static func _recolour_white_sky(parent: Node3D, lighting: Dictionary) -> void:
+	var top := white_sky_replacement(lighting)
+
+	if top.a == 0.0:
+		return
+
+	for child in parent.get_children():
+		var world := child as WorldEnvironment
+
+		if world == null or world.environment == null or world.environment.sky == null:
+			continue
+
+		var mat := world.environment.sky.sky_material as ProceduralSkyMaterial
+
+		if mat == null:
+			continue
+
+		# The lower half mirrors the upper on this game's maps (see [method profile]).
+		var mirrored := mat.ground_bottom_color == mat.sky_top_color
+		mat.sky_top_color = top
+		if mirrored:
+			mat.ground_bottom_color = top
 
 
 ## What this machine draws.
