@@ -271,12 +271,12 @@ func _adopt_descriptor_owner() -> void:
 
 	var manager: Object = DotRegistry.get_service(game_manager_service)
 
-	if manager == null or not manager.has_method("pending"):
+	if manager == null:
 		return
 
-	var descriptor: Variant = manager.call("pending")
+	var descriptor: Object = _descriptor_for_this_scene(manager)
 
-	if not (descriptor is Object) or not (descriptor.get("cvars") is Dictionary):
+	if descriptor == null:
 		return
 
 	var cvars: Dictionary = descriptor.get("cvars")
@@ -288,6 +288,35 @@ func _adopt_descriptor_owner() -> void:
 	DotLog.info(CHANNEL, "the map owner comes from the game's descriptor", {
 		"owner": config.map_content_owner,
 	})
+
+
+## The descriptor this scene is being built for: the manager's pending game, or, when
+## dot-server is putting the [i]previous[/i] game back because the pending one's scene was
+## missing, its current one. In that restore the pending descriptor is the game that
+## failed, so reading it would boot the restored game with another game's owner (or none).
+## A descriptor is this scene's when its scene path is ours; a path either side cannot
+## compare (a uid, a scene built with no file) is taken as ours.
+func _descriptor_for_this_scene(manager: Object) -> Object:
+	for method in [&"pending", &"current"]:
+		if not manager.has_method(method):
+			continue
+
+		var descriptor: Variant = manager.call(method)
+
+		if not (descriptor is Object) or not (descriptor.get("cvars") is Dictionary):
+			continue
+
+		var theirs := ""
+		if descriptor.has_method("resolve_scene_path"):
+			theirs = str(descriptor.call("resolve_scene_path"))
+
+		if theirs.begins_with("res://") and scene_file_path.begins_with("res://") \
+				and theirs != scene_file_path:
+			continue
+
+		return descriptor
+
+	return null
 
 
 ## Stands up the player-facing addons and binds them to this game.

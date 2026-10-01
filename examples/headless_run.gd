@@ -26,7 +26,7 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 218
+const CHECKS := 219
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -396,9 +396,13 @@ class _RecordingCloud extends RefCounted:
 ## Stands in for dot-server's game manager while it is loading a game's scene.
 class _LoadingGames extends RefCounted:
 	var loading: DotGameDescriptor = null
+	var running: DotGameDescriptor = null
 
 	func pending() -> DotGameDescriptor:
 		return loading
+
+	func current() -> DotGameDescriptor:
+		return running
 
 
 ## The first map a server fetches is fetched from the owner its game descriptor names.
@@ -422,7 +426,20 @@ func _test_boot_map_owner() -> void:
 
 	var booted: Array[G2GGame] = []
 
-	for with_descriptor in [true, false]:
+	# Third: dot-server putting the previous game back after the pending one's scene was
+	# missing. pending() is the game that failed; current() is the one being restored.
+	var failed := DotGameDescriptor.new()
+	failed.scene = "res://not_this_game/missing.tscn"
+	failed.cvars = {G2GConfig.MAP_CONTENT_OWNER_CVAR: "the_failed_game"}
+	var restored := DotGameDescriptor.new()
+	restored.scene = "res://g2g_restored_by_headless_run.tscn"
+	restored.cvars = {G2GConfig.MAP_CONTENT_OWNER_CVAR: "restored"}
+
+	for case in ["descriptor", "none", "restore"]:
+		var with_descriptor: bool = case != "none"
+		if case == "restore":
+			games.loading = failed
+			games.running = restored
 		var config := G2GConfig.new()
 		config.records_directory = ""
 		config.map_seconds = 0.0
@@ -431,17 +448,22 @@ func _test_boot_map_owner() -> void:
 		g.config = config
 		g.map_content_service = CLOUD
 		g.game_manager_service = GAMES if with_descriptor else &"g2g_headless_run_nothing"
+		if case == "restore":
+			g.scene_file_path = restored.scene
 		add_child(g)
 		booted.append(g)
 		for _i in range(5):
 			await get_tree().process_frame
 
-	_check(cloud.asked.size() == 2 and cloud.asked[0] == "someone/%s" % MISSING,
+	_check(cloud.asked.size() == 3 and cloud.asked[0] == "someone/%s" % MISSING,
 		"a server loaded for a descriptor naming an owner asks for <owner>/<map>", str(cloud.asked))
 	_check(booted[0].config.map_content_owner == "someone",
 		"and keeps that owner for every fetch after", booted[0].config.map_content_owner)
-	_check(cloud.asked.size() == 2 and cloud.asked[1] == String(MISSING),
+	_check(cloud.asked.size() == 3 and cloud.asked[1] == String(MISSING),
 		"with no game being loaded the owner is the config's own (none)", str(cloud.asked))
+	_check(cloud.asked.size() == 3 and cloud.asked[2] == "restored/%s" % MISSING,
+		"a previous game put back after a failed change takes its own owner, not the failed game's",
+		str(cloud.asked))
 
 	for g in booted:
 		remove_child(g)
