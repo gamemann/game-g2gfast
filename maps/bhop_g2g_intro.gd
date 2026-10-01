@@ -134,7 +134,7 @@ const STUTTER_BLOCKS: Array = [
 	# 1. the stones: flat, three short and a runway.
 	{"gap": 128.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
 	{"gap": 128.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
-	{"gap": 224.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
+	{"gap": 128.0, "rise": 0.0, "length": 96.0, "width": 128.0, "stage": 0},
 	{"gap": 144.0, "rise": 0.0, "length": 224.0, "width": 192.0, "stage": 1},
 	# 2. the rollers: up 24, down 24, alternating, onto a runway at the top.
 	{"gap": 112.0, "rise": 24.0, "length": 96.0, "width": 160.0, "stage": 0},
