@@ -1562,7 +1562,7 @@ func _test_weave_bonus() -> void:
 
 
 ## `the bend`, `bhop_g2g_stages` bonus 4: ten blocks round a 640-unit left-hand arc,
-## each 22.5 degrees on from the last, climbing then dropping onto a finish that faces
+## each 22.5 degrees on from the last (30 on the drops), climbing then dropping onto a finish that faces
 ## nearly back the way the run began.
 ##
 ## [b]It turns on every jump.[/b] It faces the middle of the block it is jumping for,
