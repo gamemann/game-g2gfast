@@ -102,7 +102,7 @@ const OWN_TEXTURES := {
 }
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 36
+const CHECKS_PER_MAP := 38
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -195,7 +195,12 @@ func _imported_ids() -> Array[StringName]:
 	var dir := DirAccess.open("res://maps/imported")
 	if dir == null:
 		return out
+	# `-- <id> [<id>...]` checks only those, for arming a check on the map it is about
+	# without the other twenty-five minutes. The full suite is still the one that counts.
+	var only := OS.get_cmdline_user_args()
 	for id in dir.get_directories():
+		if not only.is_empty() and not only.has(id):
+			continue
 		if FileAccess.file_exists("res://maps/imported/%s/%s.json" % [id, id]):
 			out.append(StringName(id))
 	out.sort()
@@ -292,6 +297,31 @@ func _test_geometry() -> void:
 	_check(sky_node != null if wants_sky else sky_node == null,
 		"and its 3D skybox is drawn as a backdrop exactly when it has one to draw",
 		"skybox %s, Sky node %s" % [sky, sky_node != null])
+
+	# [b]And a 3D skybox has something in it (2026-10-02).[/b] bhop_pandora2_fix and
+	# bhop_supernova build theirs from `prop_dynamic`s alone, and a static-props-only
+	# importer found the room and drew nothing in it: faces 0, props 0, an empty sky.
+	var sky_things := 0
+	if sky is Dictionary:
+		sky_things = int((sky as Dictionary).get("faces", 0)) + int((sky as Dictionary).get("props", 0))
+	_check(not (sky is Dictionary and bool((sky as Dictionary).get("drawn", true))) or sky_things > 0,
+		"and a 3D skybox it draws has faces or props in it", str(sky))
+
+	# [b]And it is in front of the camera's far plane (4000 m).[/b] Drawn at the sky
+	# camera's own 512, pandora's nearest asteroid was 5 km out and its islands past 20 km:
+	# imported and invisible. The importer measures where the nearest and farthest of the
+	# sky land (`reach_units`); the nearest must be visible, and a scale it drew at may be
+	# smaller than the mapper's but never larger.
+	var visible := true
+	var reach_detail := "no 3D skybox drawn"
+	if sky is Dictionary and bool((sky as Dictionary).get("drawn", true)) and sky_things > 0:
+		var reach: Array = (sky as Dictionary).get("reach_units", [])
+		var drawn_scale := float((sky as Dictionary).get("drawn_scale", INF))
+		visible = reach.size() == 2 and G2GUnits.to_metres(float(reach[0])) <= 4000.0 \
+			and drawn_scale <= float((sky as Dictionary).get("scale", 0.0))
+		reach_detail = "reach %s u at %s x (the mapper's %s)" % [
+			str(reach), str(drawn_scale), str((sky as Dictionary).get("scale"))]
+	_check(visible, "and its 3D skybox is drawn in front of the camera's far plane", reach_detail)
 
 	var verts := 0
 	var has_uv2 := true

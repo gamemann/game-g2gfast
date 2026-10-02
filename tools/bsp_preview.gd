@@ -119,13 +119,18 @@ func _ready() -> void:
 	var c := aabb.get_center()
 	var r: float = maxf(aabb.size.length() * 0.55, 1.0)
 	var eye := c
+	# PREVIEW_PITCH (radians, up is positive) looks up from the spawn -- at a 3D skybox,
+	# say, which a spawn in a canyon never shows at the default slight look down.
+	var pitch := -0.15
+	if OS.get_environment("PREVIEW_PITCH").is_valid_float():
+		pitch = float(OS.get_environment("PREVIEW_PITCH"))
 	if from_spawn and map is G2GMap:
 		eye = (map as G2GMap).spawn_for(0) + Vector3(0.0, 1.2, 0.0)
 	for i in range(shots):
 		var a := TAU * float(i) / float(shots) + 0.6
 		if from_spawn:
 			cam.global_position = eye
-			cam.rotation = Vector3(-0.15, a, 0.0)
+			cam.rotation = Vector3(pitch, a, 0.0)
 		else:
 			cam.global_position = c + Vector3(cos(a) * r, r * 0.42, sin(a) * r)
 			cam.look_at(c, Vector3.UP)

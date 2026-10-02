@@ -7,6 +7,7 @@
 #   tools/bsp_preview.sh surf_kitsune spawn 6  # six angles instead of four
 #   GAME=1 tools/bsp_preview.sh                # as the GAME draws it: the map's own sky,
 #                                              # fog and tone map, not the neutral stage
+#   PREVIEW_PITCH=0.5 tools/bsp_preview.sh m spawn  # look up from the spawn (radians)
 #
 # `tools/bsp_preview.gd` has named this script since it was written and it did not
 # exist, so the one thing in this repository whose bugs are invisible to every

@@ -651,13 +651,14 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
     return surfaces, bytes(blob)
 
 
-def load_props(bsp, pak, notes):
+def load_props(bsp, pak, notes, extra=()):
     """The static props this map can draw: [(prop, meshes)], plus what was skipped.
 
     Only models the pakfile carried; a stock model is counted, not drawn. A prop the
     map marked no-draw (flag 0x4) is left out the way the engine leaves it out.
+    `extra` is more records of the same shape (see `sky_dynamic_props`).
     """
-    props = bsp_props.static_props(bsp)
+    props = bsp_props.static_props(bsp) + list(extra)
     cache, drawn, stock = {}, [], collections.Counter()
     for pr in props:
         if not pr["model"]:
@@ -1062,6 +1063,104 @@ def skybox_of(bsp):
     lo = [min(b[0][a] for b in boxes) - 1 for a in range(3)]
     hi = [max(b[1][a] for b in boxes) + 1 for a in range(3)]
     return o, k, (lo, hi)
+
+
+# Model entities a 3D skybox is drawn with when its mapper did not use static props.
+SKY_PROP_CLASSES = ("prop_dynamic", "prop_dynamic_override")
+
+
+def sky_dynamic_props(bsp, sky):
+    """The `prop_dynamic`s standing in the 3D skybox's room, as static-prop records.
+
+    [b]Two maps build their whole sky out of them and drew nothing.[/b] bhop_pandora2_fix
+    (six: clouds, asteroids, floating islands) and bhop_supernova (three: two islands
+    and an asteroid field) put nothing in the sky room but `tools/toolsskybox` walls and
+    these, so `skybox_of` found the room and the importer, reading static props only,
+    found no faces in it. Only the sky room's are taken: there they are scenery seen
+    from far away, never solid and never moved by anything a player does, which is a
+    static prop in all but name. One in the play space may be animated, toggled or
+    parented, and this importer runs none of a map's outputs.
+    """
+    if sky is None:
+        return []
+    out = []
+    for e in bsp.entities:
+        if e.get("classname") not in SKY_PROP_CLASSES or not e.get("model", "").endswith(".mdl"):
+            continue
+        if str(e.get("rendermode", "0")).strip() == "10" or str(e.get("StartDisabled", "0")).strip() == "1":
+            continue
+        o = tuple(entity_origin(e))
+        if not in_box(o, sky[2]):
+            continue
+        try:
+            angles = tuple(float(x) for x in e.get("angles", "0 0 0").split()[:3])
+            scale = float(e.get("modelscale", "1") or 1.0) or 1.0
+            skin = int(float(e.get("skin", "0") or 0))
+        except ValueError:
+            angles, scale, skin = (0.0, 0.0, 0.0), 1.0, 0
+        out.append({"model": e["model"].lower(), "origin": o, "angles": angles,
+                    "solid": 0, "skin": skin, "flags": 0, "lighting_origin": o,
+                    "scale": scale, "dynamic": True})
+    return out
+
+
+# How far from the map's centre a 3D skybox may be drawn, in units: inside the player
+# camera's far plane (Camera3D's default 4000 m, which G2GCamera keeps) with room to
+# spare for a player standing at the edge of a map ~300 m across.
+SKY_REACH = 3500.0 / 0.01905
+
+
+def sky_drawn_scale(bsp, sky, drawn, props_drawn):
+    """(scale, nearest, farthest): the scale the 3D skybox is drawn at, and how far from
+    the world's origin (where the sky camera lands) its nearest and farthest vertex then
+    are, in units. None for a map with no 3D skybox.
+
+    The sky camera's own scale, unless that puts everything in the sky past SKY_REACH;
+    then the largest that brings the farthest of it inside -- but never so small that the
+    NEAREST of it comes inside the map's own bounds, because the engine draws its sky
+    behind everything and here it is drawn into the world, where it could stand in the
+    play space. Where the two disagree the sky stays out of the map and its far edge is
+    clipped.
+
+    [b]bhop_pandora2_fix's sky camera says 512.[/b] The engine draws the sky in its own
+    pass, so there the scale only sets parallax and never clips; drawn here at 512 its
+    nearest asteroid was 5 km out and its islands past 20 km, all behind a 4 km far plane:
+    imported and invisible. Seen from the middle of the map a sky scaled down is the same
+    picture (size and distance shrink together); only parallax changes. bhop_supernova's
+    asteroid field reaches from 586 to 6,966 units off its camera, so at its own 64 the
+    outer half was past the far plane, and no scale both fits it and keeps the inner
+    rocks out of the map. Every 16 in the 26 already fits and is unchanged.
+    """
+    if sky is None:
+        return None
+    o, k, box = sky
+    # Measured over every vertex: a skybox model is built for the sky's scale, and an
+    # asteroid field reaches thousands of units past its origin.
+    near, far = math.inf, 0.0
+    for f, off in drawn:
+        pts = [(p[0] + off[0], p[1] + off[1], p[2] + off[2]) for p in bsp.face_points(f)]
+        if pts and all(in_box(p, box) for p in pts):
+            for p in pts:
+                d = math.dist(o, p)
+                near, far = min(near, d), max(far, d)
+    for pr, meshes in props_drawn:
+        if not in_box(pr["origin"], box):
+            continue
+        m, sc, po = bsp_props.angle_matrix(pr["angles"]), pr["scale"], pr["origin"]
+        for mesh in meshes:
+            for pos in mesh["positions"]:
+                w = bsp_props.transform(m, pos)
+                d = math.dist(o, (w[0] * sc + po[0], w[1] * sc + po[1], w[2] * sc + po[2]))
+                near, far = min(near, d), max(far, d)
+    if far <= 0.0:
+        return k, 0.0, 0.0
+    lo, hi = bsp.model_bounds(0)
+    radius = max(math.dist((0.0, 0.0, 0.0), (x, y, z))
+                 for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2]))
+    scale = k
+    if far * k > SKY_REACH:
+        scale = min(k, max(float(int(SKY_REACH / far)), float(math.ceil(radius / near))))
+    return scale, near * scale, far * scale
 
 
 def in_box(p, box):
@@ -2269,8 +2368,17 @@ def main(argv=None):
     sky = skybox_of(bsp)
     sky_off = sky is not None and doc.get("skybox", True) is False
     sky_faces = 0
+
+    notes = []
+    pak = read_pak(bsp, notes)
+
+    # Static props, and one light probe per prop drawn -- they have to be known before
+    # the atlas is packed, because their light goes into it, and before the 3D skybox is
+    # placed, because how far its props reach decides the scale it is drawn at.
+    all_props, props_drawn, props_stock = load_props(bsp, pak, notes, sky_dynamic_props(bsp, sky))
+    sky_scale, sky_near, sky_far = sky_drawn_scale(bsp, sky, drawn, props_drawn) or (None, 0.0, 0.0)
     if sky is not None:
-        o, k, box = sky
+        o, k, box = sky[0], sky_scale, sky[2]
         moved = []
         for f, off in drawn:
             pts = bsp.face_points(f)
@@ -2284,14 +2392,8 @@ def main(argv=None):
         drawn = moved
     faces = [f for f, _ in drawn]
 
-    notes = []
-    pak = read_pak(bsp, notes)
-
-    # Static props, and one light probe per prop drawn -- they have to be known before
-    # the atlas is packed, because their light goes into it.
-    all_props, props_drawn, props_stock = load_props(bsp, pak, notes)
     if sky is not None:
-        o, k, box = sky
+        o, k, box = sky[0], sky_scale, sky[2]
         if sky_off:
             props_drawn = [(pr, m) for pr, m in props_drawn if not in_box(pr["origin"], box)]
         for pr, _m in props_drawn:
@@ -2375,7 +2477,11 @@ def main(argv=None):
         # Counted from the lump, not from what was drawn, so "this map has no props" and
         # "this importer stopped drawing them" are two different numbers.
         "skybox": None if sky is None else {
-            "camera": list(sky[0]), "scale": sky[1], "faces": sky_faces,
+            "camera": list(sky[0]), "scale": sky[1], "drawn_scale": sky_scale,
+            # From the world's origin, at drawn_scale: where the nearest and the farthest
+            # of the sky end up. headless_imported holds them to the camera's far plane.
+            "reach_units": [round(sky_near), round(sky_far)],
+            "faces": sky_faces,
             "drawn": not sky_off,
             "props": sum(1 for pr, _m in props_drawn if pr.get("skybox")),
         },
@@ -2443,7 +2549,7 @@ def main(argv=None):
         print("  3D skybox: %d faces and %d props %s %gx about the sky camera at %s"
               % (sky_faces, sum(1 for pr, _m in props_drawn if pr.get("skybox")),
                  "NOT drawn (the zones file says so), would be" if sky_off else "drawn",
-                 sky[1], [round(v) for v in sky[0]]))
+                 sky_scale, [round(v) for v in sky[0]]))
     print("  static props: %d placed, %d drawn (%d light probes), %d of stock models "
           "the map did not carry" % (len(all_props), len(props_drawn), len(blocks),
                                      sum(props_stock.values())))
