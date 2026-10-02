@@ -26,13 +26,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 219
+const CHECKS := 227
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 25
+const SECTIONS := 26
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -69,6 +69,7 @@ func _run() -> void:
 	await _test_needle_bonus()
 	await _test_ridge_bonus()
 	await _test_weave_bonus()
+	await _test_bend_bonus()
 	await _test_stages_descent()
 	await _test_hairpin_bonus()
 	await _test_stutter_bonus()
@@ -1210,9 +1211,9 @@ func _test_ridge_bonus() -> void:
 	var bot: G2GPlayer = game.players[&"bot"]
 	var ridge := DotTimerTrack.of_bonus(2)
 	var zones := game.timers.zones
-	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3])
+	_check(zones != null and zones.playable_tracks() == PackedInt32Array([0, 1, 2, 3, 4])
 		and zones.stage_count(ridge) == 2,
-		"with a second bonus that has two stages (and a third, the weave)",
+		"with a second bonus that has two stages (and a third, the weave, and a fourth, the bend)",
 		str(zones.playable_tracks()) if zones else "no zones")
 	_check(game.timers.set_player_track(&"bot", ridge), "a player can switch to the ridge")
 
@@ -1558,6 +1559,158 @@ func _test_weave_bonus() -> void:
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame
 	_done()
+
+
+## `the bend`, `bhop_g2g_stages` bonus 4: ten blocks round a 640-unit left-hand arc,
+## each 22.5 degrees on from the last, climbing then dropping onto a finish that faces
+## nearly back the way the run began.
+##
+## [b]It turns on every jump.[/b] It faces the middle of the block it is jumping for,
+## 32 units short of it, and jumps in the last twenty units before its line of travel
+## leaves the block it is on -- both measured in that block's own frame, since every
+## block is turned. Holding one heading, as the ridge's bot does, leaves the arc at the
+## second block. The pace is asserted as for the weave: a RUN line that only works at a
+## crawl is not one.
+func _test_bend_bonus() -> void:
+	_section("the bend, run end to end")
+
+	var changed: DotResult = await game.change_map(&"bhop_g2g_stages")
+	_check(changed.ok, "the stages map loads")
+
+	var bot: G2GPlayer = game.players[&"bot"]
+	var bend := DotTimerTrack.of_bonus(4)
+	var zones := game.timers.zones
+	_check(zones != null and zones.stage_count(bend) == 2,
+		"with a fourth bonus that has two stages",
+		str(zones.stage_count(bend)) if zones else "no zones")
+	_check(game.timers.set_player_track(&"bot", bend), "a player can switch to the bend")
+
+	game.config.auto_bhop = true
+	game.apply_movement()
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+
+	var blocks: Array = BhopStages.bend_blocks()
+	var pad: Dictionary = BhopStages.bend_pad()
+	var pad_centre: Vector3 = pad["centre"]
+	# The start pad and the finish pad as pieces too, in the blocks' own shape.
+	var start := {"centre": Vector3(BhopStages.BEND_X, 0.0, BhopStages.START_Z), "yaw": 0.0,
+		"width": 256.0, "length": BhopStages.RIDGE_PAD_LENGTH}
+	var pieces: Array = []
+	for block: Dictionary in blocks:
+		pieces.append({"centre": block["centre"], "yaw": block["yaw"], "width": block["width"],
+			"length": BhopStages.BEND_BLOCK_LENGTH})
+	pieces.append({"centre": pad_centre, "yaw": pad["yaw"], "width": 256.0, "length": 384.0})
+
+	var route_length := 0.0
+	var last := Vector2(BhopStages.BEND_X, BhopStages.START_Z - BhopStages.RIDGE_PAD_LENGTH * 0.5)
+	for piece_of: Dictionary in pieces:
+		var middle := Vector2((piece_of["centre"] as Vector3).x, (piece_of["centre"] as Vector3).z)
+		route_length += last.distance_to(middle)
+		last = middle
+
+	var splits: Array[int] = []
+	var finished: Array[DotTimerRun] = []
+	var reset: Array[bool] = [false]
+	var on_split := func(id: StringName, number: int, _split: float) -> void:
+		if id == &"bot":
+			splits.append(number)
+	var on_effect := func(id: StringName, zone: DotTimerZone) -> void:
+		if id == &"bot" and zone.kind == DotTimerZone.Kind.RESPAWN:
+			reset[0] = true
+	var on_finished := func(run: DotTimerRun) -> void: finished.append(run)
+	game.timers.player_staged.connect(on_split)
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finished)
+
+	var resets := 0
+	var fell: Array[String] = []
+	var furthest := -1
+	var piece := -1
+	var goal := 0
+	var covered := 0.0
+	var run_ticks := 0
+	var previous := G2GUnits.vector_to_units(bot.global_position)
+
+	for _i in range(4000):
+		var here := G2GUnits.vector_to_units(bot.global_position)
+		var at := Vector2(here.x, here.z)
+		for i in range(pieces.size() - 1, piece, -1):
+			if _bend_local(pieces[i], at).has_point(Vector2.ZERO):
+				piece = i
+				break
+		var on: Dictionary = start if piece < 0 else pieces[piece]
+		var grounded := bot.controller.state.is_grounded()
+		var standing := _bend_local(on, at).has_point(Vector2.ZERO)
+		if grounded and standing:
+			goal = piece + 1
+		var next: Dictionary = pieces[mini(goal, pieces.size() - 1)]
+		var next_centre: Vector3 = next["centre"]
+		var target := Vector2(next_centre.x, next_centre.z)
+		var aim := target - at
+		if goal < pieces.size() - 1:
+			aim = aim.normalized() * maxf(aim.length() - 32.0, 1.0)
+		var to_lip := -1.0
+		if grounded and standing:
+			var local := _bend_local(on, at)
+			var direction := aim.normalized().rotated(deg_to_rad(float(on["yaw"])))
+			to_lip = _rect_exit(local, Vector2.ZERO, direction)
+		var c := DotFpsCommand.new()
+		c.move = Vector2(0.0, 1.0)
+		c.yaw = rad_to_deg(atan2(-aim.x, -aim.y))
+		c.set_button(DotFpsCommand.BUTTON_JUMP, to_lip >= 0.0 and to_lip <= 20.0 and goal < pieces.size())
+		bot.controller.apply_command(c)
+		await get_tree().physics_frame
+
+		var now := G2GUnits.vector_to_units(bot.global_position)
+		if bot.timer.run.is_active():
+			covered += Vector2(now.x - previous.x, now.z - previous.z).length()
+			run_ticks += 1
+		previous = now
+		furthest = maxi(furthest, piece)
+		if reset[0]:
+			resets += 1
+			fell.append("from piece %d at %s" % [piece, str(here.round())])
+			reset[0] = false
+			piece = -1
+			goal = 0
+		if not finished.is_empty():
+			break
+
+	game.timers.player_staged.disconnect(on_split)
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finished)
+
+	var run_speed := G2GUnits.to_units(game.tunables.max_speed)
+	var pace := covered / (float(run_ticks) / float(game.tick_rate)) if run_ticks > 0 else 0.0
+	print("  ..    bend: %.0f u covered of a %.0f u route in %d ticks, %.0f u/s against a run of %.0f, piece %d of %d, %d resets, %s" % [
+		covered, route_length, run_ticks, pace, run_speed, furthest + 1, pieces.size(), resets,
+		"finished in %.2f s" % finished[0].time() if not finished.is_empty() else "not finished"
+	])
+
+	_check(furthest >= blocks.size() - 1, "the bot reaches the last block", "piece %d of %d" % [furthest + 1, pieces.size()])
+	_check(splits == [1, 2], "crossing both of its stage lines, in order", str(splits))
+	_check(resets == 0, "without ever being put back", "%d resets: %s" % [resets, ", ".join(fell)])
+	_check(finished.size() == 1 and finished[0].track == bend,
+		"and the finish line ends the run, on the bonus's own track",
+		"%d finished, ended at %s u" % [finished.size(), str(G2GUnits.vector_to_units(bot.global_position).round())])
+	_check(pace >= run_speed * 0.8, "at no less than 80% of run speed: every jump is taken on the move",
+		"%.0f u/s against %.0f" % [pace, run_speed])
+
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+
+## A bend piece's footprint in its own frame (x across, y along; forward is -y), offset so
+## that [param at] is the origin: has_point(ZERO) is "standing over it", and _rect_exit
+## from ZERO is the distance to its edge.
+static func _bend_local(piece: Dictionary, at: Vector2) -> Rect2:
+	var centre: Vector3 = piece["centre"]
+	var d := (at - Vector2(centre.x, centre.z)).rotated(deg_to_rad(float(piece["yaw"])))
+	var half := Vector2(float(piece["width"]), float(piece["length"])) * 0.5
+	return Rect2(-half - d, half * 2.0)
 
 
 ## A block's footprint as a Rect2 in (x, z).

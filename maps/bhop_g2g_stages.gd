@@ -7,7 +7,8 @@ const G2GReach := preload("../game/g2g_reach.gd")
 ##
 ## Bonus 1 is a surf descent; bonus 2, `the ridge`, is a staged RUN line — see
 ## [constant RIDGE_SECTIONS]; bonus 3, `the weave`, is a RUN line that never goes
-## straight — see [constant WEAVE_SECTIONS].
+## straight — see [constant WEAVE_SECTIONS]; bonus 4, `the bend`, is a RUN line that
+## never stops turning — see [constant BEND_SECTIONS].
 ##
 ## [b]Why this map exists.[/b] `bhop_g2g_intro` is sixteen blocks in a straight line
 ## over a flat plane. It proves the movement and it is not a map: there is one thing to
@@ -124,6 +125,42 @@ const WEAVE_SECTIONS: Array = [
 		"first_gap": 128.0, "last_gap": 160.0, "first_width": 112.0, "last_width": 96.0},
 ]
 
+## Bonus 4, `the bend`: the start pad's centre line, east of the weave and clear of it.
+const BEND_X := 12288.0
+
+## The radius of the bend's arc, from its centre to each block's middle, in units.
+const BEND_RADIUS := 640.0
+
+## A bend block's length along the arc and its width across it, as the main route's.
+const BEND_BLOCK_LENGTH := 160.0
+
+## The bend's three sections, every block one step further round a left-hand arc.
+##
+## [b]The question is the turn, on every jump.[/b] The hairpin turns twice, at two
+## corners, with straight runs between; the weave zigzags round a straight line. Here
+## there is no straight: each block is `step` degrees further round a 640-unit arc than
+## the last, so every take-off is aimed somewhere the last landing was not facing, and
+## 277 degrees later the finish faces across the way the run started. Four level, three
+## climbing 24, three dropping 48 onto narrowing blocks, then a 48 drop onto the finish.
+##
+## [b]The drops are spaced wider, and that was measured.[/b] With every block 22.5
+## degrees on (centres 250 apart, 85-unit gaps), a jump down 48 at the speed the climb
+## leaves a runner with carried about 230 units and landed on the last 10-20 units of a
+## 160-unit block, and the next take-off, from its very edge and turned 22.5 degrees, went
+## off the side of the last block. At 30 degrees the drop's gap is the length its longer
+## flight wants. Every gap is a RUN gap inside `G2GReach` (`headless_run`'s reach sweep).
+const BEND_SECTIONS: Array = [
+	{"kind": "bend", "blocks": 4, "rise": 0.0, "step": 22.5,
+		"first_width": 160.0, "last_width": 160.0},
+	{"kind": "climb", "blocks": 3, "rise": 24.0, "step": 22.5,
+		"first_width": 160.0, "last_width": 144.0},
+	{"kind": "descent", "blocks": 3, "rise": -48.0, "step": 30.0,
+		"first_width": 144.0, "last_width": 112.0},
+]
+
+## The gap from the start pad's far edge to the first block, along the arc.
+const BEND_FIRST_GAP := 96.0
+
 ## A weave block's length along the run: longer than the main route's 160, because the
 ## turn onto the next diagonal is made on it.
 const WEAVE_BLOCK_LENGTH := 192.0
@@ -218,6 +255,7 @@ func _build() -> void:
 	_build_bonus()
 	_build_ridge()
 	_build_weave()
+	_build_bend()
 
 
 ## Bonus 2, `the ridge`. See [constant RIDGE_SECTIONS].
@@ -354,6 +392,86 @@ static func weave_pad() -> Vector3:
 	var last: Dictionary = blocks[blocks.size() - 1]
 	var centre: Vector3 = last["centre"]
 	return Vector3(WEAVE_X, centre.y - 48.0, centre.z - WEAVE_BLOCK_LENGTH * 0.5 - 160.0 - 192.0)
+
+
+## Bonus 4, `the bend`. See [constant BEND_SECTIONS].
+func _build_bend() -> void:
+	var bodies: Array = [G2GGeometry.box(
+		self, Vector3(BEND_X, FLOOR_Y - BLOCK_THICKNESS * 0.5, START_Z),
+		Vector3(256.0, BLOCK_THICKNESS, RIDGE_PAD_LENGTH), G2GGeometry.ROLE_START
+	)]
+
+	for block: Dictionary in bend_blocks():
+		var centre: Vector3 = block["centre"]
+		bodies.append(G2GGeometry.box(
+			self, Vector3(centre.x, centre.y - BLOCK_THICKNESS * 0.5, centre.z),
+			Vector3(float(block["width"]), BLOCK_THICKNESS, BEND_BLOCK_LENGTH),
+			G2GGeometry.ROLE_END if bool(block["stage_line"]) else G2GGeometry.ROLE_BONUS,
+			Basis(Vector3.UP, deg_to_rad(float(block["yaw"])))
+		))
+
+	var pad := bend_pad()
+	bodies.append(G2GGeometry.box(
+		self, Vector3(pad["centre"].x, pad["centre"].y - BLOCK_THICKNESS * 0.5, pad["centre"].z),
+		Vector3(256.0, BLOCK_THICKNESS, 384.0), G2GGeometry.ROLE_END,
+		Basis(Vector3.UP, deg_to_rad(float(pad["yaw"])))
+	))
+
+	add_course("the bend", DotTimerTrack.of_bonus(4), G2GReach.Kind.RUN, bodies)
+
+
+## The point [param degrees] round the bend's arc and the heading there (yaw 0 is -Z, as
+## the spawn zones use; positive turns toward -X). Degree 0 is the start pad's far edge.
+static func bend_at(degrees: float) -> Dictionary:
+	var centre := Vector2(BEND_X - BEND_RADIUS, START_Z - RIDGE_PAD_LENGTH * 0.5)
+	var phi := deg_to_rad(degrees)
+	return {
+		"x": centre.x + BEND_RADIUS * cos(phi),
+		"z": centre.y - BEND_RADIUS * sin(phi),
+		"yaw": degrees,
+	}
+
+
+## Every block of the bend in order: `centre` (its top face's middle), `yaw`, `width`,
+## `stage_line` and `stage`. Static and the only place the bend's arithmetic is done:
+## the geometry, the zones and the suite's bot all read it.
+static func bend_blocks() -> Array:
+	var out: Array = []
+	var degrees := rad_to_deg((BEND_FIRST_GAP + BEND_BLOCK_LENGTH * 0.5) / BEND_RADIUS)
+	var y := FLOOR_Y
+
+	for section_index in range(BEND_SECTIONS.size()):
+		var section: Dictionary = BEND_SECTIONS[section_index]
+		var blocks := int(section["blocks"])
+
+		for i in range(blocks):
+			var t := float(i) / float(maxi(blocks - 1, 1))
+			if not out.is_empty():
+				degrees += float(section["step"])
+			y += float(section["rise"])
+			var at := bend_at(degrees)
+			out.append({
+				"centre": Vector3(float(at["x"]), y, float(at["z"])),
+				"yaw": degrees,
+				"width": lerpf(float(section["first_width"]), float(section["last_width"]), t),
+				"stage_line": section_index > 0 and i == 0,
+				"stage": section_index,
+			})
+
+	return out
+
+
+## The bend's finish pad: `centre` (its top face's middle) and `yaw`, one more 48 drop
+## below the last block, a 128-unit gap further round the arc, 384 long.
+static func bend_pad() -> Dictionary:
+	var blocks := bend_blocks()
+	var last: Dictionary = blocks[blocks.size() - 1]
+	var degrees := float(last["yaw"]) + rad_to_deg((BEND_BLOCK_LENGTH * 0.5 + 128.0 + 192.0) / BEND_RADIUS)
+	var at := bend_at(degrees)
+	return {
+		"centre": Vector3(float(at["x"]), (last["centre"] as Vector3).y - 48.0, float(at["z"])),
+		"yaw": degrees,
+	}
 
 
 ## The bonus: a two-ramp surf descent onto a pad.
@@ -629,6 +747,39 @@ static func build_zones() -> DotTimerZoneSet:
 	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, weave,
 		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
 		Vector3(16384.0, weave_end.y - BLOCK_THICKNESS - 256.0, 16384.0)))
+
+	# Bonus 4, the bend: the weave's shape of zone set, read off `bend_blocks`. Its blocks
+	# are turned, and a zone is a box, so each stage line and the finish are boxes inside
+	# the block's footprint (the largest square any yaw keeps inside it), not around it.
+	var bend := DotTimerTrack.of_bonus(4)
+	var bend_end := bend_pad()
+	var end_centre: Vector3 = bend_end["centre"]
+
+	zones.add(zone_box(DotTimerZone.Kind.START, bend,
+		Vector3(BEND_X - 128.0, FLOOR_Y, START_Z - RIDGE_PAD_LENGTH * 0.5),
+		Vector3(BEND_X + 128.0, FLOOR_Y + 192.0, START_Z + RIDGE_PAD_LENGTH * 0.5)))
+	zones.add(zone_box(DotTimerZone.Kind.END, bend,
+		Vector3(end_centre.x - 88.0, end_centre.y, end_centre.z - 88.0),
+		Vector3(end_centre.x + 88.0, end_centre.y + 192.0, end_centre.z + 88.0)))
+
+	for block: Dictionary in bend_blocks():
+		if not bool(block["stage_line"]):
+			continue
+		var centre: Vector3 = block["centre"]
+		var half := float(block["width"]) * 0.5 / sqrt(2.0)
+		zones.add(zone_stage(
+			bend, int(block["stage"]),
+			Vector3(centre.x - half, centre.y, centre.z - half),
+			Vector3(centre.x + half, centre.y + 192.0, centre.z + half),
+			centre + Vector3(0.0, 16.0, 0.0),
+			# Facing on round the arc, the way the route leaves the block.
+			float(block["yaw"])
+		))
+
+	zones.add(zone_spawn(bend, Vector3(BEND_X, FLOOR_Y + 8.0, START_Z + 128.0), 0.0))
+	zones.add(zone_box(DotTimerZone.Kind.RESPAWN, bend,
+		Vector3(-16384.0, bonus_floor - 4096.0, -16384.0),
+		Vector3(16384.0, end_centre.y - BLOCK_THICKNESS - 256.0, 16384.0)))
 
 	return zones
 

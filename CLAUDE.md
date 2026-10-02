@@ -483,7 +483,7 @@ work either way; where it is drawn is the half a game is supposed to decide.
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 219 checks, 25 sections
+godot --headless --path . res://examples/headless_run.tscn   # 227 checks, 26 sections
 godot --headless --path . res://examples/headless_presentation.tscn  # 109 checks
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
@@ -1638,6 +1638,14 @@ That matters beyond this route. `_test_bhop_run` asserts a top speed of 240 u/s 
 
 **Building it found that three of this file's own route checks could not fail.** The needle's, the ridge's and the hairpin's bots counted resets with `var reset := false` set inside a signal lambda, and a GDScript lambda captures a local by value. So `reset = true` never reached the loop, and "without ever being put back" passed whatever happened. The weave's first draft respawned at tick 548 and the check still said 0. All four use `var reset: Array[bool] = [false]` now. The three existing routes really do run with 0 resets.
 
+## `the bend`, and a route that never stops turning
+
+`bhop_g2g_stages` bonus 4 (2026-10-02) is ten blocks round a 640 u left-hand arc from a pad at x = 12288, east of the weave: four level, three climbing 24, three dropping 48 onto blocks narrowing 144 to 112, then a 128 gap down 48 onto a finish 120 u under the start. Every block is turned to face along the arc (`Basis` yaw, as the main route's turn), so each take-off is aimed somewhere the last landing was not facing, and the finish faces across the start 277 degrees later. Stage splits on the first climb block and the first descent block, each restart facing on round the arc. `bend_blocks()` / `bend_pad()` / `bend_at()` are the one copy of the arithmetic; the geometry, the zones and the bot read them. Zones on a turned block are boxes INSIDE its footprint (the largest square any yaw keeps inside it), because a zone is axis-aligned. Reach sweep: RUN, 11 jumps, widest 146 u down 48 against 222.
+
+**The drops are 30 degrees apart and the rest 22.5, and that was measured.** The first draft spaced every block 22.5 degrees (centres 250 apart, 85 u gaps): a 48 drop at the speed the climb leaves carried about 230 u, landed on the last 10-20 u of a 160 u block, and the next take-off, from its edge and turned 22.5 degrees, went off the side of the last block -- the bot reached block 9 of 10 and was reset twice from it (`from piece 8 at (11207, 727)`). At 30 degrees it finishes.
+
+`_test_bend_bonus` reads each piece in its own frame (`_bend_local`: the bot's offset rotated by the block's yaw, so "standing on it" and "distance to its lip along my aim" are a rectangle test again), aims 32 u short of the next block's middle, and jumps in the last 20 u before its line leaves the block it is on. Pad to finish through both splits: 12.20 s, 0 resets, 254 u/s against a run of 250, pace asserted at 80%. Armed by the 22.5-degree draft above, which failed four of its checks. Frames: `~/stack/nightly/archive/screenshots/2026-10-02/g2gfast/bend_{overview,spawn}.png`.
+
 ## `the hairpin`, and the first route here a bot has to steer
 
 `bhop_g2g_intro` bonus 3 (2026-09-27) is the one route on this map that turns. From a pad at x = 2304, east of the warm-up, it goes out four level blocks along -Z (gaps 112 to 160), onto a 256-square corner, right along +X up four 24-unit climbs (gaps 96 to 128) onto a second corner 24 higher at 120 u, right again, and back along +Z down four 48-unit drops onto blocks narrowing 160 to 96 (gaps 128 to 192), then a 160 gap down 48 onto a finish at -120 u beside the start. 14 blocks, 15 jumps, about 4,700 u of centre line. The two corners are the stage splits, drawn in the finish colour as the ridge's are, and each split's `!s<n>` faces the way the route LEAVES the corner (yaw -90, then 180: `yaw_facing`), never `[stage-yaw-1]`'s back-up-the-course 180. Every gap is a **RUN** gap at least 29 u inside `G2GReach` (160 flat against 189, 128 onto +24 against 166, 192 down 48 against 222) because a corner spends the speed a chain would be carrying. `HAIRPIN_LEGS` and `hairpin_blocks()` are the one list: geometry, zones and bot.
@@ -1681,6 +1689,7 @@ What `headless_run` prints, all passing:
 | `bhop_g2g_stages` main | CHAIN, 40 hops | 288 | 54% |
 | `bhop_g2g_stages` the ridge | RUN, 15 | 192 down 48 | inside 222 |
 | `bhop_g2g_stages` the weave | RUN, 15 | 161 down 48 | inside 222 |
+| `bhop_g2g_stages` the bend | RUN, 11 | 146 down 48 | inside 222 |
 
 `surf_g2g_intro` declares nothing, and says why in its header: every way from one surface to the next on it is a drop onto something below, and only riding it answers whether the thing below is there.
 
