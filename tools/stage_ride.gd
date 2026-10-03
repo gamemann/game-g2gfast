@@ -4,6 +4,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
+const RouteBot := preload("route_bot.gd")
 
 ## Rides a stage of a map from where `!s<n>` puts a player, and says where it got to.
 ##
@@ -121,6 +122,22 @@ func _run() -> void:
 	# Off a ramp the whole-run bot heads for the finish rather than along its own track:
 	# a bhop corridor's line is the straight one, and a door moves it closer.
 	var aim_at_finish := whole and finish != arrival
+	# The whole run follows the map's route (`maps/routes/<id>.json`, see route_bot.gd)
+	# when it has one, and otherwise its stage lines in order and then the finish.
+	var router: RouteBot = null
+	if whole:
+		var why: Array = []
+		var route := RouteBot.load_points(id, why)
+		if route.is_empty():
+			for n in range(1, total + 1):
+				route.append({"at": zones.stage_zone(track, n).centre(),
+					"radius": G2GUnits.to_metres(RouteBot.DEFAULT_RADIUS), "max": 0.0, "walk": false, "hop": false, "land": false, "door": false})
+			print("[ride] %s: %s; following its %d stage lines" % [id, why[0], route.size()])
+		else:
+			print("[ride] %s: following its route, %d points" % [id, route.size()])
+		router = RouteBot.new(route, finish)
+	var finished: Array[float] = []
+	bot.timer.run_finished.connect(func(run: DotTimerRun) -> void: finished.append(run.time()))
 	var on_effect := func(pid: StringName, zone: DotTimerZone) -> void:
 		if pid != &"bot":
 			return
@@ -128,6 +145,8 @@ func _run() -> void:
 			DotTimerZone.Kind.RESPAWN, DotTimerZone.Kind.SLAY:
 				put_back[0] = true
 			DotTimerZone.Kind.TELEPORT:
+				if router != null:
+					router.teleported.call_deferred()
 				events.append("a door at %s u -> %s u" % [
 					str(G2GUnits.vector_to_units(bot.global_position).round()),
 					str(G2GUnits.vector_to_units(zone.destination).round())])
@@ -154,8 +173,10 @@ func _run() -> void:
 			heading = rad_to_deg(atan2(-flat.x, -flat.z))
 
 		var c := DotFpsCommand.new()
-		var ramp := _ramp_under(bot, flat, limit)
-		if ramp != Vector3.ZERO:
+		var ramp := Vector3.ZERO if router != null else _ramp_under(bot, flat, limit)
+		if router != null:
+			c = router.command(state, get_world_3d().direct_space_state, bot.controller.tunables, 1.0 / float(game.tick_rate))
+		elif ramp != Vector3.ZERO:
 			# Along the face, in the direction already moving (or the heading at a
 			# standstill), and strafe INTO it.
 			var inward := Vector3(-ramp.x, 0.0, -ramp.z).normalized()
@@ -193,6 +214,12 @@ func _run() -> void:
 				float(t) / float(game.tick_rate), str(G2GUnits.vector_to_units(at).round()),
 				G2GUnits.to_units(bot.speed()),
 				("surfing, face %s" % str(ramp.snapped(Vector3.ONE * 0.01))) if ramp != Vector3.ZERO else ("grounded" if bot.controller.state.is_grounded() else "air")])
+		if router != null and t % log_every == 0:
+			print("[ride]            -> point %d/%d at %s u" % [router.index + 1, router.points.size(),
+				str(G2GUnits.vector_to_units(router.target()).round())])
+		if not finished.is_empty():
+			reached = "FINISHED the run in %.2f s at %s u" % [finished[0], str(G2GUnits.vector_to_units(at).round())]
+			break
 		if put_back[0]:
 			reached = "PUT BACK by a pit at %s u" % str(G2GUnits.vector_to_units(at).round())
 			break
@@ -212,7 +239,7 @@ func _run() -> void:
 		reached if reached != "" else "nowhere, time ran out at %s u" % str(G2GUnits.vector_to_units(end).round()),
 		G2GUnits.to_units(end.distance_to(start)), G2GUnits.to_units(start.y - lowest),
 		G2GUnits.to_units(top), surfed, grounded])
-	get_tree().quit(0 if reached.begins_with("REACHED") else 2)
+	get_tree().quit(0 if reached.begins_with("REACHED") or reached.begins_with("FINISHED") else 2)
 
 
 ## The normal of a surf face under or beside the player, or ZERO. Traced straight down

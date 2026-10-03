@@ -5,6 +5,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
+const RouteBot := preload("../tools/route_bot.gd")
 
 ## Checks a map imported from a Source .bsp: it loads, it is the right size, it is
 ## lit, and — the only question that matters — a player put on it stays on it.
@@ -102,13 +103,13 @@ const OWN_TEXTURES := {
 }
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 38
+const CHECKS_PER_MAP := 39
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
 ## failed guard is counted as not finished on purpose, and the two that end early because
 ## a map legitimately has nothing to check (no course, no door) say so first.
-const SECTIONS_PER_MAP := 9
+const SECTIONS_PER_MAP := 10
 
 ## A script error inside a test aborts THAT TEST and not the run, so a suite that has
 ## quietly lost two checks still prints "0 failed" — which is what happened while this
@@ -155,6 +156,7 @@ func _run() -> void:
 		await _test_stands_where_it_sends_you()
 		_test_arrivals_miss_the_pits()
 		_test_a_door_keeps_the_run()
+		await _test_runs_its_route()
 		if game != null:
 			game.queue_free()
 			game = null
@@ -787,4 +789,87 @@ func _test_a_door_keeps_the_run() -> void:
 		"running before %s, moved %s, running after %s"
 		% [was_running, moved, timer.run.is_running()])
 	timer.stop()
+	_done()
+
+
+## Longest a route may take, in simulated seconds, before the bot is said not to finish.
+const ROUTE_SECONDS := 300.0
+
+
+## A bot runs the map from its main spawn to its finish, on the imported collision,
+## following the route written down for it in `maps/routes/<id>.json` (`g2g-maps-1`).
+##
+## [b]Every other section here asks about a place; this one asks about the whole way.[/b]
+## `_test_runnable` drives a timer over the zones, `_test_stands_where_it_sends_you` drops
+## a player at each arrival, and a map can pass all of it with a block missing, a gap
+## nobody can clear, or a solid that is not where it is drawn. A run that starts in the
+## start zone, crosses everything in between and is timed by the finish -- the timer the
+## game itself feeds, with no put-back by a pit on the way -- is the one check that a
+## block moved or a brush lost fails. A map with no route file says so and passes: a
+## route is data written per map (`tools/route_plan.py`), and most maps do not have one
+## yet. See route_bot.gd for how the bot drives it.
+func _test_runs_its_route() -> void:
+	_section("route")
+	var why: Array = []
+	var points := RouteBot.load_points(_map_id, why)
+	var zones := game.timers.zones if game != null else null
+	var finish: DotTimerZone = null
+	if zones != null:
+		for zone: DotTimerZone in zones.of_kind(DotTimerZone.Kind.END):
+			if zone.track == DotTimerTrack.MAIN:
+				finish = zone
+	if points.is_empty():
+		_check(true, "a bot runs it start to finish on its route", why[0] if not why.is_empty() else "no route")
+		_done()
+		return
+	if finish == null:
+		_check(false, "a bot runs it start to finish on its route", "it has a route and no finish")
+		_done()
+		return
+
+	var bot: G2GPlayer = game.players.get(&"bot")
+	if bot == null:
+		bot = game.add_player(&"bot", "Bot", true)
+		bot.sampler = null
+	var node := game.current_map_node()
+	var router := RouteBot.new(points, finish.centre())
+	var put_back: Array[String] = []
+	var finished: Array[float] = []
+	var on_effect := func(pid: StringName, zone: DotTimerZone) -> void:
+		if pid != &"bot":
+			return
+		match zone.kind:
+			DotTimerZone.Kind.RESPAWN, DotTimerZone.Kind.SLAY:
+				if put_back.is_empty():
+					put_back.append(str(G2GUnits.vector_to_units(bot.global_position).round()))
+			DotTimerZone.Kind.TELEPORT:
+				router.teleported.call_deferred()
+	var on_finish := func(run: DotTimerRun) -> void:
+		finished.append(run.time())
+	game.timers.effect_requested.connect(on_effect)
+	bot.timer.run_finished.connect(on_finish)
+	bot.timer.stop()
+	bot.teleport(node.spawn_for(DotTimerTrack.MAIN), node.spawn_yaw_for(DotTimerTrack.MAIN))
+	await get_tree().physics_frame
+
+	var delta := 1.0 / float(game.tick_rate)
+	var space := node.get_world_3d().direct_space_state
+	var ticks := int(ROUTE_SECONDS * float(game.tick_rate))
+	var t := 0
+	while t < ticks and finished.is_empty() and put_back.is_empty():
+		bot.controller.apply_command(router.command(bot.controller.state, space, bot.controller.tunables, delta))
+		await get_tree().physics_frame
+		t += 1
+	game.timers.effect_requested.disconnect(on_effect)
+	bot.timer.run_finished.disconnect(on_finish)
+
+	var at := str(G2GUnits.vector_to_units(bot.controller.state.position).round())
+	if not finished.is_empty():
+		print("        finished in %.2f s over %d points, %d ticks surfing" % [finished[0], points.size(), router.surfed])
+	_check(not finished.is_empty() and put_back.is_empty(), "a bot runs it start to finish on its route",
+		("finished in %.2f s over %d points" % [finished[0], points.size()]) if not finished.is_empty()
+		else ("put back by a pit (sent to %s u), aiming at point %d of %d" % [put_back[0], router.index + 1, points.size()])
+			if not put_back.is_empty()
+		else ("not finished after %.0f s at %s u, aiming at point %d of %d" % [ROUTE_SECONDS, at, router.index + 1, points.size()]))
+	bot.timer.stop()
 	_done()

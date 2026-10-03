@@ -94,7 +94,7 @@ scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
 examples/           headless_run (219), headless_net (157), dedicated (180),
-                    headless_imported (38 per map, plus one per track and stage),
+                    headless_imported (39 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -106,6 +106,9 @@ tools/              export_zones.gd — run after changing a map
                     their light probes
                     import_maps.sh — import a whole directory of them, idempotently
                     bsp_preview.gd/.tscn/.sh — render an imported map and exit
+                    route_bot.gd — a bot that follows maps/routes/<id>.json and
+                    air-strafes; route_plan.py writes that file from collision.
+                    stage_ride.tscn -- <id> 0 rides it; headless_imported asserts it
                     collision_probe.gd/.tscn — drop the player's hull on every
                     standable triangle in an imported map and count what it goes
                     through. `--trimesh` builds the old collider for comparison
@@ -488,7 +491,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 109 check
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 38 per map, +1 per stage: 1147 over the 26
+godot --headless --path . res://examples/headless_imported.tscn  # 39 per map, +1 per stage: 1173 over the 26
 godot --headless --path . res://examples/headless_maps.tscn      # 51 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1761,8 +1764,20 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 - **Static props use the stock texture fallback of a flat 0.5 grey** when the model shipped and its material did not; they have no reflectivity to be tinted by.
 - **Doors do not move** and brush-entity `angles` are not applied (none of the 26 has any).
 - **Displacement collision catches a sliding hull** (surf_mesa, measured above); not attempted.
-- **No bot runs any imported map start to finish.** `_test_runnable` drives the timer over the zones, not a player over the geometry. What the probes say per map is in the nightly report of 2026-09-27. `tools/stage_ride.tscn -- <map> 0 <seconds>` (2026-10-01) rides the whole run from the main spawn with the finish as the only goal, heading straight for the finish off a ramp; tried on eight maps for 120 s and it finishes none. bhop_eazy, bhop_arcane_v2 and bhop_pit pin it against the first wall (the line is not straight), bhop_fur, bhop_grove, bhop_badges and surf_beginner2 drop it into the first pit within 4 s. A start-to-finish bot needs the route as data (waypoints per map, or a recorded run to follow), not a heading.
+- **A bot runs one imported map start to finish (2026-10-03), bhop_grove; the rest have no route yet.** See *A route written down as data* below for the mechanism and, per map, why the planner finds no route on the others.
 - The published `surf_*` packs on the content origin predate all of this and need republishing (Christian's).
+
+## A route written down as data, and the first imported map a bot runs end to end
+
+`[g2g-maps-1]` asked for a bot that completes an imported map start to finish on the imported collision. Heading for the finish (`stage_ride`, 2026-10-01) finished none of eight. The line a map is run along is not in the BSP, so it is written per map in `maps/routes/<id>.json`: a list of points in the manifest's units and axes (Godot axes in genre units, what every tool prints), passed in order before the finish. `tools/route_bot.gd` drives it and is shared by `tools/stage_ride.tscn -- <id> 0 <seconds>` (the whole run follows the route when there is one, else the stage lines) and `headless_imported`.
+
+**The bot strafes, and in the air it aims its landing.** The hand-built routes' bots hold forward and never gain (*the needle*). An imported bhop map asks for speed and for 64-unit blocks at 400 u/s, so in the air the bot works out the horizontal velocity that brings it down onto the next point's height over the next point (time to fall back to that height, from its vertical speed and gravity) and spends its wish turning its velocity into that one. Under `sv_airaccelerate 1000` a wish can change the velocity by nearly anything in one tick, so it can **brake** in the air as well as gain; the move's magnitude picks whether the air cap or the step binds (`_air`). Too slow for the landing it wants, it strafes at right angles to its velocity toward the target's side, which gains and turns at once. On the ground it runs at the point and jumps at a lip or a step too tall to walk (`ledge_ahead`, `wall_ahead`), so a chained hop never starts mid-block. **A point counts only once the bot has landed on or past it** (`land`, default true): aiming at the next block from the air above this one commits it to a jump it never took off for, which is how the first drafts fell between blocks. A door point (`door`) is passed by the teleport.
+
+**`tools/route_plan.py <id> --reach 280 --out maps/routes/<id>.json` writes the route from the collision.** Every solid brush top that is not mostly under another solid within 72 u, plus terrain binned into 64-unit cells, is a node; two are joined when the gap between their tops is within `--reach`, the rise is at most 54, the centre-to-centre line is clear at body height, and a drop's landing column is open from the take-off down. TELEPORT doors join the tops they stand on to the top under their destination. Dijkstra from the top under the spawn to a top under the END. Blocks on these maps are L and U shapes made of several brushes, so a point is the centre of a brush top, never of a block's outline (grove's outlines have holes in the middle; aiming there was a fall).
+
+**bhop_grove runs end to end:** 157 points, finished in 133.82 s with no put-back, top 419 u/s, deterministic. `headless_imported`'s new **route** section (10 sections and 39 checks per map now) drives it from the main spawn and asserts the game's own timer finishes a run with no pit on the way; a map without a route file passes and says so. Armed: points 31 to 45 removed, the bot is put back aiming at point 31 of 142. Without a route (the stage-line fallback) grove puts the bot back at 6.6 s. **The section runs in real time** like the rest of the suite (297 s for all 26 maps, 134 of them grove); `--fixed-fps 128` runs it as fast as the CPU allows with the same one tick per frame, and `stage_ride` is always worth running that way.
+
+**Why the other maps have no route, measured with the planner (reach 280):** bhop_aztec plans at reach 340 but its 289-unit gap from a 258 u/s take-off is not something a bot that lands and runs can clear (it falls at point 5 of 95; hopping on every landing instead falls off the start pad). bhop_evolve's start pad is left by a teleport the importer made a pit (its zones file: "the sunken start pad ... teleports onto the block"), so 32 tops are reachable. bhop_badges_mini, bhop_tesquo_v2 and bhop_pandora2_fix join sections with teleports that are not all TELEPORT zones and stop at 42, 0 and 104 tops; bhop_badges and bhop_tesquo_v2 find no top under the spawn. bhop_fur stops at a raised box in its first room (115 tops), bhop_mario_fxd after 1,510 tops, bhop_supernova at its stage-2 room (rotated brushes make box tops), bhop_interloper, bhop_monster_jam and bhop_pit inside their first rooms. None of the surf maps was tried: the surf half of the bot is `stage_ride`'s ramp rule pointed at the next point and has not been driven down a map. What would buy the most next: the planner's top model (rotated brushes, terrain cells, the importer's pit/teleport split on staged maps), and a hand-written `via` point where it picks a wall.
 
 ## The imported maps live in g2gfast-maps
 

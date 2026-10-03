@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""Plan a bhop route over an imported map's collision, and write maps/routes/<id>.json."""
+import json, struct, sys, heapq, math, argparse
+
+HEADROOM = 72.0      # a top with a solid this close above it is not stood on
+CELL = 64.0         # terrain is binned into cells this wide
+CLIMB = 54.0         # the most a jump lands on above take-off (57 apex, less margin)
+
+def load(mid, root):
+    base = '%s/maps/imported/%s/%s' % (root, mid, mid)
+    d = json.load(open(base + '.json')); blob = open(base + '.bin', 'rb').read()
+    c = d['collision']; off = c['hull_offset']; hulls = []
+    for _ in range(c['hull_count']):
+        n = struct.unpack_from('<I', blob, off)[0]; off += 4
+        f = struct.unpack_from('<%df' % (n * 3), blob, off); off += n * 12
+        xs, ys, zs = f[0::3], f[1::3], f[2::3]
+        ty = max(ys)
+        top = [(xs[i], zs[i]) for i in range(n) if ys[i] > ty - 1]
+        hulls.append({'box': (min(xs), max(xs), min(zs), max(zs)), 'bottom': min(ys), 'top': ty,
+                      'face': (min(p[0] for p in top), max(p[0] for p in top),
+                               min(p[1] for p in top), max(p[1] for p in top)) if len(top) >= 3 else None})
+    # Terrain (displacements) is triangles, not hulls: every walkable triangle is binned
+    # into a 64-unit cell per height band, and each cell is a top of its own.
+    cells = {}
+    vc = c.get('displacement_vertex_count', 0); ic = c.get('displacement_index_count', 0)
+    if vc and ic:
+        v = struct.unpack_from('<%df' % (vc * 3), blob, c['displacement_vertex_offset'])
+        ix = struct.unpack_from('<%di' % ic, blob, c['displacement_index_offset'])
+        for k in range(0, ic - 2, 3):
+            p = [v[ix[k + m] * 3: ix[k + m] * 3 + 3] for m in range(3)]
+            ax, ay, az = [p[1][q] - p[0][q] for q in range(3)]
+            bx, by, bz = [p[2][q] - p[0][q] for q in range(3)]
+            nx, ny, nz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+            ln = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+            if abs(ny) / ln < 0.7:
+                continue
+            cx = sum(q[0] for q in p) / 3; cz = sum(q[2] for q in p) / 3; cy = max(q[1] for q in p)
+            key = (int(math.floor(cx / CELL)), int(math.floor(cz / CELL)), int(math.floor(cy / 96.0)))
+            cells[key] = max(cells.get(key, -1e18), cy)
+    for (gx, gz, _), y in cells.items():
+        hulls.append({'box': None, 'bottom': y - 1.0, 'top': y,
+                      'face': (gx * CELL, (gx + 1) * CELL, gz * CELL, (gz + 1) * CELL)})
+    return d, hulls
+
+def overlap(a, b, m=0.0):
+    return not (a[0] > b[1] - m or a[1] < b[0] + m or a[2] > b[3] - m or a[3] < b[2] + m)
+
+def gap(a, b):
+    dx = max(0.0, a[0] - b[1], b[0] - a[1]); dz = max(0.0, a[2] - b[3], b[2] - a[3])
+    return math.hypot(dx, dz)
+
+def closest_pair(a, b):
+    """The nearest points of two rectangles' faces, as ((x, z), (x, z))."""
+    def pick(lo1, hi1, lo2, hi2):
+        if hi1 < lo2:
+            return hi1, lo2
+        if hi2 < lo1:
+            return lo1, hi2
+        m = (max(lo1, lo2) + min(hi1, hi2)) / 2
+        return m, m
+    ax, bx = pick(a[0], a[1], b[0], b[1]); az, bz = pick(a[2], a[3], b[2], b[3])
+    return (ax, az), (bx, bz)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('map'); ap.add_argument('--root', default='.')
+    ap.add_argument('--region', help='x0,z0,x1,z1')
+    ap.add_argument('--reach', type=float, default=200.0)
+    ap.add_argument('--out')
+    a = ap.parse_args()
+    d, hulls = load(a.map, a.root)
+    region = [float(v) for v in a.region.split(',')] if a.region else None
+    tops = []
+    for i, h in enumerate(hulls):
+        f = h['face']
+        if f is None or f[1] - f[0] < 16 or f[3] - f[2] < 16:
+            continue
+        if region and not overlap(f, region):
+            continue
+        area = (f[1] - f[0]) * (f[3] - f[2]); shade = 0.0
+        for j, o in enumerate(hulls):
+            if j != i and o['box'] is not None and h['top'] - 1 < o['bottom'] < h['top'] + HEADROOM and overlap(f, o['box']):
+                b = o['box']
+                shade += max(0.0, min(f[1], b[1]) - max(f[0], b[0])) * max(0.0, min(f[3], b[3]) - max(f[2], b[2]))
+        covered = shade > 0.5 * area
+        if not covered:
+            tops.append({'face': f, 'top': h['top']})
+    pits = [z for z in d['zones'] if z['kind'] == 'RESPAWN' and z.get('track', 0) == 0]
+    def in_pit(t):
+        f = t['face']; cx, cz = (f[0] + f[1]) / 2, (f[2] + f[3]) / 2
+        return any(min(z['min'][0], z['max'][0]) <= cx <= max(z['min'][0], z['max'][0]) and
+                   min(z['min'][2], z['max'][2]) <= cz <= max(z['min'][2], z['max'][2]) and
+                   min(z['min'][1], z['max'][1]) <= t['top'] + 8 <= max(z['min'][1], z['max'][1]) for z in pits)
+    tops = [t for t in tops if not in_pit(t)]
+    sp = d['spawn']['origin']
+    end = [z for z in d['zones'] if z['kind'] == 'END' and z.get('track', 0) == 0][0]
+    ebox = (min(end['min'][0], end['max'][0]), max(end['min'][0], end['max'][0]),
+            min(end['min'][2], end['max'][2]), max(end['min'][2], end['max'][2]))
+    ey = (min(end['min'][1], end['max'][1]), max(end['min'][1], end['max'][1]))
+    def centre(t):
+        f = t['face']; return ((f[0] + f[1]) / 2, (f[2] + f[3]) / 2)
+    def under(x, z, y, depth):
+        """The highest top under (x, z) at most `depth` below y (and not above y + 8)."""
+        best = None
+        for i, t in enumerate(tops):
+            f = t['face']
+            if f[0] - 1 <= x <= f[1] + 1 and f[2] - 1 <= z <= f[3] + 1 and y - depth <= t['top'] <= y + 8:
+                if best is None or t['top'] > tops[best]['top']:
+                    best = i
+        return best
+    s0 = under(sp[0], sp[2], sp[1], 600.0)
+    starts = [s0] if s0 is not None else []
+    goals = set(i for i, t in enumerate(tops) if overlap(t['face'], ebox) and ey[0] - 300 <= t['top'] <= ey[1])
+    # Doors: a TELEPORT zone keeps the run and moves the player to its destination, so a
+    # top the door stands on (or over) is joined to the top under the destination.
+    doors = {}
+    for z in d['zones']:
+        if z['kind'] != 'TELEPORT' or z.get('track', 0) != 0 or not z.get('destination'):
+            continue
+        zb = (min(z['min'][0], z['max'][0]), max(z['min'][0], z['max'][0]),
+              min(z['min'][2], z['max'][2]), max(z['min'][2], z['max'][2]))
+        zy = (min(z['min'][1], z['max'][1]), max(z['min'][1], z['max'][1]))
+        q = z['destination']; land = under(q[0], q[2], q[1], 600.0)
+        if land is None:
+            continue
+        for i, t in enumerate(tops):
+            if overlap(t['face'], zb) and zy[0] - 160 <= t['top'] <= zy[1]:
+                doors.setdefault(i, []).append((land, ((zb[0] + zb[1]) / 2, max(zy[0], t['top']), (zb[2] + zb[3]) / 2)))
+    if not starts or not goals:
+        sys.exit('no start (%d) or no goal (%d) top' % (len(starts), len(goals)))
+    # grid buckets for neighbours
+    B = 512.0; grid = {}
+    for i, t in enumerate(tops):
+        f = t['face']
+        for gx in range(int(math.floor(f[0] / B)), int(math.floor(f[1] / B)) + 1):
+            for gz in range(int(math.floor(f[2] / B)), int(math.floor(f[3] / B)) + 1):
+                grid.setdefault((gx, gz), []).append(i)
+    def near(i):
+        f = tops[i]['face']; seen = set()
+        for gx in range(int(math.floor((f[0] - a.reach) / B)), int(math.floor((f[1] + a.reach) / B)) + 1):
+            for gz in range(int(math.floor((f[2] - a.reach) / B)), int(math.floor((f[3] + a.reach) / B)) + 1):
+                for j in grid.get((gx, gz), []):
+                    if j != i and j not in seen:
+                        seen.add(j); yield j
+    # Hull boxes in a grid, for "is the way from one top to the next clear at body height".
+    hgrid = {}
+    for k, h in enumerate(hulls):
+        b = h['box']
+        if b is None:
+            continue
+        if (b[1] - b[0]) * (b[3] - b[2]) > 4.0e6:
+            continue  # a skybox wall or a whole-map floor: never between two blocks
+        for gx in range(int(math.floor(b[0] / B)), int(math.floor(b[1] / B)) + 1):
+            for gz in range(int(math.floor(b[2] / B)), int(math.floor(b[3] / B)) + 1):
+                hgrid.setdefault((gx, gz), []).append(k)
+    def clear(i, j):
+        (ax, az), (bx, bz) = closest_pair(tops[i]['face'], tops[j]['face'])
+        y0 = max(tops[i]['top'], tops[j]['top'])
+        # The bot runs centre to centre, so that is the line asked about, outside the
+        # two tops themselves.
+        (px, pz), (qx, qz) = centre(tops[i]), centre(tops[j])
+        n = max(2, int(math.dist((px, pz), (qx, qz)) / 16.0))
+        samples = []
+        fi, fj = tops[i]['face'], tops[j]['face']
+        for s_ in range(n + 1):
+            t = s_ / n; x = px + (qx - px) * t; z = pz + (qz - pz) * t
+            if (fi[0] <= x <= fi[1] and fi[2] <= z <= fi[3]) or (fj[0] <= x <= fj[1] and fj[2] <= z <= fj[3]):
+                continue
+            samples.append((x, z, (y0 + 24.0, y0 + 48.0), -0.5))
+        # A drop lands from above: the column over the landing, from the take-off down to
+        # the top, has to be open too, or the "top" is a ledge inside the floor.
+        lo, hi = tops[j]['top'] + 24.0, tops[i]['top'] + 48.0
+        if hi > lo:
+            f = tops[j]['face']
+            cx, cz = (f[0] + f[1]) / 2, (f[2] + f[3]) / 2
+            ix = min(max(bx, f[0] + 16.0), f[1] - 16.0) if f[1] - f[0] > 32 else cx
+            iz = min(max(bz, f[2] + 16.0), f[3] - 16.0) if f[3] - f[2] > 32 else cz
+            column = tuple(lo + k * 32.0 for k in range(int((hi - lo) / 32.0) + 1))
+            samples.append((ix, iz, column, -0.5))
+            samples.append((cx, cz, column, -0.5))
+        for x, z, heights, inset in samples:
+            for k in hgrid.get((int(math.floor(x / B)), int(math.floor(z / B))), []):
+                b = hulls[k]['box']; h = hulls[k]
+                if b[0] + inset < x < b[1] - inset and b[2] + inset < z < b[3] - inset:
+                    for y in heights:
+                        if h['bottom'] < y < h['top'] - 1:
+                            return False
+        return True
+    via = {}
+    dist = {i: 0.0 for i in starts}; prev = {}; q = [(0.0, i) for i in starts]
+    done = None
+    while q:
+        c, i = heapq.heappop(q)
+        if c > dist.get(i, 1e18):
+            continue
+        if i in goals:
+            done = i; break
+        for land, door in doors.get(i, []):
+            w = 64.0
+            if c + w < dist.get(land, 1e18):
+                dist[land] = c + w; prev[land] = i; via[land] = door; heapq.heappush(q, (c + w, land))
+        for j in near(i):
+            g = gap(tops[i]['face'], tops[j]['face'])
+            rise = tops[j]['top'] - tops[i]['top']
+            if g > a.reach or rise > CLIMB:
+                continue
+            if g < 1.0 and abs(rise) > 18.0 and rise > 0:
+                continue  # a wall, not a step
+            if not clear(i, j):
+                continue
+            ci, cj = centre(tops[i]), centre(tops[j])
+            w = math.dist(ci, cj) + 2.0 * g + (g * g) / 100.0
+            if c + w < dist.get(j, 1e18):
+                dist[j] = c + w; prev[j] = i; via.pop(j, None); heapq.heappush(q, (c + w, j))
+    if done is None:
+        reached = max(dist, key=lambda i: dist[i])
+        sys.exit('no route to the finish within reach %.0f; %d tops reached, the furthest at %s' % (
+            a.reach, len(dist), str(centre(tops[reached]))))
+    path = [done]
+    while path[-1] in prev:
+        path.append(prev[path[-1]])
+    path.reverse()
+    pts = []
+    for i in path[1:]:
+        if i in via:
+            x, y, z = via[i]
+            pts.append({'at': [round(x), round(y), round(z)], 'radius': 16, 'door': True})
+        t = tops[i]; f = t['face']; cx, cz = centre(t)
+        pts.append({'at': [round(cx), round(t['top']), round(cz)],
+                    'radius': round(min(32.0, (f[1] - f[0]) / 2, (f[3] - f[2]) / 2))})
+    print('%s: %d tops, route of %d points, %.0f u' % (a.map, len(tops), len(pts), dist[done]), file=sys.stderr)
+    doc = {'id': a.map, 'units': 'manifest units and axes: Godot axes in genre units (x, up, z), what the tools print',
+           'how': 'tools/route_plan.py %s --reach %.0f' % (a.map, a.reach) + (' --region %s' % a.region if a.region else ''),
+           'points': pts}
+    s = json.dumps(doc, indent=1) + '\n'
+    if a.out:
+        open(a.out, 'w').write(s)
+    else:
+        print(s)
+
+main()
