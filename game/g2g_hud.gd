@@ -55,6 +55,17 @@ const BLIND_FADE_SEC := 0.25
 
 const BLIND_COLOUR := Color(0.01, 0.01, 0.015)
 
+## Over everything this HUD draws while the server is on a map this client has not loaded.
+##
+## [b]Over the widgets, unlike the blind.[/b] There is no run to read: the clock, the keys
+## and the speed all describe a player the client is not simulating (see
+## [method G2GNetBridge.in_transit]). What a player saw instead was the engine's clear
+## colour with a live HUD on it — a grey screen that looked like a game that had broken —
+## for as long as the map took to download and build. The chat box is the presentation
+## layer's and stays above this, so the wait can still be talked through.
+var loading_cover: ColorRect = null
+var _loading_label: Label = null
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -152,6 +163,29 @@ func _ready() -> void:
 	_notice.offset_right = 600.0
 	_notice.offset_top = -(NOTICE_CLEARANCE + 26.0)
 	_notice.offset_bottom = -NOTICE_CLEARANCE
+
+	# Last, so it draws over every widget above. Sized to the viewport in
+	# `show_loading`, for the reason the blind is. See [member loading_cover].
+	loading_cover = ColorRect.new()
+	loading_cover.name = "Loading"
+	loading_cover.color = BLIND_COLOUR
+	loading_cover.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	loading_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	loading_cover.visible = false
+	add_child(loading_cover)
+
+	_loading_label = Label.new()
+	_loading_label.name = "Text"
+	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_loading_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_loading_label.offset_left = 0.0
+	_loading_label.offset_top = 0.0
+	_loading_label.offset_right = 0.0
+	_loading_label.offset_bottom = 0.0
+	_loading_label.add_theme_font_size_override("font_size", 22)
+	_loading_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	loading_cover.add_child(_loading_label)
 
 
 func _label(p_name: String, align: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
@@ -289,6 +323,28 @@ func _process(delta: float) -> void:
 		parts.append("ground")
 
 	_status.text = "   ·   ".join(parts)
+
+
+## Covers the screen with [param text], or uncovers it when [param text] is empty.
+##
+## Pushed by the client every frame from [method G2GNetBridge.transit_text] rather than
+## read off the game, because whether the server is somewhere this client is not is a
+## fact about the connection, and offline there is no connection to ask.
+func show_loading(text: String) -> void:
+	if loading_cover == null:
+		return
+
+	loading_cover.visible = text != ""
+
+	if not loading_cover.visible:
+		return
+
+	_loading_label.text = text
+
+	if is_inside_tree():
+		var inverse := get_global_transform().affine_inverse()
+		loading_cover.position = inverse * Vector2.ZERO
+		loading_cover.size = inverse.basis_xform(get_viewport_rect().size)
 
 
 ## Fades [member blind_overlay] toward whether the followed player is blinded.

@@ -124,6 +124,12 @@ var _client_ticked_for: int = -1
 ## reports a refused announce with no map, because it refused to make one.
 var _map_handling: StringName = &""
 
+## Client: the map the server is simulating, as its last `load` said. See [method in_transit].
+var _server_map: StringName = &""
+
+## Client: how far the announced map's download has got, 0..1. For the loading cover.
+var map_fetch_fraction: float = 0.0
+
 ## A style index -> id table both ends build identically. See [DotTimerNet].
 var _style_ids: Array[StringName] = []
 
@@ -451,28 +457,105 @@ func note_attack(player: G2GPlayer, attack: bool) -> void:
 	game.combat.set_fire_command(player.player_id, command)
 
 
+## Client: whether the server is simulating this player on a map this client does not have
+## loaded yet.
+##
+## [b]Two cases, and they are the same bug.[/b] A joiner is admitted — HELLO, JOIN, its
+## player spawned on the server's map — before it has been announced that map, so on a
+## cold cache it spends the whole download and build with no world at all. A straggler is
+## told to `load` while its download is still running, and spends the rest of it on the
+## old map while the server has moved it to the new one. Either way, a client that
+## predicted here was simulating its player against geometry the server did not have:
+## falling through nothing from the origin, corrected back into the air by every
+## snapshot, while the server applied the keys it was sent to a player on the real map.
+## That was the first connect to a server whose map was not cached — a grey screen that
+## jittered for as long as the download took, and a player somewhere else when it landed
+## — and why reconnecting, with the pack now cached, "fixed" it.
+##
+## [b]From the `load`, not from the announce.[/b] An ordinary change announces the next
+## map while the server is still playing the current one, waiting for every client to say
+## it has the new one; gating on the announce would freeze every player for the length of
+## everybody's download at the end of every map. The server swaps when it sends `load`,
+## and not before.
+func in_transit() -> bool:
+	if net == null or net.is_server or game == null or game.maps == null:
+		return false
+
+	var current := game.maps.current
+
+	if current == null:
+		return true
+
+	return _server_map != &"" and current.id != _server_map
+
+
+## Client: what the loading cover says, or empty when there is nothing to cover.
+func transit_text() -> String:
+	if not in_transit():
+		return ""
+
+	var id := _server_map
+
+	if id == &"" and map_client != null and map_client.announced != null:
+		id = map_client.announced.id
+
+	if id == &"":
+		return "Joining…"
+
+	var name := String(id)
+	var def := game.maps.catalogue.get_map(id) if game.maps.catalogue != null else null
+	if def == null and map_client != null and map_client.announced != null \
+			and map_client.announced.id == id:
+		def = map_client.announced
+	if def != null:
+		name = def.name_or_id()
+
+	if map_fetch_fraction > 0.0 and map_fetch_fraction < 1.0:
+		return "Loading %s… %d%%" % [name, int(map_fetch_fraction * 100.0)]
+
+	return "Loading %s…" % name
+
+
 func client_tick(tick: int, command: DotFpsCommand) -> void:
 	if net == null or net.is_server or game == null:
 		return
 
 	_tick = tick
 
+	# [b]Still sent while in transit, and neutral.[/b] Not silence: the server applies the
+	# last command it heard to every tick it hears nothing for, so a key held when the
+	# world went away would be held for the whole download. Nor the real one: the player
+	# cannot see where they are going. The view is kept so it does not snap when the
+	# world arrives, and the packet carries the snapshot ack either way.
+	var transit := in_transit()
+	var move := command if command != null else DotFpsCommand.new()
+
+	if transit:
+		move = move.duplicate_command()
+		move.move = Vector2.ZERO
+		move.buttons = 0
+
 	var packet := G2GNetCommand.new()
 	packet.tick = tick
 	packet.delta = net.clock.tick_duration()
-	packet.move = command if command != null else DotFpsCommand.new()
-	packet.attack = attack_wanted
+	packet.move = move
+	packet.attack = attack_wanted and not transit
 
-	# Into the local history BEFORE predicting: reconciliation replays it.
-	net.local_inputs().push(packet)
+	# [b]Neither recorded nor predicted while in transit.[/b] There is nothing to predict
+	# against, so the server's own state is shown as it arrives; and a command kept in
+	# the history would be replayed by the first reconciliation on the new map, against
+	# the position it was never simulated from.
+	if not transit:
+		# Into the local history BEFORE predicting: reconciliation replays it.
+		net.local_inputs().push(packet)
 
-	# The behaviour simulates from last_move, on a fresh tick and on a replayed one
-	# alike — the predictor's replay sets it through _net_apply_input, and this is
-	# the fresh tick's equivalent.
-	var mine: G2GPlayerNet = _behaviours.get(local_player_id)
-	if mine != null:
-		mine.last_move = packet.move
-		mine.last_attack = packet.attack
+		# The behaviour simulates from last_move, on a fresh tick and on a replayed one
+		# alike — the predictor's replay sets it through _net_apply_input, and this is
+		# the fresh tick's equivalent.
+		var mine: G2GPlayerNet = _behaviours.get(local_player_id)
+		if mine != null:
+			mine.last_move = packet.move
+			mine.last_attack = packet.attack
 
 	if link != null:
 		var payload := net.encode_ack()
@@ -485,9 +568,10 @@ func client_tick(tick: int, command: DotFpsCommand) -> void:
 	# behaviours, and every timer — including remote players' — is fed afterwards.
 	if _client_ticked_for != tick:
 		_client_ticked_for = tick
-		for identity in net.registry.predicted():
-			for behaviour in identity.behaviours:
-				behaviour._net_simulate(tick, net.clock.tick_duration())
+		if not transit:
+			for identity in net.registry.predicted():
+				for behaviour in identity.behaviours:
+					behaviour._net_simulate(tick, net.clock.tick_duration())
 		game.tick_timers_only(tick)
 
 
@@ -728,6 +812,10 @@ func _build_map_sync() -> void:
 		map_client.trusted_template_scenes = PackedStringArray([G2GMapCatalogue.IMPORTED_SCENE])
 		map_client.template_path_keys = PackedStringArray(["manifest"])
 		map_client.fetch_failed.connect(_on_map_fetch_failed)
+		map_client.fetching.connect(func(_map: DotMapDef) -> void: map_fetch_fraction = 0.0)
+		map_client.fetch_progress.connect(func(fraction: float) -> void:
+			map_fetch_fraction = fraction
+		)
 		map_client.changed.connect(func(map: DotMapDef) -> void: map_loaded.emit(map))
 		add_child(map_client)
 
@@ -817,6 +905,11 @@ func _on_map_message(payload: Dictionary) -> void:
 		return
 	if map_client == null:
 		return
+
+	# The server sends `load` when it has swapped, so this is the map it simulates now.
+	# See [method in_transit].
+	if DotMapMessage.kind_of(payload) == DotMapMessage.KIND_LOAD:
+		_server_map = StringName(str(payload.get("map", "")))
 
 	# A refused announce is reported with no map, synchronously, from inside `handle`.
 	var def: Variant = payload.get("map", {})

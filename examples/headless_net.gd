@@ -35,7 +35,7 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 157
+const CHECKS := 161
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -1053,10 +1053,36 @@ func _test_map_straggler() -> void:
 	# until the fetch lands now. Armed both times by taking the load at once: before, it
 	# was dropped and the client stayed on the old world; in dot-map, it asked for the
 	# pack a second time mid-download (dot-map's suite asserts that one).
+	# [b]And while it waits, it does not play a world it does not have.[/b] The server is
+	# simulating this player on the new map; the client still has the old one, or on a
+	# joiner's first connect no world at all. Predicting there was a player falling through
+	# nothing and corrected back by every snapshot, while the server applied the keys it was
+	# sent to somewhere the player could not see — the grey, jittering first connect that a
+	# reconnect, with the pack cached, never showed. Armed by making `in_transit` answer
+	# false: the client predicts the held key and sends it, and both checks below fail.
+	_check(_client_bridge.in_transit() and _client_bridge.transit_text().begins_with("Loading"),
+		"the client knows the server is on a map it has not loaded, and says so",
+		_client_bridge.transit_text())
+	var history_before := _client_net.local_inputs().since(0).size()
+	var client_before := _client_player().global_position
+	_steps(8, _forward())
+	_check(_client_net.local_inputs().since(0).size() <= history_before
+		and _client_player().global_position.distance_to(client_before) < 0.05,
+		"so it predicts nothing from the keys held meanwhile",
+		"history %d -> %d, moved %.3f m" % [history_before,
+			_client_net.local_inputs().since(0).size(),
+			_client_player().global_position.distance_to(client_before)])
+	var held: G2GPlayerNet = _server_bridge.behaviour_for(SESSION)
+	_check(held != null and held.last_move.move.length() < 0.01,
+		"and the server is sent a player standing still, not the key it would repeat",
+		str(held.last_move.move) if held != null else "no behaviour")
+
 	var followed := await _until_client_on(SYNC_FIXTURE, SLOW_FETCH + 2.0)
 	_check(followed, "and it follows once the download finishes, because the load waited behind it",
 		String(_client_game.maps.current.id) if _client_game.maps.current != null else "none")
 	_check(_client_game.maps.catalogue.has(SYNC_FIXTURE), "and keeps the map for next time")
+	_check(not _client_bridge.in_transit() and _client_bridge.transit_text() == "",
+		"and the cover comes down once it is on the server's map")
 
 	host.peer_timed_out.disconnect(on_timeout)
 	host.peer_progress.disconnect(on_progress)

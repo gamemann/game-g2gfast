@@ -169,6 +169,7 @@ func _stage() -> void:
 		{"name": "hud_no_clock", "arrange": _arrange_no_clock, "arranged": false},
 		{"name": "hud_beacon", "arrange": _arrange_beacon, "arranged": false},
 		{"name": "hud_blind", "arrange": _arrange_blind, "arranged": false},
+		{"name": "hud_loading", "arrange": _arrange_loading, "arranged": false},
 	]
 
 
@@ -233,6 +234,13 @@ func _arrange_beacon() -> void:
 ## The same view, blinded: nothing of the course, and the clock and keys still drawn.
 func _arrange_blind() -> void:
 	_player.blinded = true
+
+
+## The cover a networked client shows while the server is on a map it has not loaded.
+## Pushed by hand here, as `G2GClient._process` pushes it from the bridge.
+func _arrange_loading() -> void:
+	_player.blinded = false
+	_hud.show_loading("Loading surf mesa… 45%")
 
 
 # --- --fx -------------------------------------------------------------------

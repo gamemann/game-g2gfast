@@ -464,14 +464,25 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var ticks := net.clock.advance(delta)
-	for _i in range(ticks):
+	# [b]Each pass is its own tick.[/b] `advance` has already moved the clock by all of
+	# them, so `input_tick()` is the LAST one on every pass: a frame worth two ticks sent
+	# the second twice and the first never, the server repeated a stale command for the
+	# one it never got, and the predictor's replay stopped at the hole and drew the player
+	# short of where they were -- after every hitch, and on every frame the display and
+	# the tick rate do not line up. Arithmetic here rather than a new dot-net call,
+	# because a pack has to run on whatever client shell the player already has.
+	for i in range(ticks):
 		if net.clock.is_synced():
-			bridge.client_tick(net.clock.input_tick(), _sampler.sample(delta))
+			bridge.client_tick(net.clock.input_tick() - (ticks - 1 - i), _sampler.sample(delta))
 
 
 func _process(delta: float) -> void:
 	if net != null and not _offline:
 		net.interpolate_frame()
+
+	# A cover rather than a grey world, while the server is somewhere this client is not.
+	if hud != null and bridge != null:
+		hud.show_loading(bridge.transit_text())
 
 	for id in (game.players if game != null else {}):
 		(game.players[id] as G2GPlayer).present(delta)
