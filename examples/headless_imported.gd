@@ -5,6 +5,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
+const G2GStockSubstitutes := preload("../game/g2g_stock_substitutes.gd")
 const RouteBot := preload("../tools/route_bot.gd")
 
 ## Checks a map imported from a Source .bsp: it loads, it is the right size, it is
@@ -91,6 +92,15 @@ const ARRIVES_IN_PIT := {}
 ## that gains a pit or loses one fails here and the list cannot outlive its reason.
 const BONUSES_WITHOUT_PITS := {}
 
+## The share of a map's own triangles drawn in a real texture -- its pakfile's, or a Kenney
+## stand-in for a stock one it did not carry (`G2GStockSubstitutes`) -- at least, for the
+## maps whose stand-ins have been chosen and looked at (`[g2g-maps-stock-1]`). Measured
+## 2026-10-04 with the first table; the grid share before it is in the comment.
+const STOCK_DRAWN := {
+	"bhop_aztec": 0.60,       # 0% before: sandstone courses, looked at along the route
+	"surf_beginner2": 0.73,   # 2.6% before: planks, rock, sand, looked at along the route
+}
+
 ## The share of a map's triangles drawn in the texture its own pakfile carried, at least,
 ## for the maps where a parsing bug was measured taking it away (2026-09-27): a leading
 ## `/` on the material name and a `$basetexture` with a space in it. Measured after the
@@ -107,7 +117,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 40
+const CHECKS_PER_MAP := 41
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -414,6 +424,21 @@ func _test_lighting() -> void:
 			slashed.append(str(entry["material"]))
 	var share := float(own) / float(maxi(tris, 1))
 	var floor_share: float = OWN_TEXTURES.get(String(_map_id), 0.0)
+
+	# Own texture or a stand-in, which is what a player sees as textured. The material
+	# names are the manifest's; a stand-in applies only where nothing shipped.
+	var stood_in := 0
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		if bool(entry.get("prop", false)) or not bool(entry.get("prototype", false)):
+			continue
+		if not G2GStockSubstitutes.for_material(str(entry.get("material", ""))).is_empty():
+			stood_in += int(entry.get("index_count", 0)) / 3
+	var drawn := float(own + stood_in) / float(maxi(tris, 1))
+	var drawn_floor: float = STOCK_DRAWN.get(String(_map_id), 0.0)
+	print("  stock %s: own %.1f%%, with stand-ins %.1f%%" % [_map_id, share * 100.0, drawn * 100.0])
+	_check(drawn >= drawn_floor,
+		"and a stock texture it did not carry has its Kenney stand-in",
+		"%.1f%% drawn textured, %.0f%% expected" % [drawn * 100.0, drawn_floor * 100.0])
 	_check(slashed.is_empty() and share >= floor_share,
 		"and the textures its pakfile carried are drawn",
 		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"

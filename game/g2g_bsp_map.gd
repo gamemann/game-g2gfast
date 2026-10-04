@@ -4,6 +4,7 @@ const G2GPaths := preload("g2g_paths.gd")
 
 const G2GLighting := preload("g2g_lighting.gd")
 const G2GTextures := preload("g2g_textures.gd")
+const G2GStockSubstitutes := preload("g2g_stock_substitutes.gd")
 
 ## A map imported from a Source .bsp, built at load from a manifest anywhere on disk.
 ##
@@ -438,6 +439,33 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 	# tools/bsp_import.py; a manifest written before it has no `colour` and falls through
 	# to the role colours below.
 	var colour: Variant = s.get("colour", null)
+
+	# [b]A Kenney stand-in, when the table has one for this material.[/b] Christian's rule:
+	# the map's own texture, else Kenney, else the grid -- never the source game's. Pulled
+	# toward the mapper's measured colour so the map keeps its palette, drawn with nearest
+	# filtering because it is pixel art, at a tile size the table sets. Here rather than in
+	# the importer so the packs already published get it. See G2GStockSubstitutes.
+	var stand_in := G2GStockSubstitutes.for_material(str(s.get("material", "")))
+	if not stand_in.is_empty():
+		var kenney := _load_texture(G2GPaths.rebase(G2GStockSubstitutes.texture_path(stand_in)))
+		if kenney != null:
+			var measured := Color(0.5, 0.5, 0.5)
+			if colour is Array and (colour as Array).size() >= 3:
+				measured = Color(float(colour[0]), float(colour[1]), float(colour[2]))
+			mat.set_shader_parameter("pixel_tex", kenney)
+			mat.set_shader_parameter("pixel_art", true)
+			mat.set_shader_parameter("has_albedo", true)
+			mat.set_shader_parameter("tint", G2GStockSubstitutes.tint_for(stand_in, measured))
+			# Prototype UVs are in 64-unit squares; a tile spans `units` across and
+			# `units * aspect` up. Half of Kenney's walls are 64x128, and drawn square
+			# their brick courses came out as thin as planks.
+			var across := float(stand_in.get("units", 128.0))
+			mat.set_shader_parameter("pixel_scale", Vector2(64.0 / across,
+				64.0 / (across * float(stand_in.get("aspect", 1.0)))))
+			mat.set_shader_parameter("ambient", prototype_ambient)
+			mat.set_meta(&"stand_in", str(stand_in.get("texture", "")))
+			return mat
+
 	if colour is Array and (colour as Array).size() >= 3:
 		mat.set_shader_parameter("albedo_tex", G2GTextures.grid_texture())
 		mat.set_shader_parameter("has_albedo", true)

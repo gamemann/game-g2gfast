@@ -1,0 +1,6 @@
+The PNG files in this directory are from Kenney's "Retro Textures Fantasy" (1.0),
+created and distributed by Kenney (www.kenney.nl), licensed Creative Commons Zero (CC0):
+http://creativecommons.org/publicdomain/zero/1.0/
+
+They stand in for the source game's own textures on imported maps; see substitutes.json
+and game/g2g_stock_substitutes.gd. Nothing from the source game is in this directory.

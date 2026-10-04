@@ -31,6 +31,12 @@ uniform bool has_albedo = true;
 // `alpha_offset` sets it; every other surface has no COLOR array and never reads it.
 uniform sampler2D albedo2_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_albedo2 = false;
+// A Kenney stand-in for a stock texture the map did not carry: pixel art, so sampled
+// nearest rather than through albedo_tex's linear filter, which smears a 64 px tile
+// into mud. See G2GStockSubstitutes.
+uniform sampler2D pixel_tex : source_color, filter_nearest_mipmap, repeat_enable;
+uniform bool pixel_art = false;
+uniform vec2 pixel_scale = vec2(0.5, 0.5);
 // How much of the albedo texture one unit of UV is.
 //
 // 1.0 for a texture the map carried, whose UVs are the ones the mapper placed. For a
@@ -47,6 +53,9 @@ uniform float light_boost : hint_range(0.0, 4.0) = 1.35;
 
 void fragment() {
 	vec4 base = has_albedo ? texture(albedo_tex, UV * uv_scale) * tint : tint;
+	if (pixel_art) {
+		base = texture(pixel_tex, UV * pixel_scale) * tint;
+	}
 	if (has_albedo2) {
 		base = mix(base, texture(albedo2_tex, UV * uv_scale) * tint, clamp(COLOR.a, 0.0, 1.0));
 	}

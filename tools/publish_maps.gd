@@ -64,11 +64,22 @@ func _initialize() -> void:
 
 	var pem := FileAccess.get_file_as_string(key_path)
 	var failed := 0
+	var private := _private_reference_hashes()
 
 	for id in ids:
 		var source := "%s/%s" % [IMPORTED, id]
 		if not FileAccess.file_exists("%s/%s.json" % [source, id]):
 			printerr("%s: not an imported map (no %s/%s.json)" % [id, source, id])
+			failed += 1
+			continue
+
+		# [b]Nothing from /extra, ever.[/b] It holds private copies of the source game's
+		# own textures, kept only to choose and judge Kenney stand-ins
+		# (`[g2g-maps-stock-1]`). A file that IS one of them, or a link into /extra,
+		# refuses the whole map rather than shipping it.
+		var leaked := _private_files_in(source, private)
+		if not leaked.is_empty():
+			printerr("%s: refusing to publish, private reference content in it: %s" % [id, ", ".join(leaked)])
 			failed += 1
 			continue
 
@@ -88,3 +99,36 @@ func _initialize() -> void:
 
 	print("%d published, %d failed, into %s" % [ids.size() - failed, failed, out])
 	quit(2 if failed > 0 else 0)
+
+
+const PRIVATE_ROOT := "/extra"
+const PRIVATE_REFERENCE := "/extra/g2g-ref/materials"
+
+
+## SHA-256 of every file under the private reference, when this machine has it.
+func _private_reference_hashes() -> Dictionary:
+	var out := {}
+	if not DirAccess.dir_exists_absolute(PRIVATE_REFERENCE):
+		return out
+	var files := PackedStringArray()
+	G2GMapCatalogue._files_under(PRIVATE_REFERENCE, "", files)
+	for rel in files:
+		out[FileAccess.get_sha256(PRIVATE_REFERENCE.path_join(rel))] = rel
+	return out
+
+
+## Files in [param source] that are private reference copies or resolve into /extra.
+func _private_files_in(source: String, hashes: Dictionary) -> PackedStringArray:
+	var leaked := PackedStringArray()
+	var files := PackedStringArray()
+	G2GMapCatalogue._files_under(source, "", files)
+	for rel in files:
+		var path := source.path_join(rel)
+		var real := ProjectSettings.globalize_path(path)
+		var resolved := DirAccess.open(real.get_base_dir())
+		if resolved != null and resolved.is_link(real.get_file()) \
+				and resolved.read_link(real.get_file()).begins_with(PRIVATE_ROOT):
+			leaked.append(rel)
+		elif hashes.has(FileAccess.get_sha256(path)):
+			leaked.append("%s (= %s)" % [rel, hashes[FileAccess.get_sha256(path)]])
+	return leaked

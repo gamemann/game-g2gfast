@@ -1,0 +1,278 @@
+{
+ "_": "Kenney stand-ins for stock materials an imported map's .bsp did not carry. First match wins (String.match globs, lowercase material names). 'none' keeps the tinted prototype grid. 'units' is the world WIDTH of one tile (its height is units * 'aspect', the image's height over width) in Source units; 'mean' is the stand-in's average sRGB colour, which the tint toward the map's measured colour divides by. Chosen 2026-10-04 by looking at private reference copies of the originals; those never enter this repository. [g2g-maps-stock-1]",
+ "entries": [
+  {
+   "match": "dev/*",
+   "none": true,
+   "why": "a developer texture: flat colour, the grid tinted to it is the honest stand-in"
+  },
+  {
+   "match": "tools/*",
+   "none": true,
+   "why": "tool texture"
+  },
+  {
+   "match": "real_dev/*",
+   "none": true,
+   "why": "developer texture"
+  },
+  {
+   "match": "*/black",
+   "none": true,
+   "why": "flat black in the original (cs_italy/black measured)"
+  },
+  {
+   "match": "*/white",
+   "none": true,
+   "why": "flat white in the original (cs_havana/white measured)"
+  },
+  {
+   "match": "metal/*",
+   "none": true,
+   "why": "Kenney's retro set has no metal"
+  },
+  {
+   "match": "concrete/*",
+   "none": true,
+   "why": "Kenney's retro set has no concrete"
+  },
+  {
+   "match": "lights/*",
+   "none": true,
+   "why": "a light panel"
+  },
+  {
+   "match": "models/comp/*",
+   "none": true,
+   "why": "arcade cabinet parts: flat colours"
+  },
+  {
+   "match": "de_tides/blend_concrete_dirt",
+   "texture": "floor_ground_dirt.png",
+   "why": "reference: brown packed dirt",
+   "mean": [
+    0.359,
+    0.289,
+    0.248
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "models/props_wasteland/rockcliff*",
+   "texture": "wall_rock.png",
+   "why": "name and model: rock cliff faces (surf_mesa's walls)",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "cs_havana/woodm",
+   "texture": "floor_wood_planks.png",
+   "why": "reference: dark brown planks",
+   "mean": [
+    0.349,
+    0.281,
+    0.24
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "de_chateau/woodm",
+   "texture": "floor_wood_planks.png",
+   "why": "reference: dark brown planks",
+   "mean": [
+    0.349,
+    0.281,
+    0.24
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "de_tides/tides_floor_wood",
+   "texture": "floor_wood_planks_wide.png",
+   "why": "reference: wide weathered planks",
+   "mean": [
+    0.351,
+    0.281,
+    0.239
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "de_dust/rockwall01",
+   "texture": "wall_rock.png",
+   "why": "reference: brown rock",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "cs_havana/rockwall011*",
+   "texture": "wall_rock.png",
+   "why": "reference: dark rock",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "de_dust/groundsand_blend",
+   "texture": "floor_ground_sand.png",
+   "why": "reference: pale sand",
+   "mean": [
+    0.641,
+    0.584,
+    0.547
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "cs_italy/stonewall02",
+   "texture": "wall_brick_stone_center.png",
+   "why": "reference: grey stone courses",
+   "mean": [
+    0.488,
+    0.498,
+    0.538
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "cs_havana/ground01grass",
+   "texture": "floor_ground_grass.png",
+   "why": "reference: short green grass",
+   "mean": [
+    0.233,
+    0.348,
+    0.28
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "de_aztec/stonework01*",
+   "texture": "wall_brick_sand_center.png",
+   "why": "reference: sandstone blocks",
+   "mean": [
+    0.628,
+    0.561,
+    0.525
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "cs_italy/cobble02",
+   "texture": "floor_stone_pattern_small.png",
+   "why": "reference: grey cobbles",
+   "mean": [
+    0.433,
+    0.443,
+    0.49
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "stone/stonewall*",
+   "texture": "wall_stone.png",
+   "why": "name: stone wall",
+   "mean": [
+    0.469,
+    0.48,
+    0.523
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "nature/sandfloor*",
+   "texture": "floor_ground_sand.png",
+   "why": "name: sand floor",
+   "mean": [
+    0.641,
+    0.584,
+    0.547
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "nature/blenddirtgrass*",
+   "texture": "floor_ground_dirt.png",
+   "why": "name: dirt/grass blend, dirt is the base",
+   "mean": [
+    0.359,
+    0.289,
+    0.248
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "nature/blenddirtdirt*",
+   "texture": "floor_ground_dirt.png",
+   "why": "name: dirt",
+   "mean": [
+    0.359,
+    0.289,
+    0.248
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
+   "match": "nature/blendcliffgrass*",
+   "texture": "wall_rock.png",
+   "why": "name: cliff/grass blend, cliff is the base",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "*rockwall*",
+   "texture": "wall_rock.png",
+   "why": "name: rock wall",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  },
+  {
+   "match": "*rockcliff*",
+   "texture": "wall_rock.png",
+   "why": "name: rock cliff",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0
+  }
+ ]
+}
