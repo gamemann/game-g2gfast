@@ -1227,14 +1227,40 @@ func _on_stage_requested(player_id: StringName, _number: int, zone: DotTimerZone
 
 ## Sends a player to stage [param number]'s spot on the track they are on. The run
 ## stops: a stage restart is practice, never a time.
+##
+## Refused, with the run untouched, for a stage that has nowhere to stand: see
+## [constant G2GBspMap.NO_RESTART]. The refusal comes first because the timer's own
+## `request_stage` stops the run before the game is asked to move anybody.
 func request_stage(id: StringName, number: int) -> DotResult:
+	var why: Variant = _no_restart_reason(id, number)
+	if why != null:
+		return DotResult.fail(DotError.CODE_UNSUPPORTED,
+			"Stage %d has no start to send you to: %s" % [number, why])
 	return timers.request_stage(id, number)
 
 
 ## Sends a player back to the start of the stage they are in (stage 1 before the first
-## line). Shavit's `!rs`.
+## line). Shavit's `!rs`. In a stage with no restart, the start of the nearest stage
+## before it that has one -- the section that stage line splits.
 func restart_stage(id: StringName) -> DotResult:
-	return timers.restart_stage(id)
+	var found := timers.player(id)
+	if found == null:
+		return timers.restart_stage(id)
+	var number := maxi(found.timer.run.stage, 1)
+	while number > 1 and _no_restart_reason(id, number) != null:
+		number -= 1
+	return timers.request_stage(id, number)
+
+
+## The reason stage [param number] on [param id]'s track cannot be restarted, or null.
+func _no_restart_reason(id: StringName, number: int) -> Variant:
+	var found := timers.player(id)
+	if found == null or timers.zones == null:
+		return null
+	var zone := timers.zones.stage_zone(found.timer.track, number)
+	if zone == null or not zone.payload.has(G2GBspMap.NO_RESTART):
+		return null
+	return str(zone.payload[G2GBspMap.NO_RESTART])
 
 
 func _on_player_finished(player_id: StringName, run: DotTimerRun) -> void:

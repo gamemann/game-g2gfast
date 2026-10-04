@@ -65,17 +65,16 @@ const NO_PIT := ["buses_from_hell_fixed"]
 ## - `surf_summit` stage 3 landed on the floor beam of a gate whose far side is the fail
 ##   plane. Its zones file gives the stage a destination on the deck past the gate.
 ##
-## `surf_greensway` stage 2 is not a wedge: its arrival (the floor of `checkpoint_1`, a
-## plane 3,328 wide and 7,168 tall) is INSIDE the hull of the mapper's own teleport, and
-## so is every floor and both canyon rims within 1,700 units of the line, measured with
-## `point_in_brush`. The checkpoint is a split with nowhere to stand; where `!s2` should
-## put a player wants somebody to look at the map in-game.
+## - `surf_greensway` stage 2 was not a wedge: its arrival (the floor of `checkpoint_1`, a
+##   plane 3,328 wide and 7,168 tall) is INSIDE the hull of the mapper's own teleport, and
+##   so is every floor and both canyon rims within 1,700 units of the line. Its zones file
+##   makes it a split with no restart (`restart: false`, `[arrive-2]`): `!s2` is refused
+##   with the reason, and `_test_stands_where_it_sends_you` asserts that instead.
 ##
-## Asserted both ways, like [constant NOT_COURSES]: a map in here whose arrival stops
-## landing in a pit fails, so the list cannot outlive its reason.
-const ARRIVES_IN_PIT := {
-	"surf_greensway": ["stage 2"],
-}
+## Empty now, and kept so the next one has somewhere to go. Asserted both ways, like
+## [constant NOT_COURSES]: a map in here whose arrival stops landing in a pit fails, so
+## the list cannot outlive its reason.
+const ARRIVES_IN_PIT := {}
 
 ## Imported bonuses with no pit of their own, by track, which `route_problems()` reports.
 ##
@@ -705,6 +704,7 @@ func _test_stands_where_it_sends_you() -> void:
 	var node := game.current_map_node()
 	var zones := game.timers.zones
 	var spots: Array = []
+	var splits: Array[int] = []
 	if zones != null:
 		for track in zones.playable_tracks():
 			var spawn := zones.first_of_kind(DotTimerZone.Kind.SPAWN, track)
@@ -712,9 +712,16 @@ func _test_stands_where_it_sends_you() -> void:
 				spots.append([DotTimerTrack.short_name_of(track) + " spawn", spawn.destination])
 			for n in range(1, zones.stage_count(track) + 1):
 				var stage := zones.stage_zone(track, n)
-				if stage != null:
-					spots.append(["stage %d" % n, stage.destination])
-	_expected += spots.size()
+				if stage == null:
+					continue
+				if stage.payload.has(G2GBspMap.NO_RESTART):
+					# A split with no restart has no spot; what is asserted is that
+					# nobody is sent to it. Main track only: that is the bot's.
+					if track == DotTimerTrack.MAIN:
+						splits.append(n)
+					continue
+				spots.append(["stage %d" % n, stage.destination])
+	_expected += spots.size() + splits.size() * 2
 
 	var bot: G2GPlayer = game.players.get(&"bot")
 	if bot == null:
@@ -728,6 +735,21 @@ func _test_stands_where_it_sends_you() -> void:
 		var drop := at.y - bot.global_position.y
 		_check(drop < 8.0, "%s is somewhere a player can stand" % spot[0],
 			"fell %.1f m from %s" % [drop, str(at / G2GUnits.METRES_PER_UNIT)])
+
+	for n in splits:
+		var before := bot.global_position
+		var refused := game.request_stage(&"bot", n)
+		_check(not refused.ok and refused.error.code == DotError.CODE_UNSUPPORTED,
+			"stage %d, a split with no restart, refuses !s%d with the reason" % [n, n],
+			str(refused.error.message) if not refused.ok else "it was sent")
+		# `!rs` from inside it goes to the stage it splits, which IS somewhere to stand.
+		var who := game.timers.player(&"bot")
+		if who != null:
+			who.timer.run.stage = n
+		var back := game.restart_stage(&"bot")
+		_check(back.ok and bot.global_position.distance_to(before) > 1.0,
+			"and !rs inside stage %d goes back to the stage before it" % n,
+			str(back.error.message) if not back.ok else "did not move")
 	_done()
 
 
@@ -755,6 +777,8 @@ func _test_arrivals_miss_the_pits() -> void:
 				DotTimerZone.Kind.SPAWN:
 					label = "%s spawn" % DotTimerTrack.short_name_of(zone.track)
 				DotTimerZone.Kind.STAGE:
+					if zone.payload.has(G2GBspMap.NO_RESTART):
+						continue    # nobody is ever put there; see ARRIVES_IN_PIT
 					label = "stage %d" % int(zone.number)
 				DotTimerZone.Kind.TELEPORT:
 					label = "door"

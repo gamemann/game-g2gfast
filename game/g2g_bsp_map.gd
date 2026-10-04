@@ -35,6 +35,13 @@ const CHANNEL := "g2g.bsp"
 
 const VERTEX_FLOATS := 10          # position 3, normal 3, uv 2, uv2 2
 
+## The key in a stage zone's [member DotTimerZone.payload] that makes it a split with
+## no restart, holding the reason. A map's zone file sets it (`restart: false` and
+## `restart_why`) for a stage line the mapper drew across open air -- surf_greensway's
+## stage 2 is a gate across a canyon, and the only spot under it is a fail plane.
+## `G2GGame.request_stage` refuses `!s<n>` there and `restart_stage` goes back a stage.
+const NO_RESTART := "no_restart"
+
 ## Zone kinds by the name the manifest writes, which is [enum DotTimerZone.Kind]'s.
 ##
 ## [b]Names on the wire, not numbers.[/b] A manifest is read by a build that may be
@@ -557,6 +564,9 @@ func _zone_from(entry: Dictionary) -> DotTimerZone:
 		zone.destination = G2GUnits.vector_to_metres(_vec(entry["destination"]))
 		zone.destination_yaw = float(entry.get("destination_yaw", 0.0))
 	zone.comment = str(entry.get("comment", ""))
+	# A stage with nowhere to stand is a split only; see `G2GGame.request_stage`.
+	if entry.get("restart", true) == false:
+		zone.payload[NO_RESTART] = str(entry.get("restart_why", ""))
 	return zone
 
 

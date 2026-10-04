@@ -1587,6 +1587,21 @@ def resolve_overrides(z, doc):
         track = int(spec.get("track", 0))
         box = resolve_box(z, spec)
         dest, yaw = resolve_point(z, spec)
+        if kind == "STAGE" and box is None and dest is None and spec.get("restart") is False:
+            # A stage the MAP labelled that has nowhere to put a player: a gate across
+            # open air (surf_greensway's `checkpoint_1`). It stays a split and `!s<n>`
+            # is refused with the reason, rather than sending anybody into the canyon.
+            number = float(spec.get("number", 0))
+            hits = [zz for zz in z.zones if zz["kind"] == "STAGE"
+                    and zz["track"] == track and float(zz.get("number", 0)) == number]
+            if not hits:
+                raise ValueError("stage %g on track %d is marked no-restart and has no zone" % (number, track))
+            why = str(spec.get("restart_why", "")).strip()
+            if not why:
+                raise ValueError("stage %g on track %d is marked no-restart without restart_why" % (number, track))
+            for zz in hits:
+                zz["no_restart"] = why
+            continue
         if kind == "STAGE" and box is None and dest is not None:
             # A destination for a stage the MAP labelled, with no volume of its own:
             # the line is the mapper's and only where `!s<n>` puts a player is ours.
@@ -2252,6 +2267,9 @@ def emit_zones(z):
             one["destination_yaw"] = yaw_to_godot(zone.get("destination_yaw", 0.0))
         if zone.get("comment"):
             one["comment"] = zone["comment"]
+        if zone.get("no_restart"):
+            one["restart"] = False
+            one["restart_why"] = zone["no_restart"]
         out.append(one)
     return out
 
