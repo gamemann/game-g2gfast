@@ -733,8 +733,54 @@ def build_props(drawn, materials, block_of, lm_place, lm_w, lm_h):
     return groups
 
 
-def emit_prop_surfaces(groups, textured, offset):
-    """Manifest entries and the blob for build_props' groups, offsets shifted by `offset`."""
+PROP_COLOUR_WORDS = ("rock", "cliff", "stone", "brick", "concrete", "cobble", "wood", "metal",
+                     "dirt", "grass", "sand", "tile", "plaster", "marble", "glass", "leaf",
+                     "foliage", "bark", "snow", "ice", "water", "lava", "crystal")
+
+
+def prop_colours(bsp, materials):
+    """{prop material: sRGB colour} for prop materials whose texture did not ship.
+
+    [b]A prop's material is usually named after a texture the map's brushes use too.[/b]
+    `propper/surf_summit/cobble02` is `cs_italy/cobble02` on summit's walls, surf_arcade's
+    `models/comp/<model>/black` and `/white` are `cs_italy/black` and `/white`, and vrad
+    measured every brush texture's average colour into `dtexdata_t.reflectivity` (see
+    `surface_colour`). So a prop whose material's last path part names a brush texture
+    takes that texture's colour; failing that, one whose name holds a material word
+    (`rockcliff02c`: rock) takes the mean colour of the brush textures named with the same
+    word -- the map's own rock. Otherwise it stays None and the surface keeps the flat
+    0.5 grey, which is what every one of them drew before (`g2g-maps-1`).
+    """
+    names = []
+    for td in bsp.texdata:
+        n = clean_material(bsp.texnames[td[3]]).lower()
+        if n.startswith(("tools/", "maps/")) or "skybox" in n:
+            continue
+        names.append((n, tuple(td[0:3])))
+    by_base = {}
+    for n, refl in names:
+        by_base.setdefault(n.rsplit("/", 1)[-1], refl)
+    out = {}
+    for mat in materials:
+        base = mat.lower().rsplit("/", 1)[-1]
+        refl = by_base.get(base)
+        how = "name"
+        if refl is None:
+            words = [w for w in PROP_COLOUR_WORDS if w in base]
+            hits = [r for n, r in names if any(w in n.rsplit("/", 1)[-1] for w in words)]
+            if hits:
+                refl = tuple(sum(r[c] for r in hits) / len(hits) for c in range(3))
+                how = "word"
+        colour = surface_colour(refl, mat)
+        if colour is not None:
+            out[mat] = (colour, how)
+    return out
+
+
+def emit_prop_surfaces(groups, textured, offset, colours=None):
+    """Manifest entries and the blob for build_props' groups, offsets shifted by `offset`.
+
+    `colours` is `prop_colours`' answer: a prototype prop is painted that instead of grey."""
     surfaces, blob = [], bytearray()
     for mat in sorted(groups):
         verts, idx = groups[mat]
@@ -751,7 +797,7 @@ def emit_prop_surfaces(groups, textured, offset):
                  "vertex_offset": offset + voff, "vertex_count": len(verts),
                  "index_offset": offset + ioff, "index_count": len(idx)}
         if entry["prototype"]:
-            entry["colour"] = [0.5, 0.5, 0.5]
+            entry["colour"] = list((colours or {}).get(mat, ([0.5, 0.5, 0.5], None))[0])
         surfaces.append(entry)
     return surfaces, bytes(blob)
 
@@ -2404,9 +2450,27 @@ def main(argv=None):
     probes = bsp_props.AmbientProbes(bsp)
     ground = bsp_props.GroundLight(bsp, faces, bsp._lump(LUMP_LIGHTING)) if props_drawn else None
     blocks, block_of, block_index = [], [], {}
+    open_sky = ground.open_sky() if ground is not None else None
+    props_open_sky = 0
     for pr, _meshes in props_drawn:
-        cube = bsp_props.lit_cube(probes.cube(pr["lighting_origin"]),
-                                  ground.at(pr["lighting_origin"]))
+        under = ground.at(pr["lighting_origin"])
+        probe = probes.cube(pr["lighting_origin"])
+        if under is None and probe is not None:
+            # A probe and nothing lit under it: a 3D-skybox prop over its sky room's tool
+            # walls, one hanging in the open, or one on displacement terrain, which `at`
+            # cannot see. Lit by the cube alone it was a black silhouette -- 583 of
+            # surf_greensway's trees and grass -- so it takes the light a sunlit floor of
+            # this map gets instead (`g2g-maps-1`).
+            #
+            # [b]Not a prop with NO probe.[/b] That one has always pointed at the atlas's
+            # white patch and drawn unlit, at its own texture's colour -- surf_arcade's
+            # cabinets, surf_aquaflow's dome frames and half its `u_ramps` -- and lighting
+            # those with this as well was tried and rendered: the cabinets went from their
+            # purple and green to near-black against a white map, and the dome from white
+            # to grey. Unlit is closer to what those maps are, measured by looking.
+            under = open_sky
+            props_open_sky += under is not None
+        cube = bsp_props.lit_cube(probe, under)
         if cube is None:
             block_of.append(None)
             continue
@@ -2431,9 +2495,9 @@ def main(argv=None):
     cos_limit = math.cos(math.radians(a.max_slope))
     surfaces, mesh_blob = build_mesh(bsp, place, lm_w, lm_h, textured, cos_limit,
                                      a.prototype, drawn)
-    prop_surfaces, prop_blob = emit_prop_surfaces(
-        build_props(props_drawn, prop_mats, block_of, place, lm_w, lm_h),
-        textured, len(mesh_blob))
+    prop_groups = build_props(props_drawn, prop_mats, block_of, place, lm_w, lm_h)
+    prop_tint = prop_colours(bsp, [m for m in prop_groups if m not in textured])
+    prop_surfaces, prop_blob = emit_prop_surfaces(prop_groups, textured, len(mesh_blob), prop_tint)
     surfaces += prop_surfaces
     mesh_blob += prop_blob
     for s in surfaces:
@@ -2490,6 +2554,11 @@ def main(argv=None):
             "drawn": len(props_drawn),
             "stock_models": sum(props_stock.values()),
             "surfaces": len(prop_surfaces),
+            # Prototype prop surfaces painted a brush texture's colour (by name, or by a
+            # material word), and props lit by the open-sky floor light for want of a lit
+            # floor under them. See `prop_colours` and `GroundLight.open_sky`.
+            "tinted": sum(1 for e in prop_surfaces if e.get("prototype") and e["material"] in prop_tint),
+            "open_sky_lit": props_open_sky,
         },
         "brush_entities": {
             "solid": sum(1 for e in bsp.entities
@@ -2553,6 +2622,11 @@ def main(argv=None):
     print("  static props: %d placed, %d drawn (%d light probes), %d of stock models "
           "the map did not carry" % (len(all_props), len(props_drawn), len(blocks),
                                      sum(props_stock.values())))
+    if props_drawn:
+        print("  props: %d untextured surfaces tinted from the map's own textures (%d by name, "
+              "%d by a material word), %d props lit by the open-sky floor light" % (
+                  len(prop_tint), sum(1 for _c, how in prop_tint.values() if how == "name"),
+                  sum(1 for _c, how in prop_tint.values() if how == "word"), props_open_sky))
     inflated = sum(1 for v in respawn if v.get("inflated"))
     hung = sum(1 for v in respawn if v.get("hung"))
     cleared = sum(1 for v in respawn if v.get("cleared"))

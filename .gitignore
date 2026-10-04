@@ -57,6 +57,10 @@ Thumbs.db
 # author's permission. The generated <id>.gd and <id>.tscn live INSIDE that directory
 # rather than beside the hand-written maps, so this stays one line and never becomes a
 # list of map names to keep in step -- which is this tree's most repeated bug.
+#
+# They live in the g2gfast-maps repository, and dot-bootstrap links them here off the
+# comment line below (copies them, on Windows by default).
+# bootstrap-link: g2gfast-maps/maps
 /maps/imported
 /tools/__pycache__/
 screenshots/

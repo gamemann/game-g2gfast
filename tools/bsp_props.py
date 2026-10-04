@@ -483,6 +483,37 @@ class GroundLight:
             return None
         return self._luxel(best, (x, y, best_z))
 
+    def open_sky(self, share=0.75):
+        """The light of a well-lit floor of this map: the luxel at the centre of every lit
+        upward face, `share` of the way up by brightness. For a prop with no lit floor
+        under it -- a 3D-skybox prop, which stands over its sky room's tool walls -- the
+        nearest thing the map says about light in the open."""
+        seen, lit = set(), []
+        for cell in self.grid.values():
+            for f, pts, pl in cell:
+                if id(f) in seen:
+                    continue
+                seen.add(id(f))
+                c = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts),
+                     sum(p[2] for p in pts) / len(pts))
+                v = self._luxel(f, c)
+                if v is not None:
+                    lit.append(v)
+        if not lit:
+            return None
+        lum = lambda v: 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+        lit.sort(key=lum)
+        # The BRIGHTNESS is the `share` luxel's, and the COLOUR is the average of the
+        # bright half. One luxel's own colour was used at first, and on surf_arcade that
+        # luxel is a cyan neon floor, (0, 62, 62) in the atlas: every prop without a lit
+        # floor took zero red, and its purple cabinets drew navy. A neon strip says what
+        # colour that strip is, not what colour the open air of the map is.
+        target = lum(lit[min(len(lit) - 1, int(len(lit) * share))])
+        band = lit[len(lit) // 2:]
+        mean = tuple(sum(v[c] for v in band) / len(band) for c in range(3))
+        scale = target / lum(mean) if lum(mean) > 0 else 0.0
+        return tuple(c * scale for c in mean)
+
     def _luxel(self, f, p):
         ti = self.bsp.texinfo[f[5]]
         s = p[0] * ti[8] + p[1] * ti[9] + p[2] * ti[10] + ti[11] - f[11]
