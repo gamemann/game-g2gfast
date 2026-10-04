@@ -102,8 +102,13 @@ const OWN_TEXTURES := {
 	"bhop_eazy": 0.9,
 }
 
+## Maps whose terrain is mostly `WorldVertexTransition` blends with both textures in the
+## pakfile, measured 2026-10-04: losing the second texture is the largest visible change
+## any of them can have, and it fails nothing else.
+const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
+
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 39
+const CHECKS_PER_MAP := 40
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -414,6 +419,41 @@ func _test_lighting() -> void:
 		"and the textures its pakfile carried are drawn",
 		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"
 			% [share * 100.0, floor_share * 100.0, slashed])
+
+	# [b]A blend material draws both its textures.[/b] `WorldVertexTransition` paints a
+	# second texture by vertex alpha, and the importer took only the first: grey rock where
+	# surf_mesa's reference footage has warm orange, on 67% of its triangles. The alpha
+	# travels in its own block (`alpha_offset`) and reaches the shader as COLOR.a, so a
+	# drawn blend surface has to have both the texture and a colour array that varies.
+	# [constant BLENDED] names maps that must have one, which is what catches an importer
+	# that stopped finding them.
+	var listed := 0
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		if entry.has("texture2") and entry.has("alpha_offset"):
+			listed += 1
+	var drawn_ok := 0
+	var drawn_bad := PackedStringArray()
+	for child in node.find_children("*", "MeshInstance3D", true, false):
+		var each := child as MeshInstance3D
+		if each.mesh == null:
+			continue
+		for i in range(each.mesh.get_surface_count()):
+			var smat := each.get_surface_override_material(i) as ShaderMaterial
+			if smat == null or smat.get_shader_parameter("has_albedo2") != true:
+				continue
+			var colours: Variant = each.mesh.surface_get_arrays(i)[Mesh.ARRAY_COLOR]
+			var most := 0.0
+			if colours is PackedColorArray:
+				for c in colours:
+					most = maxf(most, c.a)
+			if smat.get_shader_parameter("albedo2_tex") is Texture2D and most > 0.05:
+				drawn_ok += 1
+			else:
+				drawn_bad.append("%s#%d" % [each.name, i])
+	_check(drawn_bad.is_empty() and drawn_ok >= mini(listed, 1)
+			and (listed > 0 or not BLENDED.has(String(_map_id))),
+		"and a material that blends two textures draws both",
+		"%d listed, %d drawn with a varying alpha, broken: %s" % [listed, drawn_ok, drawn_bad])
 
 	# [b]No sky is a blank white dome.[/b] The procedural sky's top is the map's `_ambient`,
 	# and four maps never set theirs and carry the editor's default 255 255 255 (surf_beginner2,

@@ -26,6 +26,11 @@ uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, r
 uniform sampler2D lightmap_tex : source_color, filter_linear, repeat_disable;
 uniform vec4 tint : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 uniform bool has_albedo = true;
+// The second texture of a `WorldVertexTransition` material, shown by vertex alpha
+// (COLOR.a, 0 = the first texture). Only a surface whose manifest has `texture2` and an
+// `alpha_offset` sets it; every other surface has no COLOR array and never reads it.
+uniform sampler2D albedo2_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_albedo2 = false;
 // How much of the albedo texture one unit of UV is.
 //
 // 1.0 for a texture the map carried, whose UVs are the ones the mapper placed. For a
@@ -42,6 +47,9 @@ uniform float light_boost : hint_range(0.0, 4.0) = 1.35;
 
 void fragment() {
 	vec4 base = has_albedo ? texture(albedo_tex, UV * uv_scale) * tint : tint;
+	if (has_albedo2) {
+		base = mix(base, texture(albedo2_tex, UV * uv_scale) * tint, clamp(COLOR.a, 0.0, 1.0));
+	}
 	vec3 lm = texture(lightmap_tex, UV2).rgb;
 	ALBEDO = base.rgb * (lm * light_boost + ambient);
 }

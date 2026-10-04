@@ -368,6 +368,20 @@ func _surface_arrays(blob: PackedByteArray, s: Dictionary) -> Array:
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_INDEX] = blob.slice(ioff, ioff + icount * 4).to_int32_array()
+
+	# [b]A blend surface's alpha is its own block, not a field in the vertex.[/b] A
+	# `WorldVertexTransition` material paints two textures and the map says how much of
+	# the second shows at each vertex. Kept out of the ten floats every loader reads, so
+	# a pack imported with it still loads in a game built before it -- one texture, as
+	# before. The shader reads it as COLOR.a; see `_material_for`.
+	if s.has("alpha_offset"):
+		var aoff := int(s["alpha_offset"])
+		var alphas := blob.slice(aoff, aoff + vcount * 4).to_float32_array()
+		if alphas.size() == vcount:
+			var colours := PackedColorArray(); colours.resize(vcount)
+			for v in range(vcount):
+				colours[v] = Color(1.0, 1.0, 1.0, alphas[v])
+			arrays[Mesh.ARRAY_COLOR] = colours
 	return arrays
 
 
@@ -393,6 +407,12 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 			mat.set_shader_parameter("has_albedo", true)
 			mat.set_shader_parameter("tint", Color.WHITE)
 			mat.set_shader_parameter("uv_scale", 1.0)
+			var second := str(s.get("texture2", ""))
+			var tex2 := _load_texture(dir.path_join("textures").path_join(second)) \
+				if not second.is_empty() and s.has("alpha_offset") else null
+			if tex2 != null:
+				mat.set_shader_parameter("albedo2_tex", tex2)
+				mat.set_shader_parameter("has_albedo2", true)
 			return mat
 
 	# No texture the map carried: it lived in the game's own VPKs and was never inside

@@ -292,7 +292,7 @@ class Bsp:
         return list(dict.fromkeys(pts))
 
     # -- displacements ---------------------------------------------------
-    def displacement_tris(self, f, with_base=False):
+    def displacement_tris(self, f, with_base=False, with_alpha=False):
         """A displacement's subdivided surface.
 
         The face is the flat quad the mapper drew; the real surface is a
@@ -313,6 +313,10 @@ class Bsp:
         triangles are displacements, and they rendered as smooth bright gradients with
         no shadow in them at all, which read as "the lighting is flat" rather than as
         "the lighting is being sampled in the wrong place".
+
+        `with_alpha` adds a third element, the vertex's blend alpha as 0..1 -- how much of
+        a `WorldVertexTransition` material's `$basetexture2` shows there (`dispvert.alpha`
+        is 0..255 on disk). It needs `with_base`.
         """
         o = f[6] * 176
         start = struct.unpack_from("<3f", self.dispinfo, o)
@@ -335,7 +339,10 @@ class Bsp:
                 base = [lft[a] + (rgt[a] - lft[a]) * s for a in range(3)]
                 dv = self.dispverts[vstart + row * size + col]
                 point = tuple(base[a] + dv[a] * dv[3] for a in range(3))
-                grid.append((point, tuple(base)) if with_base else point)
+                if with_alpha:
+                    grid.append((point, tuple(base), min(max(dv[4] / 255.0, 0.0), 1.0)))
+                else:
+                    grid.append((point, tuple(base)) if with_base else point)
         tris = []
         for row in range(size - 1):
             for col in range(size - 1):

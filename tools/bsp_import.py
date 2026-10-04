@@ -212,7 +212,25 @@ def vmt_basetexture(src):
     return base, translucent
 
 
-def extract_textures(pak, materials, tex_dir):
+def vmt_blend(src):
+    """The `$basetexture2` of a `WorldVertexTransition` VMT, or None.
+
+    Only that shader blends. bhop_supernova's rock is `LightmappedGeneric` with a
+    `$basetexture2` in it, which that shader never reads, so naming one is not enough.
+    """
+    txt = re.sub(r"//[^\n]*", "", src.decode("ascii", "replace")).strip()
+    shader = txt.split(None, 1)[0].strip('"').lower() if txt else ""
+    if shader != "worldvertextransition":
+        return None
+    m = (re.search(r'"?\$basetexture2"?\s+"([^"\n]+)"', txt, re.I)
+         or re.search(r'"?\$basetexture2"?\s+([^"\s]+)', txt, re.I))
+    base = m.group(1).replace("\\", "/").lower().strip().lstrip("/") if m else None
+    if base and base.endswith(".vtf"):
+        base = base[:-4]
+    return base or None
+
+
+def extract_textures(pak, materials, tex_dir, blends=None):
     """Decode every referenced texture the map carried with it.
 
     Returns {material: (png filename or None, translucent)}. A material whose texture
@@ -227,9 +245,33 @@ def extract_textures(pak, materials, tex_dir):
     the whole reason the prototype set exists is to stand in for a surface there is no
     picture of. Having one and having a black one are the same situation. See
     [method vtf.is_blank] for why the rule is flat-and-dark rather than just dark.
+
+    `blends`, when given, is filled with {material: png} for the second texture of every
+    `WorldVertexTransition` material whose two textures both shipped -- see `vmt_blend`.
     """
     os.makedirs(tex_dir, exist_ok=True)
     out, written = {}, {}
+
+    def decode(base):
+        """png name, or None for a texture that is absent, undecodable or blank."""
+        if base in written:
+            return written[base]
+        raw = pak.get("materials/%s.vtf" % base)
+        if raw is None:
+            return None
+        try:
+            w, h, px = vtf.decode(raw)
+        except ValueError:
+            return None
+        if vtf.is_blank(px):
+            written[base] = None
+            return None
+        name = base.replace("/", "_") + ".png"
+        vtf.write_png(os.path.join(tex_dir, name), w, h, px, opaque=vtf.is_opaque(px))
+        ask_for_mipmaps(os.path.join(tex_dir, name))
+        written[base] = name
+        return name
+
     for mat in materials:
         vmt = pak.get("materials/%s.vmt" % mat)
         if vmt is None:
@@ -264,6 +306,11 @@ def extract_textures(pak, materials, tex_dir):
         ask_for_mipmaps(os.path.join(tex_dir, name))
         written[base] = name
         out[mat] = (name, translucent and not opaque)
+    for mat in materials if blends is not None else ():
+        second = vmt_blend(pak["materials/%s.vmt" % mat]) if out[mat][0] else None
+        png2 = decode(second) if second else None
+        if png2:
+            blends[mat] = png2
     return out
 
 
@@ -505,7 +552,8 @@ def surface_colour(refl, name=""):
     return [round(srgb(c), 4) for c in refl[:3]]
 
 
-def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=None):
+def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=None,
+               blends=()):
     """One vertex block and one index block per (material, role).
 
     [b]Per role and not per material, because a role is per face.[/b] The role comes
@@ -520,6 +568,13 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
     it: the map's own UVs place a texture the way the mapper placed it, and a prototype
     grid has to be placed in the world instead, at one size everywhere. So the two UVs
     cannot both be written and the choice is made here, per surface.
+
+    `blends` names the materials that blend two textures by vertex alpha
+    (`WorldVertexTransition`, 67% of surf_mesa's triangles). A surface of one gets an
+    `alpha_offset`: one float per vertex in its own block after the indices, so the
+    vertex layout every other surface -- and every loader written before this -- reads
+    is unchanged. A brush face of a blend material takes alpha 0, its first texture,
+    which is what the engine draws there.
     """
     groups = collections.defaultdict(lambda: ([], []))     # (mat, role) -> (verts, indices)
     dedupe = collections.defaultdict(dict)
@@ -528,16 +583,17 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
     # that IS inside the .bsp. See `surface_colour`.
     reflectivity = {}
 
-    def emit(key, pos_src, nrm_src, uv, uv2):
+    def emit(key, pos_src, nrm_src, uv, uv2, alpha=0.0):
         verts, _ = groups[key]
         k = (round(pos_src[0], 2), round(pos_src[1], 2), round(pos_src[2], 2),
              round(nrm_src[0], 3), round(nrm_src[1], 3), round(nrm_src[2], 3),
-             round(uv[0], 4), round(uv[1], 4), round(uv2[0], 5), round(uv2[1], 5))
+             round(uv[0], 4), round(uv[1], 4), round(uv2[0], 5), round(uv2[1], 5),
+             round(alpha, 3))
         d = dedupe[key]
         if k in d:
             return d[k]
         g, gn = to_godot(pos_src), to_godot(nrm_src)
-        verts.append((g, gn, uv, uv2))
+        verts.append((g, gn, uv, uv2, alpha))
         d[k] = len(verts) - 1
         return len(verts) - 1
 
@@ -565,6 +621,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
         # in the ones that lived in the game's VPKs and were never in this file.
         use_prototype = prototype == "all" or (prototype == "auto" and mat not in textured)
         key = (mat, role, use_prototype, len(off) == 4)
+        blended = mat in blends and not use_prototype
 
         ti = bsp.texinfo[f[5]]
         tw, th = 1, 1
@@ -598,7 +655,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
             # Each point comes back as (displaced, flat). The flat one is only used for
             # the lightmap coordinate -- see `displacement_tris` for why a displacement's
             # lighting is parameterised over the quad rather than over the terrain.
-            tris = bsp.displacement_tris(f, with_base=True)
+            tris = bsp.displacement_tris(f, with_base=True, with_alpha=True)
             # Displacements are terrain: average the normals over the grid so a
             # rock face is not a field of flat triangles. Brush faces below keep
             # their exact plane normal, because a surf ramp's edge IS sharp.
@@ -608,16 +665,17 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
                 v = [t[2][0][i] - t[0][0][i] for i in range(3)]
                 nn = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
                       u[0] * v[1] - u[1] * v[0]]
-                for p, _flat in t:
+                for p, _flat, _alpha in t:
                     k = (round(p[0], 2), round(p[1], 2), round(p[2], 2))
                     for i in range(3):
                         acc[k][i] += nn[i]
             for t in tris:
-                for p, flat in t:
+                for p, flat, alpha in t:
                     k = (round(p[0], 2), round(p[1], 2), round(p[2], 2))
                     nn = acc[k]
                     ln = math.sqrt(sum(c * c for c in nn)) or 1.0
-                    idx.append(emit(key, at(p), [c / ln for c in nn], uv_of(p), uv2_of(flat)))
+                    idx.append(emit(key, at(p), [c / ln for c in nn], uv_of(p), uv2_of(flat),
+                                    alpha if blended else 0.0))
         else:
             pts = bsp.face_points(f)
             if len(pts) < 3:
@@ -634,7 +692,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
         if not idx:
             continue
         voff = len(blob)
-        for g, gn, uv, uv2 in verts:
+        for g, gn, uv, uv2, _alpha in verts:
             blob += struct.pack("<10f", g[0], g[1], g[2], gn[0], gn[1], gn[2],
                                 uv[0], uv[1], uv2[0], uv2[1])
         ioff = len(blob)
@@ -644,6 +702,11 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
                  **({"skybox": True} if sky else {}),
                  "vertex_offset": voff, "vertex_count": len(verts),
                  "index_offset": ioff, "index_count": len(idx)}
+        if mat in blends and not use_prototype and any(v[4] > 0.0 for v in verts):
+            # All-zero is the first texture alone -- a brush face, or a displacement the
+            # mapper never painted -- and a second texture nothing shows is a cost only.
+            entry["alpha_offset"] = len(blob)
+            blob += struct.pack("<%df" % len(verts), *(v[4] for v in verts))
         colour = surface_colour(reflectivity.get(mat), mat)
         if colour is not None:
             entry["colour"] = colour
@@ -2489,12 +2552,13 @@ def main(argv=None):
     prop_mats = prop_materials(pak, props_drawn)
     materials = sorted({clean_material(bsp.face_material(f)[0]) for f in faces}
                        | set(prop_mats.values()))
-    tex = extract_textures(pak, materials, os.path.join(d, "textures"))
+    blends = {}
+    tex = extract_textures(pak, materials, os.path.join(d, "textures"), blends)
     textured = {m for m, (png, _) in tex.items() if png}
 
     cos_limit = math.cos(math.radians(a.max_slope))
     surfaces, mesh_blob = build_mesh(bsp, place, lm_w, lm_h, textured, cos_limit,
-                                     a.prototype, drawn)
+                                     a.prototype, drawn, blends)
     prop_groups = build_props(props_drawn, prop_mats, block_of, place, lm_w, lm_h)
     prop_tint = prop_colours(bsp, [m for m in prop_groups if m not in textured])
     prop_surfaces, prop_blob = emit_prop_surfaces(prop_groups, textured, len(mesh_blob), prop_tint)
@@ -2503,6 +2567,8 @@ def main(argv=None):
     for s in surfaces:
         png, translucent = tex.get(s["material"], (None, False))
         s["texture"] = None if s["prototype"] else png
+        if "alpha_offset" in s:
+            s["texture2"] = blends[s["material"]]
         s["translucent"] = translucent and not s["prototype"]
 
     collision_blob, collision, skipped_entities, solids = build_collision(
