@@ -19,3 +19,4 @@ const G2GAvatars := preload("g2g_avatars.gd")
 func _init() -> void:
 	avatar_schema = G2GAvatars.schema()
 	stock_avatar_fn = G2GAvatars.stock_avatar
+	avatar_translate_fn = G2GAvatars.from_site

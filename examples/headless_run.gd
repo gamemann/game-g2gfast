@@ -26,7 +26,7 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 227
+const CHECKS := 229
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -539,6 +539,28 @@ func _test_avatars() -> void:
 
 	var bot: G2GPlayer = game.players[&"bot"]
 	_check(bot.rig.avatar != null, "the player was dressed")
+
+	# A member's site avatar, translated into this game's schema. The site's document is the
+	# Kenney skins spelt `skin-c`; without a translation every member is stock here.
+	var site_avatars = preload("res://game/g2g_avatars.gd")
+	var site_doc := DotAvatar.make(&"builtin")
+	site_doc.set_part(&"top", &"skin-c")
+	site_doc.set_part(&"face", &"skin-k")
+	var as_ours: DotAvatar = site_avatars.from_site(site_doc)
+	_check(
+		as_ours != null and site_avatars.schema().validate(as_ours).ok and as_ours.part_in(&"body") == &"body_kenney_c" and as_ours.part_in(&"head") == &"head_kenney_k",
+		"a member's site avatar becomes this game's, and its schema accepts it",
+		str(as_ours.to_dict()) if as_ours != null else "null"
+	)
+	var unknown_skin := DotAvatar.make(&"builtin")
+	unknown_skin.set_part(&"top", &"skin-z")
+	unknown_skin.set_part(&"face", &"skin-z")
+	var not_site := DotAvatar.make(&"elsewhere")
+	not_site.set_part(&"top", &"skin-c")
+	_check(
+		site_avatars.from_site(unknown_skin) == null and site_avatars.from_site(not_site) == null,
+		"a skin this game does not draw, or a document that is not the site's, is stock"
+	)
 	_check(bot.rig.body_mount.get_child_count() == 1, "with a body")
 	_check(bot.rig.head_mount.get_child_count() == 1, "and a head")
 
