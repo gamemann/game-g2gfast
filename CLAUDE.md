@@ -1782,3 +1782,7 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 ## The imported maps live in g2gfast-maps
 
 `maps/imported/` is a gitignored link to `../g2gfast-maps/maps/` (`tools/g2gmaps link` there makes it). That repository holds the 26 imported maps, `maps.json` with each map's author and source, and `tools/g2gmaps` to publish each as its own `gamemann/<map id>` pack (through this repository's `tools/publish_maps.sh`) and to mirror them back from the CDN. The zone data stays here in `maps/zones/`, because starts, finishes and stages are this game's, not the map's. A published server fetches a map on a map change from `sv_map_content_owner` (`gamemann`, in `game.yml`); they went to the CDN on 2026-09-30.
+
+## The map vote is drawn on the client shell (2026-10-04)
+
+The vote wrapper owns a `DotVoteBallotFeed` and polls it every `advance`; the module points its `ballot_fn` at `server.send_notice`, one copy per playing session with that session's voter id as `you`, under the topic `map_ballot`. dot-server-deploy's shell draws it as a dot-ui `DotBallotPanel` beside the server's own `game_ballot` — number keys, F3 and a click, or both, and every voter's avatar on their choice — and a click goes back as the same `!vote`-style command a player could type. Standalone, with no shell, nothing draws it and chat still carries the ballot. Defaults moved with dot-vote's: `map_seconds` is 2700 and the ballot opens 150 s before the end. A timer server has no rounds, so `time_up` has nothing to wait for here and changes on time either way.

@@ -175,7 +175,11 @@ func map_content_id(id: StringName) -> String:
 	return "%s/%s" % [map_content_owner.strip_edges(), name]
 
 ## Seconds a map runs before the next is chosen. 0 disables it.
-@export_range(0.0, 86400.0, 30.0) var map_seconds: float = 1800.0
+##
+## Forty-five minutes: a records map is learned over several attempts, and the people still
+## running it at the limit are the ones who wanted more of it. A map's own `meta.vote`
+## time limit still wins, for the three-stage intro that wants ten.
+@export_range(0.0, 86400.0, 30.0) var map_seconds: float = 2700.0
 
 ## Seconds a map change waits for every connected client to say it has the new map.
 ## `sv_map_sync_timeout`.

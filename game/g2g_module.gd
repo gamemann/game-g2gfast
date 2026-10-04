@@ -30,6 +30,10 @@ const G2GVote := preload("g2g_vote.gd")
 
 const CHANNEL := "g2g.module"
 
+## The drawn map ballot's notice topic. The client shell draws one menu per topic, and a
+## server running several games sends its own `game_ballot` beside this one.
+const MAP_BALLOT_TOPIC := &"map_ballot"
+
 var game: G2GGame = null
 var net: DotNetManager = null
 var bridge: G2GNetBridge = null
@@ -402,6 +406,26 @@ func _build_vote() -> DotResult:
 	vote.is_admin_fn = func(voter: StringName) -> bool:
 		var session := server.session_by_userid(G2GCombat.userid_of(voter))
 		return session != null and session.permissions.has(DotAdminFlags.CHANGEMAP)
+
+	# The drawn ballot, to each playing session with its own voter id (`u<userid>`, what
+	# dot-vote's commands key a voter by), so the client shell marks the player's own
+	# choice. Topic `map_ballot`, beside a server's `game_ballot` when both are open.
+	vote.ballot_fn = func(state: Dictionary) -> void:
+		for session in server.playing_sessions():
+			var data := state.duplicate()
+			data["you"] = "u%d" % session.userid
+			server.send_notice(session, DotNotice.make(
+				&"", "", float(state.get("seconds", -1.0)), MAP_BALLOT_TOPIC, data
+			))
+
+	vote.people_fn = func(voter: StringName) -> Dictionary:
+		var session := server.session_by_userid(G2GCombat.userid_of(voter))
+
+		if session == null:
+			return {}
+
+		var avatar: Variant = session.identity.get("avatar_url") if session.identity != null else ""
+		return {"name": session.display_name, "avatar": avatar if avatar is String else ""}
 
 	var ready := vote.setup()
 

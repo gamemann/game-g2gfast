@@ -108,6 +108,17 @@ var commands: DotVoteCommands = null
 var announce_fn: Callable = Callable()
 var is_admin_fn: Callable = Callable()
 
+## [code]func(state: Dictionary)[/code]: the ballot as a client draws it, sent whenever it
+## changes. The host points it at the client shell (a dot-server notice), which draws a
+## menu a player picks from with a number key or a click. Unset sends nothing.
+var ballot_fn: Callable = Callable()
+
+## [code]func(voter: StringName) -> Dictionary[/code]: a voter's name and avatar URL.
+var people_fn: Callable = Callable()
+
+## What [member ballot_fn] is fed from. Polled once per [method advance].
+var feed: DotVoteBallotFeed = null
+
 ## What every client was last told about the clock, counted down the way they count it.
 ## See [method advance].
 var clock_view: DotVoteClockView = DotVoteClockView.new()
@@ -196,6 +207,14 @@ func setup() -> DotResult:
 			cue_due.emit(&"", seconds_left, runoff)
 	)
 
+	feed = DotVoteBallotFeed.of(director, func(state: Dictionary) -> void:
+		if ballot_fn.is_valid():
+			ballot_fn.call(state)
+	)
+	feed.title = "Vote for the next map"
+	feed.people_fn = func(voter: StringName) -> Dictionary:
+		return people_fn.call(voter) if people_fn.is_valid() else {}
+
 	# Whatever the server booted on, so the clock starts and the history has an entry.
 	game.maps.changed.connect(_on_map_changed)
 
@@ -244,7 +263,8 @@ func _rules() -> DotVoteRules:
 	var rules := DotVoteRules.new()
 
 	rules.trigger = DotVoteRules.Trigger.TIME_LIMIT
-	rules.vote_lead_sec = 120.0
+	# Two and a half minutes: a ballot, a runoff and the result all fit with room to spare.
+	rules.vote_lead_sec = 150.0
 	rules.duration_sec = maxf(game.config.map_seconds, 300.0)
 	rules.vote_duration_sec = 30.0
 	rules.method = DotVoteRules.Method.INSTANT_RUNOFF
@@ -333,6 +353,9 @@ func advance(delta: float) -> void:
 	if director != null:
 		director.advance(delta)
 
+	if feed != null:
+		feed.poll()
+
 	_clock_time += delta
 
 	# [b]Sent when a client's own count would be wrong, not every second.[/b] Both ends
@@ -408,7 +431,12 @@ func install_commands(host: Object) -> DotResult:
 	commands.director = director
 	commands.names = COMMAND_NAMES
 
-	return commands.bind(host)
+	var bound := commands.bind(host)
+
+	if feed != null:
+		feed.command = commands.command_name("vote")
+
+	return bound
 
 
 func describe_lines() -> PackedStringArray:
