@@ -99,6 +99,9 @@ const BONUSES_WITHOUT_PITS := {}
 const STOCK_DRAWN := {
 	"bhop_aztec": 0.60,       # 0% before: sandstone courses, looked at along the route
 	"surf_beginner2": 0.73,   # 2.6% before: planks, rock, sand, looked at along the route
+	"bhop_interloper": 0.86,  # 50% before: the dirt walkways, looked at along the route
+	"buses_from_hell_fixed": 0.62,  # 0% before: the sand floor, looked at from the spawn
+	"bhop_monster_jam": 0.35, # 1.9% before: dark rock, looked at from the finish
 }
 
 ## The share of a map's triangles drawn in the texture its own pakfile carried, at least,
