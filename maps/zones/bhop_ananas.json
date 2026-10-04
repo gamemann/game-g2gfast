@@ -7,5 +7,39 @@
   "archive": "bhop_ananas.rar",
   "recorded": "2026-10-04"
  },
- "notes": "Credit only, from the GameBanana page's credits (gb-maps-1, run 12). Not published: shipping third-party maps is Christian's call per batch."
+ "notes": "Credit, and a start and finish read from the map's own spawns and fin teleport (gb-maps-1, run 12). Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     1670,
+     -2156,
+     560
+    ],
+    "extents": [
+     384,
+     384,
+     300
+    ]
+   },
+   "note": "the spawn room, around the 40 info_player_* entities (reaching 300 down: the spawns float 277 over the floor they land on)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    1670,
+    -2156,
+    700
+   ]
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "fin",
+   "note": "the one trigger into the map's `fin` destination"
+  }
+ ]
 }

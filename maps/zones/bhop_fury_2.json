@@ -7,5 +7,39 @@
   "archive": "bhop_fury_2_2.rar",
   "recorded": "2026-10-04"
  },
- "notes": "Credit only, from the GameBanana page's credits (gb-maps-1, run 12). Not published: shipping third-party maps is Christian's call per batch."
+ "notes": "Credit, and a start and finish read from the map's own spawns and destend1 teleport (gb-maps-1, run 12). Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     -7296,
+     12128,
+     1256
+    ],
+    "extents": [
+     384,
+     384,
+     200
+    ]
+   },
+   "note": "the spawn room, around the 28 info_player_* entities"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -7296,
+    12128,
+    1256
+   ]
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "destend1",
+   "note": "the one trigger into destend1, the end room 18,000 units from the spawn; destend2 is the way back beside the spawn"
+  }
+ ]
 }
