@@ -1,0 +1,81 @@
+{
+ "id": "surf_stonework3",
+ "author": "Mr.Cow",
+ "attribution": {
+  "author": "Mr.Cow",
+  "source": "https://gamebanana.com/mods/123058 (Key Authors: Mr.Cow (mapper); special thanks Nyastle, Quensy (video); beta testers listed on the page)",
+  "archive": "surf_stonework3_2.rar",
+  "recorded": "2026-10-04"
+ },
+ "notes": "Credit, and zones from the map's own Stage<n> destinations and Stage<n>End triggers (gb-maps-1, run 12). Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     -3840,
+     -6870,
+     5320
+    ],
+    "extents": [
+     384,
+     384,
+     240
+    ]
+   },
+   "note": "around Stage1, the destination every stage-1 fail returns to; the spawn room is beside it (240 tall: the floor the spawn rests on is 168 under the destination point)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "Stage1"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "named": "Stage1End",
+   "destination": "Stage2",
+   "note": "the map's own Stage1End trigger, which sits on Stage2's arrival"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "named": "Stage2End",
+   "destination": "Stage3",
+   "note": "the map's own Stage2End trigger, which sits on Stage3's arrival"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "named": "Stage3End",
+   "destination": "Stage4",
+   "note": "the map's own Stage3End trigger, which sits on Stage4's arrival"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "named": "Stage4End",
+   "destination": "Stage5",
+   "note": "the map's own Stage4End trigger, which sits on Stage5's arrival"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 6,
+   "named": "Stage5End",
+   "destination": "Stage6",
+   "note": "the map's own Stage5End trigger, which sits on Stage6's arrival"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "named": "Stage7End",
+   "note": "the map's own Stage7End trigger. There is no Stage6End; stage 7 is part of stage 6 here"
+  }
+ ]
+}

@@ -1,0 +1,62 @@
+{
+ "id": "surf_life_of_duck",
+ "author": "SKAR",
+ "attribution": {
+  "author": "SKAR",
+  "source": "https://gamebanana.com/mods/122432 (Key Authors: SKAR; submitter Skar; special thanks: ducks)",
+  "archive": "surf_life_of_duck_6261.rar (published as _6261-.rar)",
+  "recorded": "2026-10-04"
+ },
+ "notes": "Credit, and zones from the map's own timer_stage<n> triggers, level<n> destinations and endroom teleport (gb-maps-1, run 12). Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "named": "timer_stage1",
+   "note": "the map's own timer_stage1 trigger, at level1"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "level1"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "named": "timer_stage2",
+   "destination": "level2",
+   "note": "the map's own timer_stage2 trigger, at level2"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "named": "timer_stage3",
+   "destination": "level3",
+   "note": "the map's own timer_stage3 trigger, at level3"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "named": "timer_stage4",
+   "destination": "level4",
+   "note": "the map's own timer_stage4 trigger, at level4"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "named": "timer_stage5",
+   "destination": "level5",
+   "note": "the map's own timer_stage5 trigger, at level5"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "endroom",
+   "note": "the one trigger that sends a player to the end room"
+  }
+ ]
+}
