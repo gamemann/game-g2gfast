@@ -59,6 +59,47 @@ const IMPORTED_AUTHOR := "imported"
 
 
 ## The person to credit for [param map], or "" when there is nobody to name.
+## The version a map pack is published as: `0.0.0-` and the first twelve hex digits of
+## a SHA-256 over every file in the map's directory, path and bytes, in path order.
+##
+## [b]Derived, not kept.[/b] Every pack was `@0.0.0`, and dot-cloud keys a mount on
+## `id@version` and can never undo one, so a client that had mounted the old bhop_aztec
+## was told "bhop_aztec, 0.0.0" by a server that had the new one, believed it, and
+## played other geometry. A hash changes exactly when the files do: no per-map number to
+## remember to bump in `maps.json`, and republishing what has not changed gives the same
+## version, so nobody downloads anything. The directories a publisher never ships
+## (`.godot`, `.git`, `__pycache__`) are left out; `.import` markers are in, because a
+## changed import setting is a changed pack.
+static func pack_version(dir: String) -> String:
+	var files := PackedStringArray()
+	_files_under(dir.rstrip("/"), "", files)
+	files.sort()
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	for rel in files:
+		ctx.update(("%s\n" % rel).to_utf8_buffer())
+		var fh := FileAccess.open(dir.path_join(rel), FileAccess.READ)
+		if fh == null:
+			continue
+		while not fh.eof_reached():
+			var chunk := fh.get_buffer(1 << 20)
+			if chunk.is_empty():
+				break
+			ctx.update(chunk)
+		ctx.update(PackedByteArray([0]))
+	return "0.0.0-" + ctx.finish().hex_encode().substr(0, 12)
+
+
+static func _files_under(root: String, rel: String, out: PackedStringArray) -> void:
+	var here := root if rel.is_empty() else root.path_join(rel)
+	for f in DirAccess.get_files_at(here):
+		out.append(f if rel.is_empty() else rel.path_join(f))
+	for d in DirAccess.get_directories_at(here):
+		if d in [".godot", ".git", "__pycache__"]:
+			continue
+		_files_under(root, d if rel.is_empty() else rel.path_join(d), out)
+
+
 static func credit(map: DotMapDef) -> String:
 	if map == null:
 		return ""

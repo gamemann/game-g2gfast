@@ -28,7 +28,9 @@ func _initialize() -> void:
 	var key_path := ""
 	var key_id := "default"
 	var out := "dist/maps"
-	var version := "0.0.0"
+	# Empty: each map's own `G2GMapCatalogue.pack_version`, from its files. `--version`
+	# still forces one for every map named, for a release that wants a number.
+	var version := ""
 	var ids: PackedStringArray = []
 	var i := 0
 	while i < args.size():
@@ -72,14 +74,14 @@ func _initialize() -> void:
 
 		var pub := DotCloudPublisher.new()
 		pub.content_id = "%s/%s" % [owner, id]
-		pub.version = version
+		pub.version = version if not version.is_empty() else G2GMapCatalogue.pack_version(source)
 		pub.display_name = id
 		pub.signing_key_pem = pem
 		pub.signing_key_id = key_id
 
 		var res := pub.publish(source, "%s/%s/%s" % [out, owner, id])
 		if res.ok:
-			print("published %s/%s@%s" % [owner, id, version])
+			print("published %s/%s@%s" % [owner, id, pub.version])
 		else:
 			printerr("%s: %s" % [id, res.error])
 			failed += 1

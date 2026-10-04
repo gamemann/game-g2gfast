@@ -35,13 +35,13 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 161
+const CHECKS := 166
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 23
+const SECTIONS := 24
 
 var _passed := 0
 var _failed := 0
@@ -86,6 +86,7 @@ func _run() -> void:
 		await _test_map_change()
 		await _test_map_delivered()
 		await _test_map_owned()
+		await _test_map_republished()
 		await _test_map_straggler()
 		await _test_map_refused()
 		_test_ghost()
@@ -721,6 +722,7 @@ class SlowCloud:
 const SYNC_FIXTURE := &"g2g_sync_fixture"
 const DELIVERED_FIXTURE := &"g2g_delivered_fixture"
 const OWNED_FIXTURE := &"g2g_owned_fixture"
+const REPUB_FIXTURE := &"g2g_repub_fixture"
 
 ## The signing key the delivered-map section made, which the content client trusts.
 var _fixture_keys: Dictionary = {}
@@ -789,13 +791,19 @@ func _until_client_on(id: StringName, seconds: float) -> bool:
 
 ## A map as a signed pack: a manifest and a mesh, published into `user://`. Empty of
 ## geometry on purpose — this suite is about who has it, not what is in it.
-func _publish_map_fixture(id: StringName, version: String, keys: Dictionary, owner := "") -> DotResult:
+##
+## [param version] empty publishes as [method G2GMapCatalogue.pack_version] does, from the
+## files; [param extra] is merged into the manifest, so a republish can change them.
+func _publish_map_fixture(
+	id: StringName, version: String, keys: Dictionary, owner := "", extra := {}
+) -> DotResult:
 	var source := SYNC_FIXTURE_ROOT.path_join("src").path_join(String(id))
 	DirAccess.make_dir_recursive_absolute(source)
 	var manifest := {
 		"id": String(id), "tier": 1, "display_name": String(id).replace("_", " "),
 		"spawn": {"origin": [0, 64, 0]}, "surfaces": [], "zones": [],
 	}
+	manifest.merge(extra, true)
 	var json := FileAccess.open(source.path_join("%s.json" % id), FileAccess.WRITE)
 	json.store_string(JSON.stringify(manifest))
 	json.close()
@@ -806,7 +814,7 @@ func _publish_map_fixture(id: StringName, version: String, keys: Dictionary, own
 	var content := String(id) if owner.is_empty() else "%s/%s" % [owner, id]
 	var publisher := DotCloudPublisher.new()
 	publisher.content_id = content
-	publisher.version = version
+	publisher.version = version if not version.is_empty() else G2GMapCatalogue.pack_version(source)
 	publisher.signing_key_pem = str(keys["private"])
 	publisher.signing_key_id = "headless_net"
 	# Published at `<base>/<id>/`, the layout a server's version-less `ensure(id)` finds —
@@ -965,6 +973,71 @@ func _test_map_delivered() -> void:
 	_check(kept != null and kept.content_id == DELIVERED_FIXTURE,
 		"and keeps it, as delivered content, for next time")
 	_done()
+
+
+## A map republished with different files, in one process: the server's next fetch and a
+## client that had mounted the OLD pack both end on the new one.
+##
+## [b]Every map pack was `@0.0.0` (`[g2g-maps-version-1]`).[/b] dot-cloud keys a mount on
+## `id@version` and cannot undo one, so a client that had mounted the old pack was told
+## "that map, 0.0.0" by a server that had the new one, found it mounted, and played the
+## old geometry. `G2GMapCatalogue.pack_version` names a pack by its files; this is the
+## check that a change of files reaches a client that already holds the map.
+func _test_map_republished() -> void:
+	_section("changing the map: a map republished with different files")
+	if _fixture_keys.is_empty():
+		_check(false, "the delivered section made a signing key")
+		_done()
+		return
+
+	var first := _publish_map_fixture(REPUB_FIXTURE, "", _fixture_keys)
+	var again := _publish_map_fixture(REPUB_FIXTURE, "", _fixture_keys)
+	_check(first.ok and again.ok, "a map publishes under the version of its files",
+		"%s %s" % [first.error, again.error])
+	var source := SYNC_FIXTURE_ROOT.path_join("src").path_join(String(REPUB_FIXTURE))
+	var v1 := G2GMapCatalogue.pack_version(source)
+
+	var fetched: DotResult = await _server_game.ensure_map_content(REPUB_FIXTURE)
+	var on_server := _server_game.maps.catalogue.get_map(REPUB_FIXTURE)
+	var outcome := await _change_and_pump(REPUB_FIXTURE, 8.0)
+	var followed := await _until_client_on(REPUB_FIXTURE, 3.0)
+	_check(fetched.ok and on_server != null and on_server.content_version == v1
+		and bool(outcome["ok"]) and followed and _client_world_from(REPUB_FIXTURE, v1),
+		"and the server and a client are on it at that version (%s)" % v1,
+		"%s %s" % [fetched.error if not fetched.ok else "", outcome["reason"]])
+
+	var changed := _publish_map_fixture(REPUB_FIXTURE, "", _fixture_keys, "",
+		{"display_name": "repub fixture, second cut"})
+	var v2 := G2GMapCatalogue.pack_version(source)
+	_check(changed.ok and v2 != v1 and v2.begins_with("0.0.0-"),
+		"republished with different files, it is a different version (%s)" % v2)
+
+	# What a restarted server knows: nothing about this map. Same process, same mounts,
+	# and the client still holds the first pack and its catalogue entry.
+	_server_game.maps.catalogue.remove(REPUB_FIXTURE)
+	_server_game._map_content_seen.erase(REPUB_FIXTURE)
+	var away := await _change_and_pump(DELIVERED_FIXTURE, 8.0)
+	var refetched: DotResult = await _server_game.ensure_map_content(REPUB_FIXTURE)
+	on_server = _server_game.maps.catalogue.get_map(REPUB_FIXTURE)
+	_check(bool(away["ok"]) and refetched.ok and on_server != null
+		and on_server.content_version == v2,
+		"the server's next fetch mounts the new version beside the old",
+		str(on_server.describe()) if on_server != null else str(refetched.error))
+
+	outcome = await _change_and_pump(REPUB_FIXTURE, 8.0)
+	followed = await _until_client_on(REPUB_FIXTURE, 3.0)
+	_check(bool(outcome["ok"]) and followed and _client_world_from(REPUB_FIXTURE, v2),
+		"and a client that had the old one plays the new one",
+		"%s %s" % [outcome["reason"],
+			_client_game.maps.world.get("manifest_path") if _client_game.maps.world != null else "-"])
+	_done()
+
+
+## Whether the client's world was built from [param id]'s pack at [param version].
+func _client_world_from(id: StringName, version: String) -> bool:
+	var world := _client_game.maps.world
+	return world != null and str(world.get("manifest_path")).begins_with(
+		"res://dot_cloud/%s/%s/" % [id, version])
 
 
 ## A map on an origin that keeps packs under an owner: the map id stays what a player

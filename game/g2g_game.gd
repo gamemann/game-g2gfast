@@ -1030,7 +1030,7 @@ func ensure_map_content(id: StringName) -> DotResult:
 
 	_map_content_seen[id] = true
 	DotLog.info(CHANNEL, "a map was added from delivered content", {
-		"map": String(id), "dir": dir
+		"map": String(id), "version": map.content_version, "dir": dir
 	})
 	return DotResult.success(null)
 
