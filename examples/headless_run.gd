@@ -26,7 +26,7 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 229
+const CHECKS := 231
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -389,8 +389,8 @@ func _test_movement_from_config() -> void:
 class _RecordingCloud extends RefCounted:
 	var asked: Array[String] = []
 
-	func ensure(id: StringName) -> DotResult:
-		asked.append(String(id))
+	func ensure(id: StringName, version: String = "") -> DotResult:
+		asked.append(String(id) if version == "" else "%s@%s" % [id, version])
 		return DotResult.fail(DotError.CODE_HTTP, "Not on this origin.")
 
 
@@ -436,11 +436,21 @@ func _test_boot_map_owner() -> void:
 	restored.scene = "res://g2g_restored_by_headless_run.tscn"
 	restored.cvars = {G2GConfig.MAP_CONTENT_OWNER_CVAR: "restored"}
 
-	for case in ["descriptor", "none", "restore"]:
+	# Fourth: a descriptor that names its maps (DotGameDescriptor.maps), pinned by the
+	# installer. The pinned pack and version win over the owner cvar.
+	var pinned := DotGameDescriptor.new()
+	pinned.cvars = {G2GConfig.MAP_CONTENT_OWNER_CVAR: "someone"}
+	if "maps" in pinned:
+		pinned.set("maps", PackedStringArray(["pinner/%s@0.0.0-abc123" % MISSING]))
+
+	for case in ["descriptor", "none", "restore", "pinned"]:
 		var with_descriptor: bool = case != "none"
 		if case == "restore":
 			games.loading = failed
 			games.running = restored
+		if case == "pinned":
+			games.loading = pinned
+			games.running = null
 		var config := G2GConfig.new()
 		config.records_directory = ""
 		config.map_seconds = 0.0
@@ -456,15 +466,20 @@ func _test_boot_map_owner() -> void:
 		for _i in range(5):
 			await get_tree().process_frame
 
-	_check(cloud.asked.size() == 3 and cloud.asked[0] == "someone/%s" % MISSING,
+	_check(cloud.asked.size() == 4 and cloud.asked[0] == "someone/%s" % MISSING,
 		"a server loaded for a descriptor naming an owner asks for <owner>/<map>", str(cloud.asked))
 	_check(booted[0].config.map_content_owner == "someone",
 		"and keeps that owner for every fetch after", booted[0].config.map_content_owner)
-	_check(cloud.asked.size() == 3 and cloud.asked[1] == String(MISSING),
+	_check(cloud.asked.size() == 4 and cloud.asked[1] == String(MISSING),
 		"with no game being loaded the owner is the config's own (none)", str(cloud.asked))
-	_check(cloud.asked.size() == 3 and cloud.asked[2] == "restored/%s" % MISSING,
+	_check(cloud.asked.size() == 4 and cloud.asked[2] == "restored/%s" % MISSING,
 		"a previous game put back after a failed change takes its own owner, not the failed game's",
 		str(cloud.asked))
+	_check(cloud.asked.size() == 4 and cloud.asked[3] == "pinner/%s@0.0.0-abc123" % MISSING,
+		"a descriptor naming its maps gets each at the pack and version the installer pinned",
+		str(cloud.asked))
+	_check(Array(booted[3].config.content_maps) == [String(MISSING)],
+		"and that list is the map set the server offers", str(booted[3].config.content_maps))
 
 	for g in booted:
 		remove_child(g)

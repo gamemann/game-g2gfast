@@ -93,6 +93,10 @@ signal player_removed(player_id: StringName)
 ## not ask dot-cloud again. dot-cloud is itself idempotent; this saves the await.
 var _map_content_seen: Dictionary = {}
 
+## Maps the game's descriptor names in `maps:`, pinned by the server's installer:
+## map id -> [content id, version]. See [method _adopt_descriptor_maps].
+var _pinned_maps: Dictionary = {}
+
 ## Whether [method fetch_content_maps] is already sweeping the configured set.
 var _fetching_content_maps: bool = false
 
@@ -279,6 +283,8 @@ func _adopt_descriptor_owner() -> void:
 	if descriptor == null:
 		return
 
+	_adopt_descriptor_maps(descriptor)
+
 	var cvars: Dictionary = descriptor.get("cvars")
 
 	if not cvars.has(G2GConfig.MAP_CONTENT_OWNER_CVAR):
@@ -288,6 +294,37 @@ func _adopt_descriptor_owner() -> void:
 	DotLog.info(CHANNEL, "the map owner comes from the game's descriptor", {
 		"owner": config.map_content_owner,
 	})
+
+
+## Takes the map set from the descriptor's `maps:` list, when the server has one.
+##
+## [b]The list used to be this game's own cvars[/b] -- `sv_content_maps` and an owner --
+## fetched at whatever version each pack's origin called latest, on whichever day a box
+## happened to boot. dot-server now carries a game's delivered maps as pinned
+## `<owner>/<map id>@<version>` keys (DotGameDescriptor.maps), written by the installer
+## that checked each one exists, so every server running one release of this game offers
+## the same bytes. A server whose dot-server predates the field has no `maps` property;
+## `get` answers null and the cvars still work as they always did.
+func _adopt_descriptor_maps(descriptor: Object) -> void:
+	var keys: Variant = descriptor.get("maps")
+
+	if not (keys is PackedStringArray) or (keys as PackedStringArray).is_empty():
+		return
+
+	var ids := PackedStringArray()
+
+	for key in (keys as PackedStringArray):
+		var map := DotMapDef.from_content_key(key)
+
+		if map == null:
+			DotLog.warn(CHANNEL, "a maps: entry is not <owner>/<map>@<version>", {"entry": key})
+			continue
+
+		_pinned_maps[map.id] = [String(map.content_id), map.content_version]
+		ids.append(String(map.id))
+
+	config.content_maps = ids
+	DotLog.info(CHANNEL, "the map set comes from the game's descriptor", {"maps": ids.size()})
 
 
 ## The descriptor this scene is being built for: the manager's pending game, or, when
@@ -995,7 +1032,15 @@ func ensure_map_content(id: StringName) -> DotResult:
 
 	DotLog.info(CHANNEL, "fetching a map this build does not have", {"map": String(id)})
 
-	var got: Variant = await cloud.call("ensure", StringName(config.map_content_id(id)))
+	# At the version the installer pinned when the descriptor names the map; otherwise by
+	# the owner cvar, at whatever the origin calls latest (a map typed at the console).
+	var pinned: Array = _pinned_maps.get(id, [])
+	var got: Variant
+
+	if not pinned.is_empty():
+		got = await cloud.call("ensure", StringName(pinned[0]), pinned[1])
+	else:
+		got = await cloud.call("ensure", StringName(config.map_content_id(id)))
 
 	if not (got is DotResult):
 		return DotResult.fail(

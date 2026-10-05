@@ -26,44 +26,47 @@ client_scene: game/g2g.tscn
 module: game/g2g_module.gd
 
 cvars:
-  # Maps are fetched as <owner>/<map id> (gamemann/surf_mesa); the id a player types is
-  # unchanged. Publish them with game-g2gfast's tools/publish_maps.sh before relying on it.
+  # A map id typed at the console that is not in maps: below is fetched as <owner>/<id>
+  # (gamemann/surf_mesa) at the origin's latest; the listed ones come at their pinned version.
   sv_map_content_owner: "gamemann"
-  # Every COURSE in g2gfast-maps' maps.json, which is where each <owner>/<map id> pack is
-  # published from. Left out on purpose: bhop_eazy, bhop_lego2 and buses_from_hell_fixed
-  # have no finish (NOT_COURSES), and bhop_arcane_v2 carries a texture from private
-  # reference content, so the publisher refuses it. Until 2026-10-04 this listed the
-  # first eight surf maps only.
-  sv_content_maps:
-    - surf_mesa
-    - surf_beginner2
-    - surf_kitsune
-    - surf_aquaflow
-    - surf_arcade
-    - surf_interference
-    - surf_summit
-    - surf_year3000
-    - surf_greensway
-    - surf_life_of_duck
-    - surf_stonework3
-    - bhop_ananas
-    - bhop_aztec
-    - bhop_badges
-    - bhop_badges_mini
-    - bhop_evolve
-    - bhop_fur
-    - bhop_fury_2
-    - bhop_grove
-    - bhop_interloper
-    - bhop_mario_fxd
-    - bhop_monster_jam
-    - bhop_pandora2_fix
-    - bhop_pit
-    - bhop_supernova
-    - bhop_tesquo_v2
   sv_airaccelerate: "1000"
   sv_autobunnyhopping: "1"
   sv_enablebunnyhopping: "1"
   sv_gravity: "800"
   sv_allow_thirdperson: "1"
   sv_replay_bot: "1"
+
+# The courses this server offers: every COURSE in g2gfast-maps' maps.json, each published
+# as its own pack (gamemann/<map id>). Written without versions; the server's installer
+# pins each to the version on the origin when it installs the game, checks it exists, and
+# dot-server carries the pinned list (DotGameDescriptor.maps). A map is downloaded when the
+# server changes to it, not with the game. Left out on purpose: bhop_eazy, bhop_lego2 and
+# buses_from_hell_fixed have no finish (NOT_COURSES), and bhop_arcane_v2 carries a texture
+# from private reference content, so the map publisher refuses it.
+maps:
+  - gamemann/surf_mesa
+  - gamemann/surf_beginner2
+  - gamemann/surf_kitsune
+  - gamemann/surf_aquaflow
+  - gamemann/surf_arcade
+  - gamemann/surf_interference
+  - gamemann/surf_summit
+  - gamemann/surf_year3000
+  - gamemann/surf_greensway
+  - gamemann/surf_life_of_duck
+  - gamemann/surf_stonework3
+  - gamemann/bhop_ananas
+  - gamemann/bhop_aztec
+  - gamemann/bhop_badges
+  - gamemann/bhop_badges_mini
+  - gamemann/bhop_evolve
+  - gamemann/bhop_fur
+  - gamemann/bhop_fury_2
+  - gamemann/bhop_grove
+  - gamemann/bhop_interloper
+  - gamemann/bhop_mario_fxd
+  - gamemann/bhop_monster_jam
+  - gamemann/bhop_pandora2_fix
+  - gamemann/bhop_pit
+  - gamemann/bhop_supernova
+  - gamemann/bhop_tesquo_v2
