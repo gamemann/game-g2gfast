@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 180
+const CHECKS := 181
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -451,6 +451,8 @@ func _test_query_and_chat() -> void:
 	if source != null:
 		var snap := source.snapshot(true)
 		_check(snap.game.get("map", "") == "bhop_g2g_intro", "naming the map", str(snap.game))
+		_check(snap.info.get("map", "") == "bhop_g2g_intro", "in the field A2S answers with, not as the content id",
+			str(snap.info.get("map", "")))
 		_check(int(snap.game.get("tick_rate", 0)) == game.tick_rate, "and the tick rate it actually runs")
 		_check(int(snap.info.get("bots", -1)) == game.players.size(), "counting the game-made players as bots, which they are",
 			"%s of %d" % [snap.info.get("bots"), game.players.size()])

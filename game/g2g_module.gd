@@ -303,6 +303,9 @@ func _module_load() -> DotResult:
 	if not provided.ok:
 		DotLog.info(CHANNEL, "no query provider", {"why": provided.error.message})
 
+	game.maps.changed.connect(_report_map)
+	_report_map(game.maps.current)
+
 	# Everything below runs the server rather than the game, and each one logs and
 	# continues rather than refusing to load: a module that would not load because a
 	# punishment file was unreadable is a module that takes the game down over a
@@ -741,10 +744,20 @@ func _module_unload() -> void:
 		for id in game.players.keys():
 			game.remove_player(id)
 		game.external_tick = false
+		if game.maps.changed.is_connected(_report_map):
+			game.maps.changed.disconnect(_report_map)
 	if net != null and is_instance_valid(net):
 		net.stop()
 	_painters.clear()
 	_joined.clear()
+
+
+## Tells dot-server which map is running, so A2S and DQP print it in their map field (and
+## the backbone report does too) rather than this game's content id. On every change
+## through the session's own signal, which every route to a new map ends at.
+func _report_map(map: DotMapDef, _world: Node = null) -> void:
+	if server != null and server.games != null:
+		server.games.set_current_map(String(map.id) if map != null else "")
 
 
 ## The manager and the bridge. The module drives the tick, because the game's tick
