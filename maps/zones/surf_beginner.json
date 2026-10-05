@@ -1,0 +1,151 @@
+{
+ "id": "surf_beginner",
+ "author": "Kiiru",
+ "attribution": {
+  "author": "Kiiru",
+  "source": "https://gamebanana.com/mods/121714 (Key Authors: Kiiru, 'Creator of this map'; Special Thanks: BOAT, Hellraisedsurfer (testing), BalaTheShark; submitter Kiiru)",
+  "archive": "_4830-.zip (published as such; cstrike/maps/surf_beginner.bsp)",
+  "recorded": "2026-10-05"
+ },
+ "notes": "Credit, and a start, seven stages and a finish read from the map's own teleport graph (gb-maps-1). Every trigger_teleport aims at one of failman1..failman7, spawnman or Endman_poop. The ones 224 units wide are the doors from one stage to the next -- each fires the map's own stage<n> hud hint as you pass it -- and the ones 592 units and up are the pit under that stage; 512 separates them with nothing near the line. So failman<n> is where stage n begins, the door out of the spawn room (stage1 hint) starts the course, and the one door aimed at Endman_poop at the end of stage 7 is the finish. Not published.",
+ "doorways": {
+  "max_horizontal": 512
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -736,
+     2656,
+     -32
+    ],
+    [
+     224,
+     3808,
+     96
+    ]
+   ],
+   "note": "the spawn room, from its back wall to just short of the stage1 door at y 2632..2640; as wide as the map's own pit under it (x -736..224, y 2592..3808)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "spawnman",
+   "note": "where the pit under the spawn room returns you, facing the door"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "Endman_poop",
+   "max_horizontal": 512,
+   "note": "the one door at the end of stage 7, aimed at the end room (Endman_poop)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 1,
+   "around": {
+    "point": "failman1",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman1",
+   "note": "failman1, where the stage1 door lands you and where stage 1's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "failman2",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman2",
+   "note": "failman2, where the stage2 door lands you and where stage 2's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "failman3",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman3",
+   "note": "failman3, where the stage3 door lands you and where stage 3's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "failman4",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman4",
+   "note": "failman4, where the stage4 door lands you and where stage 4's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "around": {
+    "point": "failman5",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman5",
+   "note": "failman5, where the stage5 door lands you and where stage 5's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 6,
+   "around": {
+    "point": "failman6",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman6",
+   "note": "failman6, where the stage6 door lands you and where stage 6's own pit returns you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 7,
+   "around": {
+    "point": "failman7",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "destination": "failman7",
+   "note": "failman7, where the stage7 door lands you and where stage 7's own pit returns you"
+  }
+ ]
+}

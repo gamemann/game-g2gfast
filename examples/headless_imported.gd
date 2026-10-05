@@ -38,13 +38,25 @@ const RouteBot := preload("../tools/route_bot.gd")
 ##   whose sections are all labelled and whose END is not. Nothing in either file
 ##   distinguishes the last gate from the twenty-six before it, and guessing would produce a
 ##   leaderboard that looks right and measures a route the map does not have.
+## - `surf_grave_reloaded` is a combat surf map: weapon stashes behind doors in both spawn
+##   rooms, a bomb target, and every teleport aims back at a spawn, the prison or the cliff
+##   top. A loop to fight on, with no line anywhere that a run could end at.
+## - The rest of gb-maps-1's first ranked batch (2026-10-05) is the same thing, which is what
+##   the most-viewed surf maps on the download site turn out to be: `surf_10x_final`,
+##   `surf_10x_reloaded_fixed`, `surf_forbidden_ways_reloaded`, `surf_mai_remix`,
+##   `surf_greatriver_xdre4m`, `surf_ski_2` and `surf_110b_austinpowers` are combat surf
+##   (buyzones or weapon buttons, jails, every teleport back to a spawn or a ramp top);
+##   `surf_xiv_v2a` is a set of minigames the round picks between; and `surf_fruits` plays one
+##   of ten stages a round and ends every one in a fight. Each zones file says which.
 ##
 ## [b]The exemption is checked in both directions, which is what stops it being a mute
 ## button.[/b] A map in here that turns out to HAVE a runnable main track fails — because
 ## the reason it is listed has stopped being true and the list is now the lie. That is the
 ## same bargain every skip in this family makes: it is allowed to skip a check, it is not
 ## allowed to stop asking the question.
-const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2"]
+const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2", "surf_grave_reloaded",
+	"surf_10x_final", "surf_10x_reloaded_fixed", "surf_forbidden_ways_reloaded", "surf_mai_remix",
+	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits"]
 
 ## The imported maps with no pit, which is a different question from having no finish.
 ##

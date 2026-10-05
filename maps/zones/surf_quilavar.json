@@ -7,5 +7,44 @@
   "archive": "surf_quilavar.rar",
   "recorded": "2026-10-04"
  },
- "notes": "Credit only, from the GameBanana page's credits (gb-maps-1, run 12). Not published: shipping third-party maps is Christian's call per batch."
+ "notes": "Credit, and a start and finish read from the map's own spawn room, restartreal destination and end-door trigger (gb-maps-1). Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -1232,
+     -416,
+     6304
+    ],
+    [
+     -400,
+     416,
+     6480
+    ]
+   ],
+   "note": "the spawn room: the floor the 48 info_player_* stand on, bounded by the map's own spawn-room damage-filter triggers (x -1232..-400, y -416..416)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "restartreal",
+   "note": "restartreal is where every fail teleport ends up (via restart, a drop into the restartreal trigger), in the spawn room"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "near": {
+    "class": "trigger_multiple",
+    "point": [
+     5664,
+     14496,
+     -15316
+    ],
+    "within": 256
+   },
+   "note": "the floor trigger at the bottom of the route that opens enddoors; past the doors is a teleport back to restart, so this is the last thing the map does for a runner"
+  }
+ ]
 }

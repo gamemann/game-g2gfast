@@ -7,5 +7,5 @@
   "archive": "surf_grave_reloaded.rar",
   "recorded": "2026-10-04"
  },
- "notes": "Credit only, from the GameBanana page's credits (gb-maps-1, run 12). Not published: shipping third-party maps is Christian's call per batch."
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). Spawn rooms with weapon stashes behind func_doors (elites, M3s, MAC-10s, scouts, AWPs), and every trigger_teleport sends a player back to a spawn, the prison or the cliff top -- a loop, not a route. gb-maps-1. Not published."
 }

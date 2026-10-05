@@ -1,0 +1,11 @@
+{
+ "id": "surf_greatriver_xdre4m",
+ "author": "!Black, with Ace Of Spades13 and Junior",
+ "attribution": {
+  "author": "!Black, with Ace Of Spades13 and Junior",
+  "source": "https://gamebanana.com/mods/122206 (Key Authors: Black, Ace Of Spades13, Junior; submitter !Black; the archive's 'Thanks for downloading.txt' is signed 'Black.')",
+  "archive": "blacks_greatriver_xdre4m.rar (surf_greatriver_xdre4m.bsp, Thanks for downloading.txt)",
+  "recorded": "2026-10-05"
+ },
+ "notes": "Credit only, and deliberately no zones (gb-maps-1): a combat surf map with no finish -- weapons on the floor and behind grenade buttons, a jail with a jailbreak button, and strip-weapon triggers in the end rooms. Every trigger_teleport aims back at a spawn, a jail or the top of a ramp, so there is a loop to fight on and no line a run could end at. Not published."
+}

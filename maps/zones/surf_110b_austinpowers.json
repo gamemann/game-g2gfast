@@ -1,0 +1,11 @@
+{
+ "id": "surf_110b_austinpowers",
+ "author": "TheInvoker",
+ "attribution": {
+  "author": "TheInvoker",
+  "source": "https://gamebanana.com/mods/121530 (Key Authors: TheInvoker; the archive's readme.txt: 'This map was made by The Invoker')",
+  "archive": "surf_110b_austinpowers_2.zip (surf_110b_austinpowers.bsp, .txt, readme.txt, changes.txt)",
+  "recorded": "2026-10-05"
+ },
+ "notes": "Credit only, and deliberately no zones (gb-maps-1): a combat surf map with no finish -- weapon-and-ammo teleporters per team (deagle, elites, usp, glock exits), jails, a sniper nest and 'campers heaven'. Every trigger_teleport aims back at a spawn, a jail or the top of a ramp, so there is a loop to fight on and no line a run could end at. Not published."
+}

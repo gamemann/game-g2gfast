@@ -1,0 +1,11 @@
+{
+ "id": "surf_forbidden_ways_reloaded",
+ "author": "Krusty, sky by Karatek\u00e4fer",
+ "attribution": {
+  "author": "Krusty, sky by Karatek\u00e4fer",
+  "source": "https://gamebanana.com/mods/122076 (Key Authors: Krusty; Contributors: Karatek\u00e4fer (sky); Special Thanks: JackTheStripper; submitter .Krusty)",
+  "archive": "forbidden_ways_reloaded.rar (cstrike/maps/surf_forbidden_ways_reloaded.bsp, .res, menu thumbnail)",
+  "recorded": "2026-10-05"
+ },
+ "notes": "Credit only, and deliberately no zones (gb-maps-1): a combat surf map with no finish -- 200-odd weapons, four jails, team-coloured teleports at the bottom of every ramp and a secret-button AWP room. Every trigger_teleport aims back at a spawn, a jail or the top of a ramp, so there is a loop to fight on and no line a run could end at. Not published."
+}

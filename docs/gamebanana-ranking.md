@@ -1,0 +1,122 @@
+# The most popular surf and bunny-hop maps on GameBanana, and which we have
+
+Measured 2026-10-05 for nightly item gb-maps-1. This is the list the imports work down; re-run it rather than trusting it after a few months, because view counts move.
+
+## How it was measured
+
+GameBanana's search API (`Util/Search/Results`) ranks by relevance, not popularity, which is what the first batch was chosen from. The category index ranks properly: `https://gamebanana.com/apiv11/Mod/Index?_nPerpage=50&_nPage=<n>&_aFilters[Generic_Category]=<id>&_sSort=Generic_MostViewed` (or `Generic_MostLiked`). The two categories are **5558 Surf Style** (2,270 maps, including its children 5626 Combat Surf and 5627 Skill Surf) and **5568 Bunny Hop** (2,977 maps), both children of 5535, the maps section of [GameBanana game 2](https://gamebanana.com/games/2). The first 100 of each category by views and by likes were fetched: 307 distinct maps.
+
+**Skipped as a newer engine version (VBSP 21 and later): 0.** Both categories belong to game 2, every one of the 307 records says so, and all twelve archives downloaded so far held a VBSP 19 or 20 file. The newer releases have their own sections on the site, which this list never reads.
+
+"Have it" means a `maps/zones/<id>.json` whose attribution names that page, or a .bsp of that name under `inspirations/g2gfast/`. A page that matches only by a near name is called a variant.
+
+## Top 50 by views
+
+| # | Page | Map | Category | Views | Likes | Status |
+| --- | --- | --- | --- | ---: | ---: | --- |
+| 1 | [125558](https://gamebanana.com/mods/125558) | bhop_monster_jam | Bunny Hop | 179,415 | 27 | held (`bhop_monster_jam`) |
+| 2 | [121522](https://gamebanana.com/mods/121522) | surf_10x_final | Surf Style | 139,443 | 28 | imported 2026-10-05, not a course (`surf_10x_final`) |
+| 3 | [122076](https://gamebanana.com/mods/122076) | surf_forbidden_ways_reloaded | Surf Style | 116,582 | 32 | imported 2026-10-05, not a course (`surf_forbidden_ways_reloaded`) |
+| 4 | [121524](https://gamebanana.com/mods/121524) | surf_10x_reloaded_fix | Surf Style | 112,145 | 33 | imported 2026-10-05, not a course (`surf_10x_reloaded_fixed`) |
+| 5 | [122092](https://gamebanana.com/mods/122092) | surf_fruits | Surf Style | 111,805 | 17 | imported 2026-10-05, not a course (`surf_fruits`) |
+| 6 | [123284](https://gamebanana.com/mods/123284) | surf_xiv_v2a | Surf Style | 97,595 | 35 | imported 2026-10-05, not a course (`surf_xiv_v2a`) |
+| 7 | [122505](https://gamebanana.com/mods/122505) | surf_mai_remix | Surf Style | 79,729 | 33 | imported 2026-10-05, not a course (`surf_mai_remix`) |
+| 8 | [122382](https://gamebanana.com/mods/122382) | surf_kitsune | Surf Style | 78,483 | 11 | held (`surf_kitsune`) |
+| 9 | [122206](https://gamebanana.com/mods/122206) | surf_greatriver_xdre4m | Surf Style | 77,956 | 8 | imported 2026-10-05, not a course (`surf_greatriver_xdre4m`) |
+| 10 | [122953](https://gamebanana.com/mods/122953) | surf_ski_2 | Surf Style | 77,612 | 2 | imported 2026-10-05, not a course (`surf_ski_2`) |
+| 11 | [121714](https://gamebanana.com/mods/121714) | surf_beginner | Surf Style | 76,150 | 12 | imported 2026-10-05 (`surf_beginner`) |
+| 12 | [121530](https://gamebanana.com/mods/121530) | surf_110b_austinpowers | Surf Style | 74,690 | 15 | imported 2026-10-05, not a course (`surf_110b_austinpowers`) |
+| 13 | [122470](https://gamebanana.com/mods/122470) | surf_lt_omnific | Surf Style | 70,473 | 38 | downloaded, pending (see below) |
+| 14 | [122424](https://gamebanana.com/mods/122424) | surf_legends | Surf Style | 69,947 | 15 | downloaded, pending (see below) |
+| 15 | [122542](https://gamebanana.com/mods/122542) | Surf_Mesa | Surf Style | 66,169 | 11 | held (`surf_mesa`) |
+| 16 | [124461](https://gamebanana.com/mods/124461) | bhop_arcane_v1 | Bunny Hop | 65,615 | 14 | variant held (bhop_arcane_v2, page 124462) |
+| 17 | [122463](https://gamebanana.com/mods/122463) | surf_lore | Surf Style | 60,715 | 38 | not yet |
+| 18 | [124524](https://gamebanana.com/mods/124524) | bhop_badges | Bunny Hop | 60,554 | 23 | held (`bhop_badges`) |
+| 19 | [122158](https://gamebanana.com/mods/122158) | surf_greatriver | Surf Style | 57,739 | 19 | not yet |
+| 20 | [123222](https://gamebanana.com/mods/123222) | surf_vegetables | Surf Style | 56,526 | 17 | not yet |
+| 21 | [121698](https://gamebanana.com/mods/121698) | surf_bathroom_final | Surf Style | 54,769 | 26 | not yet |
+| 22 | [121606](https://gamebanana.com/mods/121606) | surf_akai_final | Surf Style | 52,637 | 18 | not yet |
+| 23 | [121787](https://gamebanana.com/mods/121787) | surf_buck-wild | Surf Style | 52,359 | 18 | not yet |
+| 24 | [121976](https://gamebanana.com/mods/121976) | surf_eclipse | Surf Style | 50,855 | 33 | not yet |
+| 25 | [122075](https://gamebanana.com/mods/122075) | surf_forbidden_ways_2nd | Surf Style | 49,100 | 29 | not yet |
+| 26 | [122202](https://gamebanana.com/mods/122202) | surf_greatriver_v4 | Surf Style | 49,026 | 14 | not yet |
+| 27 | [122673](https://gamebanana.com/mods/122673) | surf_omnibus | Surf Style | 48,312 | 32 | not yet |
+| 28 | [124915](https://gamebanana.com/mods/124915) | bhop_eazy_v2 | Bunny Hop | 46,821 | 13 | not yet |
+| 29 | [122824](https://gamebanana.com/mods/122824) | surf_rebel_resistance_final2 | Surf Style | 46,263 | 12 | not yet |
+| 30 | [126426](https://gamebanana.com/mods/126426) | bunnyhop_pro | Bunny Hop | 46,183 | 6 | not yet |
+| 31 | [124913](https://gamebanana.com/mods/124913) | bhop_eazy | Bunny Hop | 45,860 | 11 | held, not a course (`bhop_eazy`) |
+| 32 | [124977](https://gamebanana.com/mods/124977) | bhop_exodus | Bunny Hop | 45,366 | 26 | not yet |
+| 33 | [122985](https://gamebanana.com/mods/122985) | surf_skyworld | Surf Style | 44,124 | 19 | not yet |
+| 34 | [123141](https://gamebanana.com/mods/123141) | surf_thriller | Surf Style | 43,971 | 3 | not yet |
+| 35 | [126077](https://gamebanana.com/mods/126077) | bhop_sQee | Bunny Hop | 42,138 | 18 | not yet |
+| 36 | [122478](https://gamebanana.com/mods/122478) | surf_machine2 | Surf Style | 41,944 | 15 | not yet |
+| 37 | [122520](https://gamebanana.com/mods/122520) | surf_matrix_v8 | Surf Style | 40,365 | 8 | not yet |
+| 38 | [137677](https://gamebanana.com/mods/137677) | surf_adverse | Combat Surf | 39,329 | 35 | not yet |
+| 39 | [122860](https://gamebanana.com/mods/122860) | surf_rookie | Surf Style | 38,817 | 4 | not yet |
+| 40 | [121629](https://gamebanana.com/mods/121629) | Surf_Animals | Surf Style | 38,552 | 19 | not yet |
+| 41 | [122956](https://gamebanana.com/mods/122956) | Surf_ski_2_source | Surf Style | 37,536 | 3 | not yet |
+| 42 | [121540](https://gamebanana.com/mods/121540) | surf_29_12_06 | Surf Style | 37,029 | 22 | not yet |
+| 43 | [123134](https://gamebanana.com/mods/123134) | surf_the_gloaming | Surf Style | 36,153 | 32 | not yet |
+| 44 | [121962](https://gamebanana.com/mods/121962) | surf_dust2_2008_final | Surf Style | 35,615 | 7 | not yet |
+| 45 | [126499](https://gamebanana.com/mods/126499) | kz_bhop_yonkoma | Bunny Hop | 35,327 | 35 | not yet |
+| 46 | [137687](https://gamebanana.com/mods/137687) | surf_japan_ptad | Combat Surf | 34,426 | 18 | not yet |
+| 47 | [126445](https://gamebanana.com/mods/126445) | kz_bhop_badg3s | Bunny Hop | 33,149 | 41 | not yet |
+| 48 | [125304](https://gamebanana.com/mods/125304) | bhop_japan | Bunny Hop | 32,661 | 37 | not yet |
+| 49 | [123298](https://gamebanana.com/mods/123298) | surf_year3000 | Surf Style | 32,628 | 8 | held (`surf_year3000`) |
+| 50 | [122497](https://gamebanana.com/mods/122497) | surf_machine_remix_final | Surf Style | 32,250 | 12 | not yet |
+
+## Most liked, outside that list
+
+Likes are a second view, and a useful one because views accumulate with age: 35 of the top 50 by views were uploaded between 2005 and 2009. These are the fifteen most liked that are not in the top 50 by views.
+
+| Page | Map | Category | Views | Likes | Status |
+| --- | --- | --- | ---: | ---: | --- |
+| [125285](https://gamebanana.com/mods/125285) | bhop_interloper | Bunny Hop | 16,828 | 46 | held (`bhop_interloper`) |
+| [124748](https://gamebanana.com/mods/124748) | Bhop_crash_egypt | Bunny Hop | 19,000 | 36 | not yet |
+| [125694](https://gamebanana.com/mods/125694) | bhop_overthinker | Bunny Hop | 14,881 | 34 | not yet |
+| [125409](https://gamebanana.com/mods/125409) | bhop_lego3 | Bunny Hop | 10,791 | 33 | not yet |
+| [124525](https://gamebanana.com/mods/124525) | bhop_badges2 | Bunny Hop | 26,129 | 32 | not yet |
+| [122641](https://gamebanana.com/mods/122641) | surf_ny_advance | Surf Style | 30,095 | 31 | not yet |
+| [122471](https://gamebanana.com/mods/122471) | surf_lt_unicorn | Surf Style | 26,670 | 31 | not yet |
+| [125646](https://gamebanana.com/mods/125646) | bhop_ocean | Bunny Hop | 10,933 | 30 | not yet |
+| [122711](https://gamebanana.com/mods/122711) | surf_pavilion | Surf Style | 18,078 | 29 | not yet |
+| [123157](https://gamebanana.com/mods/123157) | surf_torque2 | Surf Style | 17,330 | 27 | not yet |
+| [125089](https://gamebanana.com/mods/125089) | bhop_frotinity2 | Bunny Hop | 7,461 | 27 | not yet |
+| [125470](https://gamebanana.com/mods/125470) | bhop_lost_world | Bunny Hop | 30,011 | 26 | not yet |
+| [123224](https://gamebanana.com/mods/123224) | surf_velocity | Surf Style | 24,088 | 26 | not yet |
+| [125408](https://gamebanana.com/mods/125408) | bhop_lego2 | Bunny Hop | 21,756 | 26 | held, not a course (`bhop_lego2`) |
+| [126473](https://gamebanana.com/mods/126473) | kz_bhop_lucid | Bunny Hop | 14,183 | 26 | not yet |
+
+## What the most-viewed surf maps turned out to be
+
+**Nine of the first ten not-yet-held maps by views are not courses.** The surf maps with the most views are the combat surf of 2006-2009: buyzones or weapon buttons, jails, and every teleport aimed back at a spawn or a ramp top. They import, draw and collide like any other map and are credited, but there is no line a run could end at, so each is in `NOT_COURSES` in `examples/headless_imported.gd` and its zones file says why. Whether combat maps belong in a timer server's rotation at all is a call for later; nothing lists them in `game.yml`.
+
+For the next batch, work down the likes list as well as the views list: skill-surf and bunny-hop pages (`surf_lore`, `surf_lt_omnific`, `surf_eclipse`, `surf_omnibus`, `kz_bhop_badg3s`, `bhop_japan`, `kz_bhop_yonkoma`, `bhop_exodus`) are where the courses are.
+
+## The batch imported 2026-10-05, ranked by what is wrong with it
+
+Worst first. Own is the share of a map's triangles drawn in a texture its own pakfile carried; stand-ins adds `G2GStockSubstitutes`' replacements for the stock textures it did not carry, and the rest is the prototype grid. Props are static props placed against those the map did not carry (and so are not drawn). This list feeds g2g-maps-stock-1.
+
+| Map | Course? | Own | With stand-ins | Props missing | Notes from the frames |
+| --- | --- | ---: | ---: | --- | --- |
+| `surf_10x_reloaded_fixed` | no (combat) | 0.0% | 0.0% | 0 of 0 | all grid; spawn platform reads, the ramps beyond are grey |
+| `surf_10x_final` | no (combat) | 0.0% | 0.2% | 0 of 0 | all grid |
+| `surf_ski_2` | no (combat) | 0.0% | 0.2% | 0 of 0 | all grid; compiled without lighting (0 lit faces); its loose credits decal is outside the pakfile |
+| `surf_mai_remix` | no (combat) | 0.0% | 0.7% | 14 of 14 | all grid |
+| `surf_greatriver_xdre4m` | no (combat) | 0.0% | 2.4% | 3 of 3 | all grid |
+| `surf_grave_reloaded` | no (combat) | 0.0% | 3.5% | 22 of 22 | all grid; the orbit frames are lost in the game's fog |
+| `surf_fruits` | no (round-picked stages) | 23.0% | 26.2% | 72 of 112 | dark, and the spawn frames show large black sawtooth shapes nobody has explained yet |
+| `surf_xiv_v2a` | no (minigames) | 3.9% | 29.5% | 39 of 39 | from the spawn the frame is mostly open sky with one slab and a fence; not investigated |
+| `surf_forbidden_ways_reloaded` | no (combat) | 3.3% | 31.0% | 6 of 6 | readable spawn deck, glass and water textured |
+| `surf_quilavar` | yes: start, finish | 38.5% | 38.5% | 0 of 0 | tiled spawn chamber in its own textures, black openings |
+| `surf_beginner` | yes: start, 7 stages, finish | 0.0% | 49.1% | 2 of 2 | wooden spawn deck with the author's sign, readable |
+| `surf_110b_austinpowers` | no (combat) | 52.8% | 52.8% | 54 of 54 | compiled without lighting (0 lit faces), so everything is flat white; one magenta floor that may be the map's own |
+
+No map in the batch spawned a player in solid, and every one passes `headless_imported` (1,906 checks over 42 maps).
+
+## Downloaded and not yet imported
+
+In `inspirations/g2gfast/pending/` with their archives in `inspirations/g2gfast/`, and no credit file yet:
+
+- `surf_lt_omnific` ([122470](https://gamebanana.com/mods/122470), nyro, qr and checkem): a skill course in three authors' sections, each of t1..t6, and like `surf_kitsune` it steers progression with `AddOutput targetname` and filters rather than labels. Needs its teleport graph read the way kitsune's was.
+- `surf_legends` ([122424](https://gamebanana.com/mods/122424), SintaxError): combat surf (jails, weapon spawner buttons). Credit-only import, like the rest of this batch.

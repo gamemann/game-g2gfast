@@ -42,7 +42,10 @@ cvars:
 # dot-server carries the pinned list (DotGameDescriptor.maps). A map is downloaded when the
 # server changes to it, not with the game. Left out on purpose: bhop_eazy, bhop_lego2 and
 # buses_from_hell_fixed have no finish (NOT_COURSES), and bhop_arcane_v2 carries a texture
-# from private reference content, so the map publisher refuses it.
+# from private reference content, so the map publisher refuses it. Also left out until they are
+# published (gb-maps-1, 2026-10-05): the courses surf_quilavar and surf_beginner, because the
+# installer refuses a listed map the origin does not have; and the combat surf maps imported
+# with them, which are NOT_COURSES like bhop_eazy.
 maps:
   - gamemann/surf_mesa
   - gamemann/surf_beginner2

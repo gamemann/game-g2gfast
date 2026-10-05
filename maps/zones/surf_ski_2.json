@@ -1,0 +1,11 @@
+{
+ "id": "surf_ski_2",
+ "author": "Massive Boredom and Mario",
+ "attribution": {
+  "author": "Massive Boredom and Mario",
+  "source": "https://gamebanana.com/mods/122953 (Key Authors: Massive Boredom, Mario; submitter turshija)",
+  "archive": "surf_ski_11.rar (surf_ski_2/maps/surf_ski_2.bsp, .res, a credits decal)",
+  "recorded": "2026-10-05"
+ },
+ "notes": "Credit only, and deliberately no zones (gb-maps-1): a combat surf map with no finish -- two buyzones, a weapon room, a jail with a button door and a keypad secret room. Every trigger_teleport aims back at a spawn, a jail or the top of a ramp, so there is a loop to fight on and no line a run could end at. Not published."
+}
