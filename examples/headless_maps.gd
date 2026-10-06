@@ -8,6 +8,7 @@ const G2GMapSurvey := preload("../game/g2g_map_survey.gd")
 const G2GMovement := preload("../game/g2g_movement.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
+const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
 ## Checks that maps are found rather than listed, and that dropping one in or out
 ## reaches a running game.
@@ -46,7 +47,10 @@ const SECTIONS := 6
 ## 45.57°: a player stands on both, so the bonus is a walk down a pair of steep floors
 ## rather than surf. It is a scored track and reshaping it is Christian's call, not a
 ## suite's (`[gate-sweep-2]`, 2026-09-27).
-const STANDABLE_RAMPS := {"bhop_g2g_stages": 2}
+## Maps known to have a tilted slab a player can stand on. `bhop_g2g_stages`' surf bonus was
+## two, until its slabs were steepened past 45.57 (`[stages-slabs-1]`); none now, and the
+## check below fails the moment a map gains one.
+const STANDABLE_RAMPS := {}
 
 var _passed := 0
 var _failed := 0
@@ -388,6 +392,8 @@ func _test_maps_are_surveyed() -> void:
 ## Every one is asserted to still cover something unreached, so none can outlive the
 ## ground it excuses.
 func _survey_declared(id: String) -> Array:
+	if id == "bhop_g2g_stages":
+		return _stages_declared()
 	if id != "surf_g2g_intro":
 		return []
 
@@ -427,6 +433,29 @@ func _survey_declared(id: String) -> Array:
 			"why": "bonus 1's finish pad: reached by the flight off the bank's end, which is speed and so a rider's, not a survey's; `headless_run`'s single bank rides it into the finish with no reset",
 		},
 	]
+
+
+## `bhop_g2g_stages`' surf bonus since its slabs were steepened past standing
+## (`[stages-slabs-1]`): each slab's high lip (its 64-u end face, standable) and the finish
+## pad, which is reached by the ride along the slabs' crease and so is speed, not a survey's.
+## Read off the map's own constants, as the slabs are built.
+func _stages_declared() -> Array:
+	var out: Array = []
+	var centre_z := BhopStages.START_Z - 1536.0
+	for side in [1.0, -1.0]:
+		var turn := Basis(Vector3.FORWARD, deg_to_rad(side * (90.0 - BhopStages.BONUS_RAMP_PITCH)))
+		var centre := Vector3(BhopStages.BONUS_X + side * 384.0, BhopStages.FLOOR_Y + 320.0, centre_z)
+		var lip := centre + turn * Vector3(0.0, 768.0, 0.0)
+		out.append({
+			"box": AABB(Vector3(lip.x - 64.0, lip.y - 64.0, centre_z - 1296.0), Vector3(128.0, 128.0, 2592.0)),
+			"why": "the surf bonus's %s slab, its high lip: the slab's 64-u end face, above its pad" % ("east" if side > 0.0 else "west"),
+		})
+	out.append({
+		"box": AABB(Vector3(BhopStages.BONUS_X - 384.0, BhopStages.FLOOR_Y - 384.0 - 32.0, BhopStages.START_Z - 3072.0 - 384.0),
+			Vector3(768.0, 64.0, 768.0)),
+		"why": "the surf bonus's finish pad: reached by riding the slabs' crease, which is speed and a rider's; `headless_run` rides it into the finish",
+	})
+	return out
 
 
 ## A floor with one of everything on it, in units: a 20-unit slot between two walls, a

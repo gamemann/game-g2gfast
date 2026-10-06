@@ -26,7 +26,7 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 231
+const CHECKS := 233
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
@@ -53,6 +53,16 @@ func _ready() -> void:
 func _run() -> void:
 	print("g2gfast — headless run")
 	print("")
+
+	# `-- --only=<method>` boots and runs that one section, for working on it: the totals are
+	# not checked and the exit code is the section's alone.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--only="):
+			await _test_boot()
+			await Callable(self, arg.substr(7)).call()
+			print("ONLY %s: %d passed, %d failed (totals not checked)" % [arg.substr(7), _passed, _failed])
+			get_tree().quit(1 if _failed > 0 else 0)
+			return
 
 	_test_units()
 	_test_source_fov()
@@ -1351,10 +1361,9 @@ func _test_ridge_bonus() -> void:
 ##
 ## The main route is a CHAIN nobody scripted can run (it needs a strafe), so its answer
 ## is read off `_course()`; the ridge's is from `_test_ridge_bonus`'s own drive; the
-## surf bonus is driven here. That bonus's slabs are 45°, under the 45.57° a player can
-## stand on (`[stages-slabs-1]`), so the expected answer is "standing on a slope, then
-## falling" -- printed as it is. Whether the slabs become surf is Christian's call and
-## nothing here reshapes a scored route.
+## surf bonus is driven here, and since `[stages-slabs-1]` asserted: its slabs stand at
+## `BONUS_RAMP_PITCH` (50°), past the 45.57° a player can stand on, so a bot that holds into
+## the west face rides it to the finish (at 45 it landed on the slope and stopped).
 func _test_stages_descent() -> void:
 	_section("where bhop_g2g_stages' descent comes from")
 
@@ -1372,6 +1381,17 @@ func _test_stages_descent() -> void:
 	print("  ..    main: not ridden (a CHAIN needs a strafe no scripted bot has); the finish is %.0f u under the start, %.0f u down in stage 4's drops and %.0f u up in stage 3's climb, every unit of it between blocks, in the air" % [
 		BhopStages.FLOOR_Y - y, down, up])
 
+	var on_stages: DotResult = await game.change_map(&"bhop_g2g_stages")
+	_check(on_stages.ok, "the stages map is loaded for its bonus")
+	if not on_stages.ok:
+		_done()
+		return
+	# The movement a fresh server has: the sections before this one set what they need and
+	# do not all put it back (in the full run the ride got two thirds of the way; alone, all).
+	var fresh := G2GConfig.new()
+	for field in G2GConfig.MOVEMENT_FIELDS:
+		game.config.set(field, fresh.get(field))
+	game.apply_movement()
 	var bot: G2GPlayer = game.players[&"bot"]
 	var surf := DotTimerTrack.of_bonus(1)
 	_check(game.timers.set_player_track(&"bot", surf), "a player can switch to the surf bonus")
@@ -1396,12 +1416,19 @@ func _test_stages_descent() -> void:
 	var descent := _DescentLedger.new()
 	var ticks := 0
 
+	# Then the single-bank rule (`_test_single_bank`): once on the face, hold west (into it)
+	# while below a line partway up it, let go above, and forward throughout.
+	var hold_line := BhopStages.BONUS_X - 520.0
 	for i in range(2400):
 		var at := G2GUnits.vector_to_units(bot.global_position)
 		var c := DotFpsCommand.new()
 		c.yaw = 0.0
-		c.move = Vector2(-1.0, 0.0) if at.x > BhopStages.BONUS_X - 200.0 and at.y > 900.0 \
-			else Vector2(0.0, 1.0)
+		if at.y > 900.0:
+			# On the pad: across to the west slab's side, then off its FRONT edge (its side
+			# is in front of where the slabs begin).
+			c.move = Vector2(-1.0, 0.0) if at.x > BhopStages.BONUS_X - 200.0 else Vector2(0.0, 1.0)
+		else:
+			c.move = Vector2(-1.0 if at.x > hold_line else 0.0, 1.0)
 		bot.controller.apply_command(c)
 		await get_tree().physics_frame
 		ticks = i + 1
@@ -1418,6 +1445,8 @@ func _test_stages_descent() -> void:
 	print("  ..    surf bonus: %.0f u covered of a %.0f u route in %d ticks, %s; %s" % [
 		entry.z - deepest, entry.z - finish_z, ticks, descent.describe(),
 		"finished" if finished[0] else ("put back by the pit" if reset[0] else "not finished")])
+	_check(finished[0] and not reset[0], "the surf bonus is surfed: a bot holding into the face rides it to the finish",
+		"%.0f u of %.0f, %s" % [entry.z - deepest, entry.z - finish_z, "put back by the pit" if reset[0] else "not finished"])
 
 	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
 	game.spawn_player(&"bot")

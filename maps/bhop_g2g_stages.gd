@@ -67,6 +67,12 @@ const FLOOR_Y := 0.0
 ## How far to the side the bonus sits. See `_build_bonus`.
 const BONUS_X := 6144.0
 
+## How steep the surf bonus's two slabs' faces stand, in degrees. Past 45.57, the steepest floor a
+## player can stand on, or the bonus is two slopes a player lands on and stops (it was 45,
+## `[stages-slabs-1]`): Christian decided it is surf. Map data, so a fork that wants the old
+## slopes changes one number; the zones do not depend on it.
+const BONUS_RAMP_PITCH := 50.0
+
 ## Bonus 2, `the ridge`: up a stair, along a narrowing crest, down the other side. Half
 ## way between the main course (which never leaves x <= 176) and the surf bonus (whose
 ## ramps start at 5,760), so neither is in the other's view from a start pad.
@@ -501,7 +507,9 @@ func _build_bonus() -> void:
 			self,
 			Vector3(x + side * 384.0, FLOOR_Y + 320.0, START_Z - 1536.0),
 			Vector3(64.0, 1536.0, 2560.0),
-			side * 45.0,
+			# The box turns by this and its broad face then stands at 90 minus it: a pitch of 50
+			# is a 40-degree turn (45 was both, which is how it came to be standable).
+			side * (90.0 - BONUS_RAMP_PITCH),
 			Vector3.FORWARD,
 			G2GGeometry.ROLE_RAMP
 		)
