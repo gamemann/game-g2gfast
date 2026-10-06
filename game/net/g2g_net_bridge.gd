@@ -9,6 +9,8 @@ const G2GNetCommand := preload("g2g_net_command.gd")
 const G2GNetLink := preload("g2g_net_link.gd")
 const G2GPlayer := preload("../g2g_player.gd")
 const G2GPlayerNet := preload("g2g_player_net.gd")
+const G2GNpcNet := preload("g2g_npc_net.gd")
+const G2GHunters := preload("../g2g_hunters.gd")
 const G2GRequest := preload("g2g_request.gd")
 
 ## Joins a [G2GGame] to a [DotNetManager]. The netcode seam, and the only file in
@@ -405,9 +407,23 @@ func local_player() -> G2GPlayer:
 # --- The authoritative tick ------------------------------------------------
 
 ## One server tick, replacing the game's own loop.
+## Hunters this server replicates: instance id -> their [G2GNpcNet]. Server side.
+var _hunter_nets: Dictionary = {}
+
+## Hunters this client draws: net id -> their [G2GNpcNet]. Client side.
+var _hunter_mirrors: Dictionary = {}
+
+## The spawner whose signals this is connected to. `sv_hunters` builds and a map change
+## rebuilds the hunters, so it is checked every tick rather than connected once.
+var _watched_spawner: DotNpcSpawner = null
+
+var _hunter_world: Node3D = null
+
+
 func server_tick(tick: int) -> void:
 	_tick = tick
 	_game_ticked_for = -1
+	_watch_hunters()
 	if net != null:
 		net.server_tick(tick)
 	ensure_game_ticked(tick)
@@ -666,8 +682,177 @@ func _admit(peer_id: int) -> void:
 	if clock_fn.is_valid():
 		_tell(peer_id, G2GEvents.Kind.CLOCK, G2GEvents.write_clock(clock_fn.call()))
 
+	# Every hunter already out on the course. A runner joining a server whose hunters were
+	# released an hour ago would otherwise be hit by things it was never told about.
+	for instance_id in _hunter_nets.keys():
+		var hunter: G2GNpcNet = _hunter_nets[instance_id]
+		if hunter.identity != null and hunter.npc != null and hunter.npc.is_alive():
+			_tell(peer_id, G2GEvents.Kind.NPC, G2GEvents.write_npc(
+				hunter.identity.net_id, hunter.npc.def.id, hunter.npc.position()
+			))
+
 	# Last, so everything above describes the world the announce is about to put it in.
 	_map_admit(peer_id)
+
+
+# --- Hunters -------------------------------------------------------------------
+
+## Follows whichever hunters the game has. Server side. Every tick, because `sv_hunters`
+## and a map change both build or drop them.
+func _watch_hunters() -> void:
+	if net == null or not net.is_server or game == null:
+		return
+
+	var spawner: DotNpcSpawner = game.hunters.spawner if game.hunters != null else null
+
+	if spawner == _watched_spawner:
+		return
+
+	if _watched_spawner != null and is_instance_valid(_watched_spawner):
+		if _watched_spawner.spawned.is_connected(_on_hunter_spawned):
+			_watched_spawner.spawned.disconnect(_on_hunter_spawned)
+		if _watched_spawner.removed.is_connected(_on_hunter_removed):
+			_watched_spawner.removed.disconnect(_on_hunter_removed)
+
+	for instance_id in _hunter_nets.keys():
+		_forget_hunter(int(instance_id))
+
+	_watched_spawner = spawner
+
+	if spawner == null:
+		return
+
+	spawner.spawned.connect(_on_hunter_spawned)
+	spawner.removed.connect(_on_hunter_removed)
+
+	for npc in spawner.all_npcs():
+		_on_hunter_spawned(npc)
+
+
+func _on_hunter_spawned(npc: DotNpcInstance) -> void:
+	var body := npc.node as Node3D
+
+	if body == null or net == null or _hunter_nets.has(npc.instance_id):
+		return
+
+	var behaviour := G2GNpcNet.new()
+	behaviour.name = "Net"
+	behaviour.npc = npc
+	behaviour.body = body
+	body.add_child(behaviour)
+
+	var identity := DotNetIdentity.new()
+	identity.name = "Identity"
+	identity.owner_peer_id = 0
+	identity.authority = DotNetIdentity.Authority.SERVER
+	# Relevant to everybody: a hunter is a threat a runner must see coming, and an interest
+	# radius would announce one and then never move it — arena's first version did exactly
+	# that, a monster drawn frozen where it spawned.
+	identity.always_relevant = true
+	body.add_child(identity)
+
+	var registered := net.registry.register(identity, 0, net.clock.tick, net.config)
+
+	if not registered.ok:
+		DotLog.warn(CHANNEL, "could not replicate a hunter", {"error": str(registered.error)})
+		return
+
+	_hunter_nets[npc.instance_id] = behaviour
+	behaviour.pull()
+	_broadcast(G2GEvents.Kind.NPC, G2GEvents.write_npc(identity.net_id, npc.def.id, body.global_position))
+
+
+func _on_hunter_removed(npc: DotNpcInstance, _reason: StringName) -> void:
+	_forget_hunter(npc.instance_id)
+
+
+func _forget_hunter(instance_id: int) -> void:
+	var behaviour: G2GNpcNet = _hunter_nets.get(instance_id)
+	_hunter_nets.erase(instance_id)
+
+	if behaviour == null or behaviour.identity == null or net == null:
+		return
+
+	var net_id := behaviour.identity.net_id
+	net.registry.unregister(net_id)
+	_broadcast(G2GEvents.Kind.NPC_GONE, G2GEvents.write_npc_gone(net_id))
+
+
+## A client's copy of a hunter: its scene, no brain, moved by its net behaviour.
+func _mirror_hunter(info: Dictionary) -> void:
+	var net_id := int(info["net_id"])
+
+	if _hunter_mirrors.has(net_id) or net == null:
+		return
+
+	var def := G2GHunters.catalogue().get_npc(info["kind_id"])
+
+	if def == null:
+		DotLog.debug(CHANNEL, "a hunter this build does not have", {"id": str(info["kind_id"])})
+		return
+
+	var scene: Variant = load(def.scene_path) if ResourceLoader.exists(def.scene_path) else null
+
+	if not (scene is PackedScene):
+		DotLog.warn(CHANNEL, "a hunter's scene would not load", {"path": def.scene_path})
+		return
+
+	var body := (scene as PackedScene).instantiate() as Node3D
+
+	if body == null:
+		return
+
+	# A mirror must not simulate: a CharacterBody3D left alone sits still, a RigidBody3D
+	# would fall under the client's own physics between snapshots.
+	if body is RigidBody3D:
+		(body as RigidBody3D).freeze = true
+
+	if _hunter_world == null or not is_instance_valid(_hunter_world):
+		_hunter_world = Node3D.new()
+		_hunter_world.name = "HunterMirrors"
+		game.add_child(_hunter_world)
+
+	_hunter_world.add_child(body)
+	body.global_position = info["position"]
+
+	var behaviour := G2GNpcNet.new()
+	behaviour.name = "Net"
+	behaviour.body = body
+	body.add_child(behaviour)
+
+	var identity := DotNetIdentity.new()
+	identity.name = "Identity"
+	identity.owner_peer_id = 0
+	identity.authority = DotNetIdentity.Authority.SERVER
+	body.add_child(identity)
+
+	var registered := net.registry.register(identity, net_id, net.clock.tick, net.config)
+
+	if not registered.ok:
+		DotLog.warn(CHANNEL, "could not mirror a hunter", {"error": str(registered.error)})
+		body.queue_free()
+		return
+
+	_hunter_mirrors[net_id] = behaviour
+
+
+func _drop_hunter_mirror(net_id: int) -> void:
+	var behaviour: G2GNpcNet = _hunter_mirrors.get(net_id)
+	_hunter_mirrors.erase(net_id)
+
+	if behaviour == null:
+		return
+
+	if net != null:
+		net.registry.unregister(net_id)
+
+	if behaviour.body != null and is_instance_valid(behaviour.body):
+		behaviour.body.queue_free()
+
+
+## How many hunters this end replicates or draws.
+func hunter_count() -> int:
+	return _hunter_nets.size() if net != null and net.is_server else _hunter_mirrors.size()
 
 
 func _join_body(session_id: int) -> PackedByteArray:
@@ -1081,6 +1266,14 @@ func _on_event(message: DotNetMessage) -> void:
 			if bool(clock["ok"]):
 				clock_view.adopt(clock, Time.get_ticks_msec() / 1000.0)
 				clock_received.emit(clock)
+		G2GEvents.Kind.NPC:
+			var hunter := G2GEvents.read_npc(reader)
+			if bool(hunter["ok"]):
+				_mirror_hunter(hunter)
+		G2GEvents.Kind.NPC_GONE:
+			var gone := G2GEvents.read_npc_gone(reader)
+			if bool(gone["ok"]):
+				_drop_hunter_mirror(int(gone["net_id"]))
 
 
 func _apply_hello(reader: DotNetReader) -> void:

@@ -565,6 +565,10 @@ func tick(delta: float) -> void:
 
 		shots.append_array(outcome.shots)
 
+		# Heard by the hunters: a gunfight on a course brings them.
+		if not outcome.shots.is_empty() and game.hunters != null:
+			game.hunters.note_fire(id, player.eye_position())
+
 	if game.authoritative:
 		for shot in shots:
 			manager.resolve_shot(shot)

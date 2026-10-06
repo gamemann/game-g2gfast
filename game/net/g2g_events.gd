@@ -41,6 +41,12 @@ enum Kind {
 	## The map's time left, from the vote's clock: sent when it changes rather than
 	## counted, so an extend reaches the HUD. Last, for the same reason.
 	CLOCK,
+	## A hunter now exists, or is being described to a client that just connected: its net
+	## id, its kind, where it is. Its movement comes in snapshots. Appended: a kind is its
+	## index on the wire.
+	NPC,
+	## A hunter is gone — killed, reclaimed or cleared.
+	NPC_GONE,
 }
 
 enum Ask {
@@ -355,3 +361,42 @@ static func read_avatar(reader: DotNetReader) -> DotAvatar:
 		return null
 	var built := DotAvatar.from_dict(parsed)
 	return built.value if built.ok else null
+
+
+# --- NPC -------------------------------------------------------------------
+
+const NPC_ID_BYTES := 64
+
+## Where a hunter may be when it is announced, in this game's units. A surf map is large;
+## the snapshot carries the real position a tick later, this only places the body.
+const NPC_EXTENT := 65536.0
+
+
+static func write_npc(net_id: int, kind_id: StringName, at: Vector3) -> PackedByteArray:
+	var writer := _w()
+	writer.write_varint(net_id)
+	writer.write_string(String(kind_id), NPC_ID_BYTES)
+	writer.write_vector3_range(at, -NPC_EXTENT, NPC_EXTENT, 28)
+	return writer.to_bytes()
+
+
+static func read_npc(reader: DotNetReader) -> Dictionary:
+	var out := {
+		"net_id": reader.read_varint(),
+		"kind_id": StringName(reader.read_string(NPC_ID_BYTES)),
+		"position": reader.read_vector3_range(-NPC_EXTENT, NPC_EXTENT, 28),
+	}
+	out["ok"] = reader.ok()
+	return out
+
+
+static func write_npc_gone(net_id: int) -> PackedByteArray:
+	var writer := _w()
+	writer.write_varint(net_id)
+	return writer.to_bytes()
+
+
+static func read_npc_gone(reader: DotNetReader) -> Dictionary:
+	var out := {"net_id": reader.read_varint()}
+	out["ok"] = reader.ok()
+	return out

@@ -171,6 +171,12 @@ var combat: G2GCombat = null
 ## Hunters on the course. Null unless `sv_hunters` built them.
 var hunters: G2GHunters = null
 
+## How good the hunters are, server-wide: `npc_skill`, `npc_reaction_scale`,
+## `npc_reaction_min`. On the game rather than on [member hunters], which is null until
+## `sv_hunters` builds it and is rebuilt on a map change; the module binds the cvars and
+## the hunters attach this to each spawner they make.
+var npc_skill: DotNpcAiSkill = DotNpcAiSkill.new()
+
 ## Props an admin can place. Null unless `sv_props` built them.
 var props: G2GProps = null
 

@@ -64,6 +64,15 @@ signal wave_spawned(at: Vector3, count: int)
 var game: G2GGame = null
 
 var spawner: DotNpcSpawner = null
+
+## The hunters' squad and what they can hear. On the spawner as metadata, so dot-npc-ai's
+## brain finds both; see [method note_fire] for what makes the noise.
+var squads: DotNpcAiSquads = DotNpcAiSquads.new()
+var sounds: DotNpcAiSounds = DotNpcAiSounds.new()
+
+## How far a shot is heard by a hunter of alertness 1, in metres. Two stages of a course:
+## a deathmatch gunfight brings the hunters nearby and not the whole map.
+const GUNFIRE_RADIUS := 28.0
 var director: DotNpcDirector = null
 var senses: DotNpcSenses = null
 
@@ -109,6 +118,11 @@ func setup() -> DotResult:
 	# nobody — with the spawner running on defaults that look identical until a hunter
 	# refuses to give up on somebody behind a wall.
 	spawner.senses = senses
+	# Before the first spawn, so no hunter thinks a tick at the wrong skill.
+	if game != null and game.npc_skill != null:
+		game.npc_skill.attach(spawner)
+	squads.attach(spawner)
+	sounds.attach(spawner)
 	add_child(spawner)
 
 	spawner.died.connect(_on_died)
@@ -224,7 +238,7 @@ static func _stalker() -> DotNpcDef:
 	def.sight_half_angle_deg = 75.0
 	def.hearing_range = 20.0
 	def.require_line_of_sight = true
-	def.meta = {"damage": 25.0, "reach": 2.0, "attack_interval": 1.4}
+	def.meta = {"damage": 25.0, "reach": 2.0, "attack_interval": 1.4, "squad": "hunters", "attackers": 2}
 	return def
 
 
@@ -244,7 +258,7 @@ static func _sprinter() -> DotNpcDef:
 	def.sight_half_angle_deg = 100.0
 	def.hearing_range = 30.0
 	def.require_line_of_sight = false
-	def.meta = {"damage": 12.0, "reach": 1.8, "attack_interval": 0.7}
+	def.meta = {"damage": 12.0, "reach": 1.8, "attack_interval": 0.7, "squad": "hunters", "attackers": 2}
 	return def
 
 
@@ -318,6 +332,7 @@ func tick(delta: float) -> void:
 	_rebuild_candidates()
 	spawner.set_candidates(_candidates)
 	spawner.tick(delta)
+	squads.prune()
 
 	if director == null:
 		return
@@ -356,6 +371,18 @@ func _health_of(player_id: StringName) -> float:
 		return 1.0
 
 	return clampf(health.health / maxf(health.max_health, 1.0), 0.0, 1.0)
+
+
+## A player fired. Every hunter in earshot hears it and knows who: a hunter that was
+## patrolling comes to look. Called by [G2GCombat] for every tick a weapon produced a shot.
+func note_fire(player_id: Variant, origin: Vector3) -> void:
+	if spawner == null:
+		return
+
+	sounds.emit(
+		DotNpcAiSounds.Kind.COMBAT, origin, GUNFIRE_RADIUS, spawner.now(), 0.5,
+		StringName(str(player_id))
+	)
 
 
 func _rebuild_candidates() -> void:

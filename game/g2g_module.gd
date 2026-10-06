@@ -262,6 +262,10 @@ func _module_load() -> DotResult:
 				})
 	)
 
+	# Registered whether or not hunters are on, so `npc_skill hard` in a config holds
+	# when an operator turns `sv_hunters` on later.
+	game.npc_skill.bind_cvars(add_cvar, DotConVar.FLAG_NOTIFY)
+
 	add_cvar("sv_hunters", "1" if game.config.hunters else "0",
 		"Whether hunters walk the course.").changed.connect(
 		func(_old: String, new_value: String) -> void:

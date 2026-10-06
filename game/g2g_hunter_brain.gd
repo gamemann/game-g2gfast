@@ -14,7 +14,11 @@ extends "res://addons/dot_npc_ai/runtime/dot_npc_ai_brain.gd"
 ##
 ## [codeblock]
 ## selector
-##   sequence (reactive)  has a target? -> close on it -> strike
+##   sequence (reactive)  has a target?
+##     selector
+##       sequence (reactive)  one of the squad's two attack slots? -> close on it -> strike
+##       action               surround: wait on a ring, working round its back
+##   action               search where the runner was probably going
 ##   action               walk the course, which is where the players will be
 ## [/codeblock]
 ##
@@ -53,10 +57,23 @@ func _build() -> void:
 		npc.instance_id if npc != null else 0, 5501
 	)
 
-	var fight_children: Array[DotNpcAiNode] = [
-		DotNpcAiLeaf.Condition.new(&"has a target", _has_target),
+	# Two hunters on a runner at once and the rest close behind them on a ring. On a
+	# course that is the difference between a corridor blocked by a queue of hunters and a
+	# runner who has to get past two and then finds a third waiting the other side.
+	var attack_children: Array[DotNpcAiNode] = [
+		DotNpcAiLeaf.Condition.new(&"has an attack slot", _has_slot),
 		DotNpcAiLeaf.Action.new(&"close in", _close_in),
 		DotNpcAiLeaf.Action.new(&"strike", _strike),
+	]
+
+	var engage_children: Array[DotNpcAiNode] = [
+		DotNpcAiSequence.reactive_with(&"attack", attack_children),
+		DotNpcAiLeaf.Action.new(&"surround", _surround),
+	]
+
+	var fight_children: Array[DotNpcAiNode] = [
+		DotNpcAiLeaf.Condition.new(&"has a target", _has_target),
+		DotNpcAiSelector.new(&"engage", engage_children),
 	]
 
 	var root_children: Array[DotNpcAiNode] = [
@@ -65,6 +82,10 @@ func _build() -> void:
 		# guard, so a hunter chases a target it no longer has — for ever, because the
 		# thing that would clear the chase is the condition it stopped asking.
 		DotNpcAiSequence.reactive_with(&"hunt", fight_children),
+		# Between the hunt and the patrol. Without it a hunter that lost a runner round a
+		# corner went straight back to its patrol point the moment dot-npc's grace ran out,
+		# and the sprinter's fourteen seconds of `memory_time` were read by nothing.
+		DotNpcAiLeaf.Action.new(&"search", _search),
 		DotNpcAiLeaf.Action.new(&"patrol", _patrol),
 	]
 
@@ -129,6 +150,31 @@ func _strike(ctx: DotNpcAiContext) -> DotNpcAiNode.Status:
 	_deal_damage(npc.target_id, tune(&"damage", 20.0))
 
 	return DotNpcAiNode.Status.SUCCESS
+
+
+func _has_slot(_ctx: DotNpcAiContext) -> bool:
+	return claim_attack_slot()
+
+
+## Waits on a ring just out of reach, working round the runner's back. Behind the reaction
+## gate like the close-in.
+func _surround(ctx: DotNpcAiContext) -> DotNpcAiNode.Status:
+	if npc == null or not npc.is_alive():
+		return DotNpcAiNode.Status.FAILURE
+
+	if not has_reacted():
+		halt()
+		return DotNpcAiNode.Status.RUNNING
+
+	var speed := npc.def.move_speed if npc.def != null else 4.0
+	return surround(ctx, speed * 0.8, tune(&"reach", 2.0) + 2.0, 1.4)
+
+
+## Goes to where it last knew the runner was, and looks round. FAILURE when nothing is
+## remembered, which hands the selector on to the patrol.
+func _search(ctx: DotNpcAiContext) -> DotNpcAiNode.Status:
+	var speed := npc.def.move_speed if npc != null and npc.def != null else 4.0
+	return search(ctx, speed * 0.75, 1.4)
 
 
 ## Walks the course rather than wandering.

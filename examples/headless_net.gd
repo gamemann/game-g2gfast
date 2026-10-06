@@ -5,6 +5,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GEvents := preload("../game/net/g2g_events.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GMovement := preload("../game/g2g_movement.gd")
+const G2GHunters := preload("../game/g2g_hunters.gd")
 const G2GNetBridge := preload("../game/net/g2g_net_bridge.gd")
 const G2GNetCommand := preload("../game/net/g2g_net_command.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
@@ -35,13 +36,13 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 166
+const CHECKS := 172
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 24
+const SECTIONS := 25
 
 var _passed := 0
 var _failed := 0
@@ -94,6 +95,7 @@ func _run() -> void:
 		_test_vote_wire()
 		_test_clock_wire()
 		_test_blind_and_beacon()
+		_test_hunters_reach_the_client()
 		_test_leave()
 	_report()
 
@@ -1354,6 +1356,61 @@ func _test_blind_and_beacon() -> void:
 
 	_server_bridge.remove_player(8)
 	_exchange()
+	_done()
+
+
+## The hunters reach a connected runner: a hunter the server spawns is drawn, moves with the
+## server's, and goes when the server's does.
+##
+## [b]Hunters were never replicated.[/b] They ran on the server only, and every check about
+## them ran on an authoritative game where they are real bodies in the same tree — so a
+## runner on a dedicated server was hit by hunters nobody could see.
+func _test_hunters_reach_the_client() -> void:
+	_section("hunters reach the client")
+
+	var hunters := G2GHunters.new()
+	hunters.name = "Hunters"
+	hunters.game = _server_game
+	_server_game.add_child(hunters)
+	var built := hunters.setup()
+	_check(built.ok, "the server's hunters set up", str(built.error) if not built.ok else "")
+	_server_game.hunters = hunters
+	_steps(1)
+
+	var at := _server_player().global_position + Vector3(4.0, 0.5, 0.0)
+	var hunter := hunters.spawn_one(&"g2g_stalker", at)
+	_check(hunter != null, "a hunter spawns")
+
+	if hunter == null:
+		_done()
+		return
+
+	_exchange()
+	_steps(2)
+	_check(_client_bridge.hunter_count() == 1, "the client builds it", "%d" % _client_bridge.hunter_count())
+
+	# Moved by hand, not by its brain: the point is that the client follows the server, and
+	# a hunter left to think may stand still or chase the runner out of the test's frame.
+	(hunter.node as Node3D).global_position = at + Vector3(0.0, 0.0, 6.0)
+	_steps(30)
+	var mirror: Node3D = null
+	for entry in _client_bridge.get("_hunter_mirrors").values():
+		mirror = entry.body
+	_check(mirror != null and mirror.global_position.distance_to(hunter.position()) < 1.0,
+		"and draws it where the server has it",
+		"%.2f apart" % mirror.global_position.distance_to(hunter.position()) if mirror != null else "no mirror")
+	_check(mirror != null and absf(angle_difference(mirror.rotation.y, DotNpcNetSync.yaw_of(hunter))) < 0.3,
+		"facing the way the server's faces")
+
+	hunters.spawner.remove(hunter.instance_id, DotNpcSpawner.REASON_ADMIN)
+	_exchange()
+	_steps(2)
+	_check(_client_bridge.hunter_count() == 0, "and lets it go when the server does")
+
+	_server_game.hunters = null
+	_server_game.remove_child(hunters)
+	hunters.queue_free()
+	_steps(1)
 	_done()
 
 
