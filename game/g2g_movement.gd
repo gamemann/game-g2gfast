@@ -43,6 +43,7 @@ static func tunables_for(config: G2GConfig) -> DotFpsTunables:
 	t.friction = config.friction
 	t.stop_speed = G2GUnits.to_metres(config.stop_speed)
 	t.edge_friction = config.edge_friction
+	t.crest_launch_speed_scale = config.crest_launch
 
 	# --- Air ----------------------------------------------------------------
 	t.air_accelerate = config.air_accelerate

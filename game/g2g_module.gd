@@ -103,6 +103,7 @@ func _module_load() -> DotResult:
 	_movement_cvar("sv_stepsize", "step_size", "Step height, units.")
 	_movement_cvar("sv_edgefriction", "edge_friction", "Friction near a ledge. 1 disables.")
 	_movement_cvar("sv_jumpbuffer", "jump_buffer", "Easy-bhop window in seconds when autobhop is off.")
+	_movement_cvar("sv_crestlaunch", "crest_launch", "A ramp's crest throws a player above this many times sv_maxspeed. 0 never.")
 
 	# The record's ghost, live. Turning it off takes the current one away rather than
 	# waiting for the next map: an operator who turns a bot off wants it gone now.

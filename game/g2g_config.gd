@@ -77,6 +77,12 @@ const G2GUnits := preload("g2g_units.gd")
 ## [code]sv_edgefriction[/code]. 1 disables it; those games ship 2.
 @export_range(1.0, 10.0, 0.1) var edge_friction: float = 1.0
 
+## `sv_crestlaunch`: speed, as a multiple of `sv_maxspeed`, above which the top of a walkable
+## ramp throws a player instead of holding them to the floor past it. 0 never throws
+## (dot-player-controller's `crest_launch_speed_scale`; a hop taken over a ramp's crest at
+## speed leaves it, a run up it does not).
+@export_range(0.0, 10.0, 0.01) var crest_launch: float = 1.25
+
 @export_group("View")
 
 ## [code]fov_desired[/code]: horizontal field of view at 4:3, as those games define it.
@@ -291,6 +297,9 @@ const MOVEMENT_FIELDS: Array[String] = [
 	"auto_bhop", "enable_bunnyhopping", "jump_buffer", "gravity", "accelerate",
 	"air_accelerate", "friction", "stop_speed", "max_speed", "max_velocity",
 	"air_wish_cap", "jump_velocity", "step_size", "max_slope", "edge_friction",
+	# Appended, never inserted: a field before the end moves every later one for a reader of
+	# the old order.
+	"crest_launch",
 ]
 
 
