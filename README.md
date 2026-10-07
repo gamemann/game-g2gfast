@@ -13,133 +13,152 @@ This project, along with every asset it is built on, was built initially with **
 
 I intend on reviewing code, testing, and editing documentation regularly. If you're interested in helping out, please let me know!
 
-## A Timer Server in the Competitive-Shooter Shape
-**A bunny-hop and surf timer for Godot 4, in the shape of the movement servers the genre grew up on.**
+## How it plays
+Each map has a start zone and an end zone. Leaving the start zone starts your timer and reaching the end stops it. Your best time on each map, track and style is a record, and the fastest one on the server is the world record. Some maps are split into stages, and some have bonus tracks.
 
-The genre's movement in its own units, `sv_autobunnyhopping` and the rest of the cvars, a timer with zones an admin draws from the console, styles, records, first and third person, and every player drawn as an avatar, theirs from the platform or a stock one.
+The movement uses the classic units and cvars (`sv_airaccelerate`, `sv_autobunnyhopping` and the rest), so surfing and strafing feel the way they always have.
 
-## Playing it
+There are styles for a harder run: normal, sideways, half-sideways, backwards, low gravity and prebhop. A run made with an admin's help (noclip, a speed change and so on) is never saved.
 
-```bash
-godot --path .
-```
+The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` and `surf_g2g_intro`. The classic maps it imports live in a separate repository, [g2gfast-maps](https://github.com/gamemann/g2gfast-maps), and a server downloads them on demand.
 
-| | |
+## Controls
+
+| Key | Action |
 | --- | --- |
-| **WASD** / **Space** / **Ctrl** | Move, jump (hold it, if the server allows), duck |
-| **F5** | First / third person |
-| **Tab** | Cycle style: normal, sideways, half-sideways, backwards, low gravity, prebhop |
+| **WASD** | Move |
+| **Space** | Jump (hold it, if the server allows auto-hop) |
+| **Ctrl** | Duck |
+| **F5** | First or third person |
+| **Tab** | Change style |
 | **R** | Back to the start |
 | **C** / **V** | Save a practice checkpoint / go back to it |
-| **M** | Next map, offline. On a server the server chooses: `!rtv` asks for a vote |
-| **Esc** / **click** | Release the mouse / take it back. In a browser a click is also what captures it to begin with, because pointer lock needs a user gesture |
-| **`** | The console, which is also the settings screen: `settings` lists every one and each is a command of its own |
+| **Y** / **U** | Chat / team chat |
+| **M** | Next map (offline only; on a server, type `!rtv` to start a vote) |
+| **Esc** / click | Release the mouse / take it back |
+| **`** | The console. `settings` lists every setting |
 
-`show_own_body 1` draws your own character in first person. Off by default, because this genre has never drawn one and a body at the eye is 40 cm of avatar over the block you are about to land on — your shadow on the floor ahead is drawn either way, and is the cue that actually helps. Your head and your hat are never drawn in first person whatever this says: both sit AT the eye, so the camera is inside them and drawing them fills the view with the inside of a cube. It is remembered per account rather than per machine.
+In chat: `!r` (restart), `!wr` or `!top` (fastest times), `!style`, `!track bonus 1`, `!s <n>` (go to stage n), `!rs` (restart this stage), `!stats`, `!rtv`.
+
+`show_own_body 1` in the console draws your own character in first person. It is off by default.
+
+## Getting started
+You need [Godot 4.7](https://godotengine.org/download). The game is built from many Dot addons, each in its own repository, so the easiest way to get everything is [dot-bootstrap](https://github.com/modcommunity/dot-bootstrap). It clones every project and links the addons into each one:
+
+```bash
+git clone https://github.com/modcommunity/dot-bootstrap.git
+cd dot-bootstrap
+./bootstrap.sh
+cd projects/game-g2gfast
+./game.sh
+```
+
+On Windows, run `bootstrap.ps1` instead and open the project in Godot.
+
+`game.sh` does everything else:
+
+| Command | What it does |
+| --- | --- |
+| `./game.sh` | Play offline, in a window |
+| `./game.sh online` | Start a local server and the browser client, and print the link to open |
+| `./game.sh online down` | Stop them |
+| `./game.sh server` | Start a local dedicated server only |
+| `./game.sh test` | Check every script and run every test suite |
+| `./game.sh help` | All of the options |
+
+`online` and `server` use [dot-server-deploy](https://github.com/modcommunity/dot-server-deploy), which bootstrap clones next to this one. Run its `./setup.sh` once first.
 
 ## Running a server
-
-```bash
-godot --headless --path . res://examples/dedicated.tscn
-```
-
-`server.cfg`, in the units you already know:
+Settings are cvars, in the units you already know. Set them in the server's config, on the command line, or live from the console. `cvarlist sv_` lists them all.
 
 ```
-sv_tickrate 100
-sv_autobunnyhopping 1
+sv_autobunnyhopping 1        // hold jump to keep hopping
 sv_airaccelerate 1000        // 150 for surf
 sv_gravity 800
+sv_maxvelocity 3500
+sv_crestlaunch 1.25          // how fast you must be going for a ramp's top to launch you (x run speed, 0 = never)
 sv_allow_thirdperson 1
-sv_replay_bot 1            # run the server record as a visible ghost
+sv_replay_bot 1              // the server record runs as a visible ghost
+sv_map_sync_timeout 30       // how long a map change waits for slow clients
+sv_deathmatch 0              // players can shoot each other
+sv_hunters 0                 // monsters walk the course
+sv_props 0                   // players can place practice blocks
 ```
 
-`--g2g-auto-bhop=0`, `G2G_AIR_ACCELERATE=150` and a JSON file all work too: the config is layered like every `DotConfig`.
+Console commands:
 
-### Changing the map under connected players
+| Command | |
+| --- | --- |
+| `g2g_status` | What the server is doing |
+| `g2g_map <id>` | Change the map, or list them with no id |
+| `g2g_maps_reload` | Pick up maps added to `maps/` without a restart |
+| `g2g_top` | Fastest times on this map |
+| `g2g_ghost` | What the record ghost is running |
+| `g2g_vote` | Open a map vote now |
+| `g2g_hunt [clear\|spawn <id>]` | Show, clear or place hunters |
+| `g2g_place_clear` | Clear every placed block |
 
-A map change is announced before it happens. Every client is told which map is next, fetches it if it does not have it, and says when it is ready, and the server swaps as soon as everybody is. `sv_map_sync_timeout` (30 seconds by default) is how long the server waits for a slow client before it changes without them. That client is told, and it follows as soon as its download finishes. A client that will not load the announced map leaves with the reason: it may not have the map, it may have another version of it, or the server may have named a map that is neither built into the client nor delivered as content. It is not left playing on a world the server is not running. The protocol is [dot-map](https://github.com/modcommunity/dot-map)'s, carried over dot-net, and `CLAUDE.md` explains why each of those choices was made.
+When the map changes, every client is told first, downloads the map if it needs to, and the server switches once everybody is ready (or after `sv_map_sync_timeout`).
 
-## Maps
+### Admin commands
+These come from [dot-moderation](https://github.com/modcommunity/dot-moderation): `!noclip`, `!freeze`, `!slay`, `!blind`, `!beacon` and the rest. Any run that noclip, speed or gravity touches is not saved. `burn` is turned off, because there is nothing to burn on a course.
 
-Drop a BSP version 20 map (`.bsp`, compressed or not) in `../inspirations/g2gfast/` and run
-
-```
-tools/import_maps.sh            # imports what is new, skips what is current
-tools/bsp_preview.sh            # and renders each one from its spawn, to look at
-```
-
-Nothing keeps a list: the catalogue scans `maps/imported/` at boot and `maps_reload` rescans it on a running server, so a map appears by existing.
-
-An imported map's **solid comes from the .bsp's brushes**, not from the geometry you can see. A compiler deletes the faces nobody can look at, a mapper paints the rest with `nodraw`, and a surf ramp is usually wrapped in a player-clip brush that is invisible on purpose. Between 31% and 77% of the sides of a solid brush are undrawn, so a collider built from the picture is a collider with holes in it. Each brush becomes one convex shape, which is also what keeps a hull from catching on a seam halfway down a ramp. `tools/collision_probe.tscn` will tell you the number for a given map, and `--trimesh` builds the old collider from the same data so the two can be compared:
-
-```
-godot --headless --path . tools/collision_probe.tscn -- surf_beginner2
-```
-
-**What a surface is drawn as comes from its angle.** A surface a player can stand on, one they slide off, and a wall are three different things to a player and are three different textures here, read off the slope against the same `max_slope` the movement uses, rather than off the name of a texture that is not in the file anyway. Where the `.bsp` carried no texture of its own, which on a surf map is most of it, the surface is painted from `textures/prototype/`.
-
-Most surf maps built for a timer label their own zones, such as `zone_start`, `map_end_zone`, `startzone_s4` and `tm_bonus2_endzone`, and the importer reads them, along with the stages and the bonus tracks. A map that labels nothing needs somebody to work out where its finish is; that goes in `maps/zones/<id>.json`, which is merged at import and survives re-importing. See `maps/zones/README.md`.
-
-Or, from the console, zone a map while standing in it:
-
-```
-g2g_zone start
-g2g_zone_mark          // stand on one corner
-g2g_zone_mark          // and the other
-g2g_zone stage main 1
-...
-g2g_zone_save
-```
-
-## Playing it in a browser
-
-`dot-server-deploy` vendors this game into its server tool and its browser client shell, so `./demo.sh up` there brings up a g2gfast server with a page you can open, with no Godot on the player's machine at all. The two projects stay in step through that project's `setup.sh`, which copies `game/`, `scenes/`, `maps/`, `avatars/` and `textures/` across, and its `tools/check.sh`, which fails if the copy has gone stale.
-
-## What it uses
-
-dot-player-controller · dot-timer · dot-map · dot-leaderboard · dot-server · dot-user-avatar · dot-ui · dot-core. Symlink them for development:
-
-```bash
-for pair in dot_core:dot-core dot_player_controller:dot-player-controller dot_timer:dot-timer \
-            dot_map:dot-map dot_leaderboard:dot-leaderboard dot_ui:dot-ui \
-            dot_server:dot-server dot_user_avatar:dot-user-avatar; do
-  ln -s "../../${pair##*:}/addons/${pair%%:*}" "addons/${pair%%:*}"
-done
-```
-
-## The admin tools
-
-dot-moderation's live tools are on the server console and in chat (`!noclip`, `!freeze`, `!slay`, …), with one rule a timer server adds: no admin tool can help a run, so noclip abandons the run it interrupts and a noclip, speed or gravity step taints any run made under it. `blind <player> [on|off|seconds]` blacks out that player's own screen and nobody else's; `beacon <player> [on|off]` puts a pulsing ring, a column through walls and a positional ping on them for everybody. Neither taints a run — both can only cost a runner time — and both survive a respawn. `burn` is refused, because there is no fire on a course. `tools/screenshot_hud.sh` renders a beacon and a blind.
-
-## Configuring the map vote
-
-The vote for the next map is [dot-vote](https://github.com/modcommunity/dot-vote), and the rules in `game/g2g_vote.gd` are only this game's defaults. A server owner overrides any of dot-vote's settings without touching code, in `user://cfg/g2gfast_vote.json`, then `DOT_VOTE_*`, then `--vote-*` — later wins — or, on a TMC server, under `metadata: map_vote:` in the game's `game.yml`. A file that does not validate is refused whole and the defaults stand, with the reason in the log.
-
-The end-of-map vote and the option to extend the current map:
+### The map vote
+The vote for the next map is [dot-vote](https://github.com/modcommunity/dot-vote). The defaults are in `game/g2g_vote.gd`. To change them, put a file at `user://cfg/g2gfast_vote.json` (or use `DOT_VOTE_*` environment variables, or `--vote-*` arguments):
 
 ```json
 { "end_vote": true, "vote_lead_sec": 120, "include_extend": true, "extend_seconds": 600, "max_extends": 3 }
 ```
 
-`end_vote: false` turns the end-of-map ballot off (the map still ends, on the rotation); `include_extend: false` takes "extend" off the ballot; `extend_seconds` is how much one extension adds and `max_extends` how many there may be. Every setting is in dot-vote's README, and its `docs/parity.md` maps the long-standing community map-chooser plugins' settings onto them.
+`end_vote: false` turns the end-of-map vote off, and `include_extend: false` takes "extend" off the ballot. dot-vote's README lists every setting.
 
-## Validating
+## Maps
+### Importing a map
+The importer reads BSP version 20 maps. Put the `.bsp` files in `../inspirations/g2gfast/` and run:
 
 ```bash
-godot --headless --path . --import
-godot --headless --path . --script tools/export_zones.gd
-godot --headless --path . res://examples/headless_run.tscn   # 187 checks
-godot --headless --path . res://examples/headless_net.tscn   # 153 checks, server + client in one process
-godot --headless --path . res://examples/dedicated.tscn      # 177 checks over 16 sections
-godot --headless --path . res://examples/headless_presentation.tscn  # 85 checks
-godot --headless --path . res://examples/headless_imported.tscn   # every imported map
+tools/import_maps.sh      # imports anything new, skips what is already current
+tools/bsp_preview.sh      # renders each map from its spawn, so you can look at it
 ```
 
-[`CLAUDE.md`](CLAUDE.md) has the four decisions and the reasoning.
+The imported maps land in `maps/imported/`, which is a link to the g2gfast-maps checkout. A running server picks up new ones with `g2g_maps_reload`.
 
-## Licence
+Collision comes from the map's brushes, not from what you can see, so invisible player clips and surf ramp clips work the way the mapper meant. Surfaces are coloured by their angle: one you can stand on, one you slide on, and a wall each look different.
 
-MIT. See [LICENSE](LICENSE).
+### Zones
+Most surf and bunny-hop maps name their own start and end zones, stages and bonuses, and the importer reads those. For a map that doesn't, write the zones in `maps/zones/<id>.json` (see `maps/zones/README.md`), or draw them in the game from the console:
 
-`textures/prototype/` is the exception, and it is a more permissive one: those six PNGs are Kenney's Prototype Textures, released under CC0 1.0, which is public domain with no attribution required. `textures/prototype/LICENSE.txt` is Kenney's own, copied unchanged, and `textures/prototype/README.md` says which file came from where.
+```
+g2g_zone start          // start drawing a start zone
+g2g_zone_mark           // stand on one corner
+g2g_zone_mark           // then the other
+g2g_zone stage main 1   // the next zone: stage 1 of the main track
+g2g_zone_save           // write them to disk
+```
+
+`g2g_zone_undo` removes the last one and `g2g_zone_list` lists them.
+
+## Testing
+
+```bash
+./game.sh test                  # every script parses, then every suite runs
+./game.sh test headless_run     # one suite
+```
+
+| Suite | What it covers |
+| --- | --- |
+| `headless_run` | The movement, the timer, the zones, and bots running every built-in map |
+| `headless_net` | A server and a client in one process, over the network code |
+| `headless_maps` | The map catalogue, map changes and the vote |
+| `headless_presentation` | What a client draws and plays |
+| `headless_stack` | The whole stack of addons together |
+| `headless_imported` | Every imported map loads and has its zones |
+| `dedicated` | A real server: boots, loads the game, runs its commands |
+
+[`CLAUDE.md`](CLAUDE.md) has the design decisions and the reasoning behind them.
+
+## Credits
+`textures/prototype/` is Kenney's Prototype Textures (CC0). `textures/prototype/README.md` says which file came from where. The characters are from Kenney's character kits (CC0). The imported maps are credited to their authors in [g2gfast-maps](https://github.com/gamemann/g2gfast-maps).
+
+## License
+MIT. See [LICENSE](LICENSE). The Kenney textures are CC0, which is public domain.
