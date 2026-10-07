@@ -54,12 +54,14 @@ func _run() -> void:
 	print("g2gfast — headless run")
 	print("")
 
-	# `-- --only=<method>` boots and runs that one section, for working on it: the totals are
-	# not checked and the exit code is the section's alone.
+	# `-- --only=<method>[,<method>...]` boots and runs those sections in that order, for
+	# working on one or finding which earlier one leaves state behind: the totals are not
+	# checked and the exit code is the sections' alone.
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--only="):
 			await _test_boot()
-			await Callable(self, arg.substr(7)).call()
+			for method in arg.substr(7).split(",", false):
+				await Callable(self, method).call()
 			print("ONLY %s: %d passed, %d failed (totals not checked)" % [arg.substr(7), _passed, _failed])
 			get_tree().quit(1 if _failed > 0 else 0)
 			return
@@ -1364,6 +1366,11 @@ func _test_ridge_bonus() -> void:
 ## surf bonus is driven here, and since `[stages-slabs-1]` asserted: its slabs stand at
 ## `BONUS_RAMP_PITCH` (50°), past the 45.57° a player can stand on, so a bot that holds into
 ## the west face rides it to the finish (at 45 it landed on the slope and stopped).
+## How far west of the crease between the stages bonus's slabs the descent's bot lets go of
+## the face, in units.
+const CREASE_RELEASE := 48.0
+
+
 func _test_stages_descent() -> void:
 	_section("where bhop_g2g_stages' descent comes from")
 
@@ -1428,7 +1435,12 @@ func _test_stages_descent() -> void:
 			# is in front of where the slabs begin).
 			c.move = Vector2(-1.0, 0.0) if at.x > BhopStages.BONUS_X - 200.0 else Vector2(0.0, 1.0)
 		else:
-			c.move = Vector2(-1.0 if at.x > hold_line else 0.0, 1.0)
+			# Never into the face once in the crease between the slabs: pressed into one face
+			# with the other underneath, the motor's duplicate-plane early-out pins the rider
+			# there (dot-player-controller's crease hang), and whether a ride reached the crease
+			# pressing or not depended on what the sections before this one left in the world.
+			var into := at.x > hold_line and at.x < BhopStages.BONUS_X - CREASE_RELEASE
+			c.move = Vector2(-1.0 if into else 0.0, 1.0)
 		bot.controller.apply_command(c)
 		await get_tree().physics_frame
 		ticks = i + 1
