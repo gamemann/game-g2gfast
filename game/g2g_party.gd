@@ -13,7 +13,7 @@ extends Node
 ##
 ## Three games in this family take dot-peer-to-peer and answer differently:
 ##
-## - **game-simple-lobby** hosts authoritatively, because there is nothing to cheat at.
+## - **game-playground** hosts authoritatively, because nothing it builds is ranked.
 ## - **game-arena** and **game-hungario** sandbox it: play, file nothing.
 ## - **This one does both halves of that and adds a third**: a run made in a
 ##   peer-to-peer session is [b]tainted[/b] the moment it starts, using the field dot-timer

@@ -48,8 +48,7 @@ var services: G2GServices = null
 ## it from a path inside `load_module`, so there is no instance for a host to set a field on
 ## first. `examples/dedicated.tscn` points it at a directory of its own; before it could,
 ## every run appended its gags and the live tools' warnings to the real store, 290 records
-## by the time anybody counted. game-simple-lobby's `RoomModule.punishments_path` is the
-## same seam.
+## by the time anybody counted.
 static var punishments_file: String = ""
 
 ## The live tools' commands. See [method _build_services].
