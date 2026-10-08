@@ -77,6 +77,13 @@ game/
   g2g_identity.gd   dot-cloud + dot-auth + dot-user + dot-platform
   g2g_client_extras.gd  the client halves of chat and voice
   g2g_browser.gd    dot-browser's client half: !servers, and what a row says
+  g2g_bindings.gd   every key the client reads, as one table. See "The menus"
+  g2g_flashlight.gd the player's own light, on shaded AND unshaded surfaces
+  ui/
+    g2g_ui.gd       the menus' palette, Theme and pieces. No dot-ui class newer than a shell
+    g2g_menu.gd     the Escape menu: five pages, every control a view of a setting
+    g2g_help.gd     the H screen: keys as bound, the server's commands, browser tips
+    g2g_switch.gd, g2g_key_button.gd  a toggle switch and a key rebinder
 npcs/               two hunters and the body they share
 props/              three practice blocks, in the genre's 32/64/128 sizes
 maps/               bhop_g2g_intro, bhop_g2g_stages, surf_g2g_intro, and their .zones.json
@@ -128,8 +135,7 @@ Removing them rather than wiring them up is what makes this game's client work
 whose `project.godot` has no input actions at all, and a game that depended on its own
 would have had no controls there.
 
-The keys are therefore the sampler's defaults. Duck is **Ctrl**, not Shift — the
-README said Shift for as long as the dead block did, and neither was ever true.
+The keys are `G2GBindings.ROWS`, applied at runtime from the settings document and rebindable in the Escape menu; the movement rows ARE the sampler's `dot_fps_*` actions, so there is still no second copy. Duck is **Ctrl**, not Shift — the README said Shift for as long as the dead block did, and neither was ever true.
 
 ## Where this game runs, besides here
 
@@ -484,14 +490,34 @@ what this genre's fingers already do, and because this client has a HUD and a ke
 rather than a [DotScreenStack]. game-arena has the screen. The same addon does the same
 work either way; where it is drawn is the half a game is supposed to decide.
 
+## The menus, the keys and the flashlight (2026-10-08)
+
+Escape opens a menu (General, Gameplay, Video, Audio, Controls), H a help screen, F a flashlight, O hides everybody else. `tools/screenshot_menus.sh [map] [yaw] [pitch]` renders the real offline client's every page, the help screen as a browser player on a server sees it, and the flashlight off and on from one view; it is how three of the bugs below were found.
+
+**`G2GBindings.ROWS` is the one list of keys, and four things read it**: the client matches events against its actions, the settings schema declares a binding per row, the Controls page draws a key button per row, and the help screen lists each with the key it is on NOW. Before it the keys were a `match` on keycodes in `G2GClient` and a sentence in its doc comment. Bindings are DEVICE scope (a key is a fact about a keyboard) except the two chat keys, which were ACCOUNT before the table existed and keep it, because changing a stored setting's scope resets somebody's key. A binding that names nothing falls back to the default rather than unbinding, and binding a key that is taken SWAPS the two, so no action is ever left on nothing. Escape is in no row and cannot be bound: it is the menu, and it is how a browser releases the pointer.
+
+**The flashlight has to light two kinds of surface, and the one people play on ignores lights.** Every imported map is `unshaded` (the baked lightmap is its lighting), so a `SpotLight3D` lit the hand-built maps and nothing on the maps that matter. Both BSP shaders compute the cone themselves from a 4 x 1 float texture `G2GFlashlight` rewrites each frame and sets as the SHADER's default for `flashlight_tex` — not per material (one write for every surface) and **not a `global uniform`, which has to be declared in the host project's settings or the shader does not compile**: this game is delivered into a client shell whose `project.godot` it does not own. `hint_default_black` means a server, a suite and an older pack draw exactly as before. A spotlight still lights the shaded half. It is client-only and never replicated; the server's say is `sv_flashlight`, which arrives in the RULES event.
+
+**RULES** (`G2GEvents.Kind.RULES`, appended) carries `sv_flashlight`, `sv_allow_thirdperson` and the chat commands, as JSON, on admit and whenever either cvar changes. The command list is read off the server's console by `G2GModule.chat_commands` (public, chat-reachable, sorted), so the help screen is never a list somebody typed. A list too long for the cap is shortened from the end, never cut, because `write_string` truncates and half a JSON document loses the flags with the commands. `headless_net`'s *what a client may do on its own screen* round-trips it and sends both cvars over the link; armed by putting truncation back.
+
+**The menu is a view of the settings, never a copy.** A switch reads `DotSettingsManager` when its page is built and writes it when flipped; `G2GPresentation._on_setting_changed` (engine, audio, bindings) and `G2GClient.apply_client_settings` (HUD, camera, mouse) are the only places a setting is applied, at boot and on change alike — so there is no Apply button, and a value changed from the console is what the menu shows next. The style, the flashlight and third person are not settings: the server has a say in each, and a stored "on" would be a promise the next server can refuse. **It does not pause** (dot-ui's `allow_pause` reason); the sampler is suspended instead, so a runner who opens it stands still.
+
+**Five settings were declared and applied by nothing**, which is this family's most repeated bug: `sensitivity`, `field_of_view`, `show_speed`, `show_splits` and `preferred_style`. The menu would have been five switches that do nothing; all five are wired now. `field_of_view` was 110 over 70..130 and meant nothing either way; it is the genre's `fov_desired` now (90, 75..120) — and **every settings document on disk stores 110**, because a document stores defaults too, so schema 2's migration drops exactly 110 rather than widening everybody's view overnight (nobody can have chosen 110 and seen it). Found by the first rendered frame of the Video page reading 110°.
+
+**In a browser, the menu opens when the pointer is taken away, not only on the key.** A browser exits pointer lock on Escape and may not deliver the key at all, so `_watch_pointer` opens the menu when a lock it had seen is gone; an Escape that arrives within 250 ms of that is swallowed, or the menu would flash and close. Closing the menu by Resume (a click) recaptures; closing it by Escape cannot (Escape grants no user activation), so twelve frames later an uncaptured pointer puts the client back on "Click to play". Fullscreen from the Video page calls `navigator.keyboard.lock()` where it exists, which is what keeps Ctrl+W — Duck held while pressing forward — from closing the tab; the help screen says so to a browser player.
+
+**Hiding the others is drawing only.** Every other `G2GPlayer` (the ghost included) gets `visible = false`, and their beacon pings are not played; they are still simulated and replicated. The player being spectated is never hidden.
+
+Three bugs the frames found and no check could: the sidebar lit two pages at once (`set_pressed_no_signal` goes round a `ButtonGroup`), a listening key button drew its prompt over its own edge, and the 110° above. `headless_presentation` has five sections for this (146 checks), driving the menu's own switches, picks and rebinds against a fake host.
+
 ## Validating
 
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 227 checks, 26 sections
-godot --headless --path . res://examples/headless_presentation.tscn  # 109 checks
-godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
+godot --headless --path . res://examples/headless_presentation.tscn  # 146 checks
+godot --headless --path . res://examples/headless_net.tscn   # 178 checks, 26 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 45 per map, +1 per track and stage: 2074 over the 42 (run with --fixed-fps 128)

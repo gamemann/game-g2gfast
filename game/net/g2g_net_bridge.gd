@@ -55,6 +55,10 @@ signal clock_received(state: Dictionary)
 
 ## The local player's standing, from the server: [code]{pb, wr, rank, total}[/code].
 signal standing_received(player_id: int, standing: Dictionary)
+
+## What the server allows on this client's own screen, and the chat commands it answers:
+## [code]{flashlight, thirdperson, commands}[/code]. Client side. See [method rules_body].
+signal rules_received(rules: Dictionary)
 ## This client cannot follow the server to the map it announced: refused by dot-map's
 ## trust rules, not fetchable, or not loadable. Client side. [G2GClient] leaves the server
 ## on it, because a client on a world the server is not simulating is a player being
@@ -92,6 +96,12 @@ var rtv_fn: Callable = Callable()
 ## the client then shows its own map session's clock — which on a server with no vote is
 ## the one that ends the map.
 var clock_fn: Callable = Callable()
+
+## [code]func() -> Array[/code] of [code][name, help][/code]: the commands a player may type
+## in chat on this server. Server side, pointed at the console by the module, because the
+## bridge never names dot-server's console; empty sends no list and the client's help
+## screen says it has none rather than inventing one.
+var commands_fn: Callable = Callable()
 
 ## The map's time left as the server last described it. Client side; what the HUD draws.
 ## Never adopted means never told, which the HUD answers with the local clock.
@@ -687,6 +697,8 @@ func _admit(peer_id: int) -> void:
 	if clock_fn.is_valid():
 		_tell(peer_id, G2GEvents.Kind.CLOCK, G2GEvents.write_clock(clock_fn.call()))
 
+	_tell(peer_id, G2GEvents.Kind.RULES, G2GEvents.write_rules(rules_body()))
+
 	# Every hunter already out on the course. A runner joining a server whose hunters were
 	# released an hour ago would otherwise be hit by things it was never told about.
 	for instance_id in _hunter_nets.keys():
@@ -937,6 +949,29 @@ func _on_run_filed(id: StringName, run: DotTimerRun, rank: int, reason: String) 
 	if reason != "" and (game.timers == null or game.timers.store == null):
 		_tell(peer_for_player(session_id), G2GEvents.Kind.NOTICE,
 			G2GEvents.write_text(session_id, "Not recorded: %s" % reason))
+
+
+## What every client is told about its own screen. Server side.
+##
+## [b]The flashlight is the server's to allow and the client's to draw.[/b] It is a
+## light on one machine's camera that nobody else sees, so nothing about it is simulated
+## or replicated — but an operator running a dark map as a challenge, or a competition
+## that wants everybody seeing the same thing, has to be able to say no, and a client
+## cannot be trusted to have read the cvar from anywhere else.
+func rules_body() -> Dictionary:
+	return {
+		"flashlight": game.config.flashlight if game != null else true,
+		"thirdperson": game.config.allow_thirdperson if game != null else true,
+		"commands": commands_fn.call() if commands_fn.is_valid() else [],
+	}
+
+
+## Tells every ready peer the rules again, after a cvar changed them.
+func broadcast_rules() -> void:
+	if net == null or not net.is_server:
+		return
+
+	_broadcast(G2GEvents.Kind.RULES, G2GEvents.write_rules(rules_body()))
 
 
 func _on_movement_changed(config: G2GConfig) -> void:
@@ -1298,6 +1333,10 @@ func _on_event(message: DotNetMessage) -> void:
 			var standing := G2GEvents.read_standing(reader)
 			if bool(standing["ok"]):
 				standing_received.emit(int(standing["player_id"]), standing)
+		G2GEvents.Kind.RULES:
+			var rules := G2GEvents.read_rules(reader)
+			if bool(rules["ok"]):
+				rules_received.emit(rules)
 
 
 func _apply_hello(reader: DotNetReader) -> void:

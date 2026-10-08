@@ -51,6 +51,10 @@ enum Kind {
 	## rank and the board's size. Server to that player only — a client has no store to
 	## ask. Appended: a kind is its index on the wire.
 	STANDING,
+	## What a client is allowed to do on its own screen, and which chat commands it can type:
+	## `sv_flashlight`, `sv_allow_thirdperson`, and the public command list the help screen
+	## draws. On admit and whenever one of them changes. Appended, for the reason above.
+	RULES,
 }
 
 enum Ask {
@@ -428,3 +432,62 @@ static func read_npc_gone(reader: DotNetReader) -> Dictionary:
 	var out := {"net_id": reader.read_varint()}
 	out["ok"] = reader.ok()
 	return out
+
+
+# --- RULES -----------------------------------------------------------------
+
+## A RULES body is what a hostile or broken server can make a client parse. Forty-odd
+## public commands with their one-line help come to about 3 KB; the cap leaves room for a
+## server with twice as many and refuses anything that is not a command list.
+const RULES_BYTES := 12288
+
+## JSON rather than fields, and that is the one place in this file it is: the command
+## list is a variable-length table of strings a client only DRAWS, so a typed encoding
+## buys nothing a reader can check, and the two flags ride along rather than costing a
+## second event kind. [code]{"flashlight": bool, "thirdperson": bool, "commands": [[name,
+## help], ...]}[/code].
+##
+## [b]Shortened from the end of the list, never cut.[/b] `write_string` truncates at the
+## cap, and a JSON document cut anywhere is one that does not parse — which would cost the
+## client the two flags along with the commands it could not fit.
+static func write_rules(rules: Dictionary) -> PackedByteArray:
+	var body := rules.duplicate(true)
+	var commands: Array = body.get("commands", [])
+	var text := JSON.stringify(body)
+
+	while text.to_utf8_buffer().size() > RULES_BYTES and not commands.is_empty():
+		commands.pop_back()
+		body["commands"] = commands
+		text = JSON.stringify(body)
+
+	var writer := _w()
+	writer.write_string(text, RULES_BYTES)
+	return writer.to_bytes()
+
+
+## Never fails into a half-read: anything that does not parse to a dictionary is
+## [code]{"ok": false}[/code], and the flags a server left out read as their defaults
+## (everything allowed), which is what a server older than the flag meant.
+static func read_rules(reader: DotNetReader) -> Dictionary:
+	var text := reader.read_string(RULES_BYTES)
+	# A JSON instance rather than `JSON.parse_string`, which prints an engine ERROR with a
+	# backtrace for every malformed body: a server sending a bad one is the server's
+	# problem, and the client's answer is a quiet refusal.
+	var json := JSON.new()
+	var parsed: Variant = json.data if reader.ok() and json.parse(text) == OK else null
+
+	if not (parsed is Dictionary):
+		return {"ok": false}
+
+	var commands: Array = []
+
+	for row in (parsed as Dictionary).get("commands", []):
+		if row is Array and (row as Array).size() >= 2:
+			commands.append([str(row[0]), str(row[1])])
+
+	return {
+		"ok": true,
+		"flashlight": bool((parsed as Dictionary).get("flashlight", true)),
+		"thirdperson": bool((parsed as Dictionary).get("thirdperson", true)),
+		"commands": commands,
+	}

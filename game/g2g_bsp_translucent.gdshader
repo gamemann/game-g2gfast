@@ -52,9 +52,45 @@ uniform float uv_scale = 1.0;
 uniform float ambient : hint_range(0.0, 1.0) = 0.10;
 uniform float light_boost : hint_range(0.0, 4.0) = 1.35;
 
+// The player's own flashlight. `unshaded` means no light in the scene reaches this
+// surface, so the one light a player carries is computed here, from a 4 x 1 float texture
+// G2GFlashlight rewrites every frame and sets as this shader's DEFAULT for the parameter
+// -- never per material, and never a `global uniform`, which a delivered pack cannot
+// declare in the host's project settings. Black by default, which reads as off: a server,
+// a suite and any build without the flashlight compile and draw exactly as before.
+//
+//   texel 0  position (world, m), on        texel 2  colour x energy, range (m)
+//   texel 1  direction, cos outer           texel 3  cos inner, reference distance (m)
+uniform sampler2D flashlight_tex : hint_default_black, filter_nearest, repeat_disable;
+
+vec3 flashlight(vec3 world, vec3 normal) {
+	vec4 at = texelFetch(flashlight_tex, ivec2(0, 0), 0);
+	if (at.w < 0.5) {
+		return vec3(0.0);
+	}
+	vec4 aim = texelFetch(flashlight_tex, ivec2(1, 0), 0);
+	vec4 light = texelFetch(flashlight_tex, ivec2(2, 0), 0);
+	vec4 shape = texelFetch(flashlight_tex, ivec2(3, 0), 0);
+	vec3 to = world - at.xyz;
+	float dist = max(length(to), 0.001);
+	vec3 dir = to / dist;
+	float along = dot(dir, aim.xyz);
+	// A core and a spill: the beam is brightest in its middle and fades to its edge, which
+	// is what the genre's flashlight texture draws.
+	float spill = smoothstep(aim.w, mix(aim.w, shape.x, 0.35), along);
+	float core = smoothstep(mix(aim.w, shape.x, 0.5), shape.x, along);
+	float cone = spill * 0.55 + core * 0.45;
+	// One over the distance past the reference, and gone at the range.
+	float fall = min(shape.y / dist, 1.0) * (1.0 - smoothstep(light.w * 0.7, light.w, dist));
+	float facing = max(dot(normal, -dir), 0.0);
+	return light.rgb * cone * fall * facing;
+}
+
 void fragment() {
 	vec4 base = has_albedo ? texture(albedo_tex, UV * uv_scale) * tint : tint;
 	vec3 lm = texture(lightmap_tex, UV2).rgb;
-	ALBEDO = base.rgb * (lm * light_boost + ambient);
+	vec3 world = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	ALBEDO = base.rgb * (lm * light_boost + ambient + flashlight(world, normal));
 	ALPHA = base.a;
 }

@@ -188,6 +188,21 @@ func _ready() -> void:
 	loading_cover.add_child(_loading_label)
 
 
+## What the player chose to see: the four HUD switches in the menu's General page.
+##
+## The speed and the splits are `DotTimerHud`'s own fields, so turning one off removes its
+## line from the clock's block rather than leaving a gap; the key display and the
+## crosshair are this HUD's.
+func apply_visibility(show_speed: bool, show_splits: bool, show_keys: bool, show_crosshair: bool) -> void:
+	if timer_hud != null:
+		timer_hud.show_speed = show_speed
+		timer_hud.show_split = show_splits
+	if _keys != null:
+		_keys.visible = show_keys
+	if _crosshair != null:
+		_crosshair.visible = show_crosshair
+
+
 func _label(p_name: String, align: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var label := Label.new()
 	label.name = p_name

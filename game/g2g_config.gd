@@ -104,6 +104,14 @@ const G2GUnits := preload("g2g_units.gd")
 ## Which view a player starts in.
 @export var default_thirdperson: bool = false
 
+## [code]sv_flashlight[/code]: whether a player may switch on their own flashlight.
+##
+## Allowed by default, because the maps this server imports were built for a game whose
+## every player carried one, and some of them have corners that are dark on purpose. The
+## light is drawn on the player's own screen only — nobody else sees it, so nobody can be
+## blinded by somebody else's — and this is the operator's way to say no.
+@export var flashlight: bool = true
+
 @export_group("Content")
 
 ## The map a server loads when it boots.

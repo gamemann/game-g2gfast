@@ -36,13 +36,13 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 172
+const CHECKS := 178
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 25
+const SECTIONS := 26
 
 var _passed := 0
 var _failed := 0
@@ -94,6 +94,7 @@ func _run() -> void:
 		_test_voice_wire()
 		_test_vote_wire()
 		_test_clock_wire()
+		_test_rules_wire()
 		_test_blind_and_beacon()
 		_test_hunters_reach_the_client()
 		_test_leave()
@@ -1592,6 +1593,79 @@ func _test_clock_wire() -> void:
 	_client_bridge.clock_view = DotVoteClockView.new()
 	remove_child(vote)
 	vote.free()
+	_done()
+
+
+## `sv_flashlight`, `sv_allow_thirdperson` and the chat commands the help screen lists.
+##
+## Armed by sending the flags from the client's config instead of the server's (the live
+## checks fail) and by letting `write_rules` truncate instead of shortening (the oversize
+## check fails: a cut JSON document parses to nothing and loses the flags with it).
+func _test_rules_wire() -> void:
+	_section("what a client may do on its own screen, over the link")
+
+	var round_trip := G2GEvents.read_rules(DotNetReader.new(G2GEvents.write_rules({
+		"flashlight": false, "thirdperson": true, "commands": [["r", "Back to the start"], ["wr", "Fastest"]],
+	})))
+	_check(
+		bool(round_trip["ok"]) and not bool(round_trip["flashlight"]) and bool(round_trip["thirdperson"])
+			and (round_trip["commands"] as Array).size() == 2
+			and str(round_trip["commands"][1][0]) == "wr",
+		"a RULES body round-trips: both flags and the command list in order"
+	)
+
+	var many: Array = []
+	for i in range(1500):
+		many.append(["command_%04d" % i, "a description long enough to fill the body quickly %d" % i])
+	var big := G2GEvents.read_rules(DotNetReader.new(G2GEvents.write_rules({
+		"flashlight": false, "thirdperson": false, "commands": many,
+	})))
+	_check(
+		bool(big["ok"]) and not bool(big["flashlight"]) and not bool(big["thirdperson"])
+			and (big["commands"] as Array).size() > 0 and (big["commands"] as Array).size() < many.size(),
+		"a list too long for the cap is shortened, never cut: the flags survive (%d of %d commands)" % [
+			(big["commands"] as Array).size() if bool(big["ok"]) else 0, many.size()
+		]
+	)
+
+	var junk := DotNetWriter.new()
+	junk.write_string("{not json", G2GEvents.RULES_BYTES)
+	_check(
+		not bool(G2GEvents.read_rules(DotNetReader.new(junk.to_bytes()))["ok"]),
+		"a body that is not a JSON object is refused rather than half-read"
+	)
+
+	var arrived: Array[Dictionary] = []
+	var on_rules := func(r: Dictionary) -> void: arrived.append(r)
+	_client_bridge.rules_received.connect(on_rules)
+	var listed := func() -> Array: return [["r", "Back to the start"], ["spec", "Watch somebody"]]
+	_server_bridge.commands_fn = listed
+
+	_server_game.config.flashlight = false
+	_server_bridge.broadcast_rules()
+	_flush()
+	_check(
+		arrived.size() == 1 and not bool(arrived[0]["flashlight"]),
+		"sv_flashlight 0 on the server reaches the client"
+	)
+	_check(
+		arrived.size() == 1 and (arrived[0]["commands"] as Array).size() == 2
+			and str(arrived[0]["commands"][1][0]) == "spec",
+		"with the server's own command list, not one the client keeps"
+	)
+
+	_server_game.config.flashlight = true
+	_server_game.config.allow_thirdperson = false
+	_server_bridge.broadcast_rules()
+	_flush()
+	_check(
+		arrived.size() == 2 and bool(arrived[1]["flashlight"]) and not bool(arrived[1]["thirdperson"]),
+		"and so does turning it back on, and sv_allow_thirdperson 0"
+	)
+
+	_server_game.config.allow_thirdperson = true
+	_server_bridge.commands_fn = Callable()
+	_client_bridge.rules_received.disconnect(on_rules)
 	_done()
 
 

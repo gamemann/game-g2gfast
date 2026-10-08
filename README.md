@@ -30,19 +30,24 @@ The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` a
 | **Space** | Jump (hold it, if the server allows auto-hop) |
 | **Ctrl** | Duck |
 | **F5** | First or third person |
+| **F** | Flashlight. Only you see it |
+| **O** | Hide every other player and the record's ghost |
 | **Tab** | Change style |
 | **R** | Back to the start |
 | **C** / **V** | Save a practice checkpoint / go back to it |
 | **Y** / **U** | Chat / team chat |
 | **M** | Next map (offline only; on a server, type `!rtv` to start a vote) |
-| **Esc** / click | Release the mouse / take it back |
+| **H** | Help: every key and every chat command on the server |
+| **Esc** | The menu: settings, key bindings, help. Click the game or **Resume** to take the mouse back |
 | **`** | The console. `settings` lists every setting |
+
+Every key can be rebound under **Esc → Controls**, and the bindings are saved on your device. The menu also has the HUD switches, your style, the field of view, a frame-rate cap (unlimited by default), V-Sync, render scale and the volumes. In a browser, **H** also lists the keys the browser keeps for itself — **Ctrl+W** closes the tab, and Ctrl is Duck.
 
 In chat: `!r` (restart), `!wr` or `!top` (fastest times), `!style`, `!track bonus 1`, `!s <n>` (go to stage n), `!rs` (restart this stage), `!stats`, `!rtv`.
 
 Records in chat: `!pb [name]`, `!rank`, `!players`, `!rr` (latest records), `!profile` or `!p`, `!mapsdone`, `!mapsleft`, `!wrcp` (stage records), `!prinfo` (your attempts here), `!tier`, `!end`, `!pause` and `!unpause`, `!autorestart`, and `!restore` to take back a run you dropped by disconnecting.
 
-`show_own_body 1` in the console draws your own character in first person. It is off by default.
+`show_own_body 1` in the console draws your own character in first person. It is off by default, and it is in the menu too.
 
 ## Getting started
 You need [Godot 4.7](https://godotengine.org/download). The game is built from many Dot addons, each in its own repository, so the easiest way to get everything is [dot-bootstrap](https://github.com/modcommunity/dot-bootstrap). It clones every project and links the addons into each one:
@@ -80,6 +85,7 @@ sv_gravity 800
 sv_maxvelocity 3500
 sv_crestlaunch 1.25          // how fast you must be going for a ramp's top to launch you (x run speed, 0 = never)
 sv_allow_thirdperson 1
+sv_flashlight 1              // players may use their own flashlight (F); nobody else sees it
 sv_replay_bot 1              // the server record runs as a visible ghost
 sv_map_sync_timeout 30       // how long a map change waits for slow clients
 sv_deathmatch 0              // players can shoot each other

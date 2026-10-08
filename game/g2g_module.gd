@@ -126,6 +126,18 @@ func _module_load() -> DotResult:
 					p.camera.allow_third_person = game.config.allow_thirdperson
 					if not game.config.allow_thirdperson:
 						p.camera.set_mode(G2GCamera.Mode.FIRST_PERSON)
+			if bridge != null:
+				bridge.broadcast_rules()
+	)
+
+	# Told to every client, because the light is drawn there and nowhere else: a client
+	# holding one when this goes to 0 switches it off on the next RULES.
+	add_cvar("sv_flashlight", "1" if game.config.flashlight else "0",
+		"Whether players may use their own flashlight (F). Drawn on their screen only.").changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.flashlight = new_value != "0"
+			if bridge != null:
+				bridge.broadcast_rules()
 	)
 
 	# --- Commands ----------------------------------------------------------------
@@ -828,6 +840,8 @@ func _build_netcode() -> DotResult:
 	if not attached.ok:
 		return attached
 
+	bridge.commands_fn = chat_commands
+
 	net.messages.seal()
 	# [b]A client whose game messages cannot work with this server's is dropped, in words.[/b]
 	# dot-net compares the two schema tables and refuses a pair where either lacks a type
@@ -849,6 +863,37 @@ func _physics_process(delta: float) -> void:
 	# millisecond.
 	if vote != null:
 		vote.advance(delta)
+
+
+## Every command a player can type in chat here with no admin flag: what the client's
+## help screen (H) lists, as [code][name, help][/code], sorted by name.
+##
+## [b]Read off the console, never written down a second time.[/b] The help screen is on
+## the client and these are on the server, and a list kept in the client would be one
+## that drifts the first time somebody adds a `!` command — which on this server is most
+## weeks. Commands that need a flag are left out: a player who is not an admin should not
+## be shown a menu of things that will answer "no".
+func chat_commands() -> Array:
+	var out: Array = []
+
+	if console == null:
+		return out
+
+	# Already sorted by the console.
+	for command_name in console.command_names():
+		var cmd := console.find_command(str(command_name))
+
+		if cmd == null or cmd.permission != "":
+			continue
+
+		var by_chat := cmd.chat_policy == DotConCommand.ChatPolicy.ALLOWED or (
+			cmd.chat_policy == DotConCommand.ChatPolicy.DEFAULT and console.chat_commands_are_open()
+		)
+
+		if by_chat:
+			out.append([str(command_name), cmd.description])
+
+	return out
 
 
 ## So `changegame` and a vote have something to change to. Ships in the build, so the

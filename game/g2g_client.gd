@@ -1,24 +1,33 @@
 extends Node
 
+const G2GBindings := preload("g2g_bindings.gd")
 const G2GBrowser := preload("g2g_browser.gd")
+const G2GCamera := preload("g2g_camera.gd")
 const G2GClientExtras := preload("g2g_client_extras.gd")
 const G2GConfig := preload("g2g_config.gd")
+const G2GFlashlight := preload("g2g_flashlight.gd")
 const G2GGame := preload("g2g_game.gd")
+const G2GHelp := preload("ui/g2g_help.gd")
 const G2GHud := preload("g2g_hud.gd")
+const G2GMenu := preload("ui/g2g_menu.gd")
 const G2GNetBridge := preload("net/g2g_net_bridge.gd")
 const G2GPlayer := preload("g2g_player.gd")
 const G2GPresentation := preload("g2g_presentation.gd")
+const G2GUi := preload("ui/g2g_ui.gd")
+const G2GUnits := preload("g2g_units.gd")
 
 ## A playable g2gfast: one local player, a camera, a HUD, and the keys.
 ##
 ## Separate from [G2GGame], which is the simulation and runs headless. A dedicated
 ## server never loads this.
 ##
-## Keys: WASD, space (hold, if the server allows auto-bhop), shift to duck, Tab to
-## cycle style, M for the next map, R to restart, C / V for practice checkpoints,
-## F5 to switch between first and third person, Esc to release the mouse, click to
-## take it back — which is also how a browser player captures it in the first place,
-## because pointer lock needs a real user gesture. See [method _grab_mouse].
+## Keys: whatever [G2GBindings] says, as the player has bound them — WASD, space (hold, if
+## the server allows auto-bhop), Ctrl to duck, Tab to cycle style, M for the next map
+## (offline), R to restart, C / V for practice checkpoints, F for the flashlight, O to hide
+## everybody else, F5 for first and third person, H for help. Escape opens the menu and
+## frees the mouse; a click, or Resume, takes it back — which is also how a browser player
+## captures it in the first place, because pointer lock needs a real user gesture. See
+## [method _grab_mouse].
 
 const LINK_SERVICE := &"dot_client_link"
 
@@ -46,6 +55,18 @@ var extras: G2GClientExtras = null
 ## keyboard rather than to the run.
 var presentation: G2GPresentation = null
 
+## The player's own light. Drawn here and nowhere else; see [G2GFlashlight].
+var flashlight: G2GFlashlight = null
+
+## The Escape menu and the H screen, on a layer above the HUD and the chat and below the
+## console — the console is the one thing an operator must always be able to reach.
+var menu: G2GMenu = null
+var help: G2GHelp = null
+
+## What the server last said about this client's own screen: `sv_flashlight`,
+## `sv_allow_thirdperson` and the chat commands. See [method _on_rules].
+var rules: Dictionary = {"flashlight": true, "thirdperson": true, "commands": []}
+
 ## Play alone even when a link is available. `--offline`.
 @export var force_offline: bool = false
 
@@ -58,6 +79,24 @@ var _sampler: DotFpsSampler = null
 
 ## Whether the cursor is waiting for a click before it can be captured. Web only.
 var _awaiting_click := false
+
+var _overlay_layer: CanvasLayer = null
+var _fps_label: Label = null
+var _fps_next: float = 0.0
+
+## Whether the pointer has been seen locked since the last time it was let go — so a lock
+## the BROWSER takes away (Escape, alt-tab) opens the menu, and a lock that was simply never
+## granted does not. See [method _watch_pointer].
+var _lock_seen := false
+var _overlay_opened_msec := 0
+var _recapture_frames := 0
+
+## Whether the preferred style has been asked for this session. Once: after that the
+## player's own choices are the ones that count.
+var _style_restored := false
+
+## Players whose beacon this client already listens to, by instance id.
+var _beacons_heard: Dictionary = {}
 
 ## Who [member player] should be, whether or not that player exists yet.
 ##
@@ -101,6 +140,7 @@ func _ready() -> void:
 	add_child(presentation)
 	DotLog.result("g2g.client", "the presentation layer", presentation.setup())
 	_wire_chat_window()
+	_build_overlays()
 
 	# Every effect drawn is somewhere on the map that just went away, and the landing
 	# watcher would otherwise read the first frame on the new one as a fall.
@@ -217,6 +257,7 @@ func _watch(id: StringName) -> void:
 	# and the admit's CLOCK come together, and JOIN is what makes the player watched.
 	if bridge != null:
 		hud.clock_view = bridge.clock_view
+	apply_client_settings()
 	_say_click_to_play()
 
 	# By id, like the HUD, and for the same reason: HELLO names us before JOIN makes us.
@@ -239,15 +280,21 @@ func _on_player_added(added: G2GPlayer) -> void:
 ## and a ghost; online, everybody the server sends — is made by `G2GGame.add_player`,
 ## which emits `player_added` after this client has connected to it. Guarded anyway,
 ## because a second connection would be every ping played twice.
+##
+## Bound to the body, so a ping can be left unplayed for a player [method _hidden] is
+## hiding — a beacon you cannot see should not be one you can hear either. The guard is a
+## dictionary rather than `is_connected`, because a bound callable is a new [Callable] and
+## would never compare equal to the one already connected.
 func _hear_beacon(body: G2GPlayer) -> void:
-	if body == null or body.beacon_pulsed.is_connected(_on_beacon_pulsed):
+	if body == null or _beacons_heard.has(body.get_instance_id()):
 		return
 
-	body.beacon_pulsed.connect(_on_beacon_pulsed)
+	_beacons_heard[body.get_instance_id()] = true
+	body.beacon_pulsed.connect(_on_beacon_pulsed.bind(body))
 
 
-func _on_beacon_pulsed(at: Vector3) -> void:
-	if presentation != null:
+func _on_beacon_pulsed(at: Vector3, body: G2GPlayer) -> void:
+	if presentation != null and not _hidden(body):
 		var _voice := presentation.on_beacon(at)
 
 
@@ -270,6 +317,10 @@ func _adopt(candidate: G2GPlayer) -> void:
 	# JOIN after that, and again every time the server hands it a new player.
 	if presentation != null:
 		presentation.apply_own_body()
+
+	apply_client_settings()
+	_apply_rules_to_player()
+	_restore_style()
 
 
 func _build_netcode() -> DotResult:
@@ -335,6 +386,7 @@ func _build_netcode() -> DotResult:
 		link.connect("chat_received", extras.receive_wire)
 
 	bridge.hello_received.connect(_on_hello)
+	bridge.rules_received.connect(_on_rules)
 	bridge.map_refused.connect(_on_map_refused)
 	bridge.finish_received.connect(func(pid: int, time: float, rank: int) -> void:
 		if hud != null and pid == bridge.local_player_id:
@@ -397,15 +449,8 @@ func _wire_chat_window() -> void:
 
 	window.submitted.connect(_on_chat_submitted)
 
-	window.opened.connect(func(_channel: StringName) -> void:
-		if _sampler != null:
-			_sampler.suspended = true
-	)
-
-	window.closed.connect(func() -> void:
-		if _sampler != null:
-			_sampler.suspended = false
-	)
+	window.opened.connect(func(_channel: StringName) -> void: _refresh_suspended())
+	window.closed.connect(func() -> void: _refresh_suspended())
 
 
 ## What a player typed, on its way to the server.
@@ -493,6 +538,23 @@ func _process(delta: float) -> void:
 
 	_drive_spectator_camera()
 
+	if game != null:
+		_present_others()
+	_watch_pointer()
+	# Every frame rather than on change: a style change hands the player new tunables, and
+	# two assignments a frame are cheaper than tracking which object the sampler holds.
+	_apply_look()
+
+	if flashlight != null and flashlight.on and player != null and player.camera != null \
+			and player.camera.first != null:
+		# The first-person camera is the eye in both views: in third person it still sits at
+		# the eye and pitches with the view, it simply is not the one drawing.
+		flashlight.present(delta, player.camera.first.global_transform)
+
+	if _fps_label != null and _fps_label.visible and Time.get_ticks_msec() / 1000.0 >= _fps_next:
+		_fps_next = Time.get_ticks_msec() / 1000.0 + 0.25
+		_fps_label.text = "%d fps" % Engine.get_frames_per_second()
+
 	if presentation != null:
 		var camera: Camera3D = player.camera.active() \
 			if player != null and player.camera != null else null
@@ -578,6 +640,14 @@ func mouse_drives_view() -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# [b]An open menu or help screen owns the keyboard[/b], ahead of everything below: its
+	# own controls have already had the event, and what reaches here is only ever a key to
+	# close it or a key that must NOT fall through to the run — R behind a menu is a restart
+	# nobody asked for.
+	if overlay_open():
+		_overlay_key(event)
+		return
+
 	# [b]The console first.[/b] This client reads bare letters -- F5, Tab, R, C, V, M --
 	# so without this, typing at the console reloads the map, opens the scoreboard and
 	# changes style at the same time. It is the line every game that ships a console
@@ -598,6 +668,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.notice("")
 			return
 
+	# Escape, and help, work with no player too: the menu is how somebody stuck on a loading
+	# map leaves it.
+	if event is InputEventKey and event.is_pressed() and not event.is_echo():
+		if (event as InputEventKey).physical_keycode == KEY_ESCAPE:
+			open_menu()
+			return
+		if event.is_action_pressed(&"g2g_help"):
+			open_help()
+			return
+
 	if player == null:
 		return
 
@@ -605,82 +685,439 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not mouse_drives_view():
 			return
 
-		var sampler := player.sampler if _offline else _sampler
+		var sampler := _active_sampler()
 		if sampler != null:
 			sampler.handle_event(event)
-		return
-
-	if not (event is InputEventKey) or event.is_echo():
 		return
 
 	# Push to talk, handled BEFORE the "is this a press" filter below, because a talk
 	# key needs its release as much as its press: a key whose release nobody reads is
 	# a microphone that never closes.
 	#
-	# [b]K, not V.[/b] V is this game's second checkpoint key and has been since the
-	# client was written; the genre's own voice key is unbound here because the genre
+	# [b]K, not V, by default.[/b] V is this game's second checkpoint key and has been since
+	# the client was written; the genre's own voice key is unbound here because the genre
 	# binds it per player. K is what is left that nothing else claims.
-	if (event as InputEventKey).physical_keycode == KEY_K:
+	if event.is_action(&"g2g_voice") and not event.is_echo():
 		if extras != null:
 			extras.set_talking(event.is_pressed())
 
 		return
 
-	if not event.is_pressed():
+	if not event.is_pressed() or event.is_echo():
 		return
 
-	match (event as InputEventKey).physical_keycode:
-		KEY_F3:
-			show_servers()
-		KEY_F5:
-			if player.camera != null and not player.camera.toggle():
-				hud.notice("Third person is not allowed on this server.")
-		KEY_TAB:
-			var styles := game.timers.styles_in_order()
-			_style_index = (_style_index + 1) % styles.size()
-			if not _offline:
-				bridge.ask_style(styles[_style_index].id)
-			elif game.set_player_style(&"local", styles[_style_index].id):
-				hud.notice("Style: %s" % styles[_style_index].display_name)
-		KEY_R:
-			if _offline:
-				game.spawn_player(&"local")
-			else:
-				bridge.ask_restart()
-		# [b]Offline only.[/b] Online this changed THIS client's world and nobody else's:
-		# the server went on simulating the player on its own map, and every tick's
-		# correction put them back in a place their screen no longer had. A client's map
-		# is the server's to announce; `!rtv` is how a player asks for another.
-		KEY_M when _offline:
+	# Actions rather than keycodes, so every one of these is the player's own key. A mouse
+	# button bound to one arrives here as well as a key does.
+	if event.is_action_pressed(&"g2g_servers"):
+		show_servers()
+	elif event.is_action_pressed(&"g2g_third_person"):
+		if player.camera != null and not player.camera.toggle():
+			hud.notice("Third person is not allowed on this server.")
+	elif event.is_action_pressed(&"g2g_flashlight"):
+		toggle_flashlight()
+	elif event.is_action_pressed(&"g2g_hide_others"):
+		toggle_hide_others()
+	elif event.is_action_pressed(&"g2g_style_next"):
+		var styles := game.timers.styles_in_order()
+		_style_index = (_style_index + 1) % styles.size()
+		menu_choose_style(styles[_style_index].id)
+	elif event.is_action_pressed(&"g2g_restart"):
+		if _offline:
+			game.spawn_player(&"local")
+		else:
+			bridge.ask_restart()
+	# [b]Offline only.[/b] Online this changed THIS client's world and nobody else's:
+	# the server went on simulating the player on its own map, and every tick's
+	# correction put them back in a place their screen no longer had. A client's map
+	# is the server's to announce; `!rtv` is how a player asks for another.
+	elif event.is_action_pressed(&"g2g_map_next"):
+		if _offline:
 			var next := game.maps.rotation.choose(1)
 			if next != null:
 				game.change_map(next.id)
-		KEY_M:
+		else:
 			hud.notice("The server chooses the map. !rtv asks for a vote.")
-		KEY_C when not _offline:
+	elif event.is_action_pressed(&"g2g_checkpoint_save"):
+		if not _offline:
 			bridge.ask_checkpoint(0)
-		KEY_V when not _offline:
-			bridge.ask_checkpoint(1)
-		KEY_C:
+		else:
 			var s := player.controller.state
 			var saved := game.timers.checkpoints_for(&"local").save(
 				s.position, s.velocity, s.yaw, s.pitch, s.is_grounded(), s.is_crouched())
 			hud.notice("Checkpoint saved" if saved.ok else saved.error.message)
-		KEY_V:
+	elif event.is_action_pressed(&"g2g_checkpoint_load"):
+		if not _offline:
+			bridge.ask_checkpoint(1)
+		else:
 			var cp := game.timers.checkpoints_for(&"local").load_current()
 			if cp == null:
-				hud.notice("No checkpoints. C saves one.")
+				hud.notice("No checkpoints. %s saves one." % G2GBindings.shown(
+					G2GBindings.row_for_action(&"g2g_checkpoint_save")))
 			else:
 				player.teleport(cp.position, cp.yaw)
 				player.controller.state.velocity = cp.velocity
 				player.controller.state.pitch = cp.pitch
-		KEY_ESCAPE:
-			# [b]Release only, and a click is the way back.[/b] Escape is how a browser
-			# itself exits pointer lock, and it then refuses to re-enter it for about a
-			# second afterwards — so a toggle bound to Escape works on the desktop and,
-			# on the web, silently does nothing every other press. One key that releases
-			# and one gesture that captures is the same contract on both.
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			if DotPlatform.is_web():
-				_awaiting_click = true
-				_say_click_to_play()
+
+
+# --- Menus ---------------------------------------------------------------------
+
+## The layer the menu, the help screen and the frame-rate counter are drawn on.
+func _build_overlays() -> void:
+	_overlay_layer = CanvasLayer.new()
+	_overlay_layer.name = "OverlayLayer"
+	_overlay_layer.layer = 110
+	add_child(_overlay_layer)
+
+	_fps_label = G2GUi.label("", G2GUi.SIZE_SMALL, G2GUi.MUTED, true)
+	_fps_label.name = "Fps"
+	_fps_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_fps_label.offset_left = -110.0
+	_fps_label.offset_right = -14.0
+	_fps_label.offset_top = 10.0
+	_fps_label.offset_bottom = 30.0
+	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fps_label.add_theme_constant_override(&"outline_size", 4)
+	_fps_label.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.7))
+	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps_label.visible = false
+	_overlay_layer.add_child(_fps_label)
+
+	menu = G2GMenu.new()
+	menu.name = "Menu"
+	menu.settings = presentation.settings if presentation != null else null
+	menu.host = self
+	menu.closed.connect(_on_overlay_closed)
+	menu.help_requested.connect(open_help)
+	menu.leave_requested.connect(_leave)
+	_overlay_layer.add_child(menu)
+
+	help = G2GHelp.new()
+	help.name = "Help"
+	help.online = not _offline
+	help.closed.connect(_on_overlay_closed)
+	_overlay_layer.add_child(help)
+
+	flashlight = G2GFlashlight.new()
+	flashlight.name = "Flashlight"
+	flashlight.toggled.connect(func(on: bool) -> void:
+		if presentation != null:
+			presentation.on_flashlight(on)
+	)
+	add_child(flashlight)
+
+	if presentation != null and presentation.settings != null:
+		presentation.settings.changed.connect(
+			func(_key: StringName, _value: Variant, _why: StringName) -> void: apply_client_settings()
+		)
+
+
+func overlay_open() -> bool:
+	return (menu != null and menu.is_open()) or (help != null and help.is_open())
+
+
+func open_menu(page: StringName = &"") -> void:
+	if menu == null:
+		return
+	if help != null and help.is_open():
+		help.close()
+	menu.open(page)
+	_on_overlay_opened()
+
+
+## Opens the H screen, over the menu if the menu is open — closing it goes back there.
+func open_help() -> void:
+	if help == null:
+		return
+	help.commands = rules.get("commands", [])
+	help.online = not _offline
+	help.open()
+	_on_overlay_opened()
+
+
+func _overlay_key(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.is_pressed() or event.is_echo():
+		return
+
+	var escape := (event as InputEventKey).physical_keycode == KEY_ESCAPE
+
+	# The same Escape that took the pointer away in a browser can arrive a moment after the
+	# menu it opened; closing on it would make the menu flash and vanish.
+	if escape and Time.get_ticks_msec() - _overlay_opened_msec < 250:
+		get_viewport().set_input_as_handled()
+		return
+
+	if help != null and help.is_open() and (escape or event.is_action_pressed(&"g2g_help")):
+		help.close()
+		get_viewport().set_input_as_handled()
+	elif menu != null and menu.is_open() and escape:
+		menu.close()
+		get_viewport().set_input_as_handled()
+
+
+func _on_overlay_opened() -> void:
+	_overlay_opened_msec = Time.get_ticks_msec()
+	_lock_seen = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_refresh_suspended()
+
+
+## The last overlay closed: give the mouse back to the view.
+##
+## On the desktop that is immediate. In a browser it works when the close was a click —
+## Resume — and is refused when it was a key, because Escape grants no user activation; so
+## a few frames later, if the pointer is still free, the client goes back to "Click to play"
+## rather than leaving a player wondering why the view does not turn.
+func _on_overlay_closed() -> void:
+	if overlay_open():
+		return
+	_refresh_suspended()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if DotPlatform.is_web():
+		_recapture_frames = 12
+
+
+func _leave() -> void:
+	if not _offline and link != null and link.has_method("disconnect_from_server"):
+		link.call("disconnect_from_server", "Left the server")
+		return
+	get_tree().quit()
+
+
+## The sampler that turns this client's keys into commands: the player's own offline, the
+## netcode's online.
+func _active_sampler() -> DotFpsSampler:
+	return player.sampler if _offline and player != null else _sampler
+
+
+## Movement stops while anything is taking the keyboard: the chat box, the console, the
+## menu or the help screen. `DotFpsSampler` POLLS the keys, so swallowing events is not
+## enough — see [method _wire_chat_window] for what that costs on a timer server.
+func _refresh_suspended() -> void:
+	var busy := overlay_open() or (presentation != null and presentation.swallows_input())
+	for sampler in [_sampler, player.sampler if player != null else null]:
+		if sampler != null:
+			(sampler as DotFpsSampler).suspended = busy
+
+
+## Opens the menu when the browser takes the pointer away by itself — Escape, or the
+## window losing focus — and says "Click to play" when a recapture was refused.
+##
+## [b]Watched rather than told[/b]: when a browser exits pointer lock on Escape, the page
+## may never see the key at all. What it can see is that the pointer it had is gone.
+func _watch_pointer() -> void:
+	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+
+	if _recapture_frames > 0:
+		_recapture_frames -= 1
+		if _recapture_frames == 0 and not captured and not overlay_open():
+			_awaiting_click = true
+			_say_click_to_play()
+
+	if captured:
+		_lock_seen = true
+		return
+
+	if _lock_seen and not overlay_open() and not (presentation != null and presentation.swallows_input()):
+		_lock_seen = false
+		open_menu()
+
+
+# --- Flashlight and the others ----------------------------------------------------
+
+func toggle_flashlight() -> void:
+	if flashlight == null:
+		return
+	if not flashlight.allowed:
+		if hud != null:
+			hud.notice("Flashlights are off on this server.")
+		return
+	var _ok := flashlight.toggle()
+
+
+func toggle_hide_others() -> void:
+	if presentation == null or presentation.settings == null:
+		return
+	var hide := not presentation.settings.get_bool(&"hide_others", false)
+	var _set := presentation.settings.set_value(&"hide_others", hide)
+	if hud != null:
+		hud.notice("Other players hidden" if hide else "Other players shown")
+
+
+## Whether [param body] is somebody this client is not drawing.
+##
+## Everybody but the local player, the ghost included — and never the one being spectated,
+## because hiding the player you chose to watch would be a camera pointed at nothing.
+func _hidden(body: G2GPlayer) -> bool:
+	if body == null or body == player:
+		return false
+	if presentation == null or not presentation.settings.get_bool(&"hide_others", false):
+		return false
+	if player != null and game.spectate != null and game.spectate.is_spectating(player.player_id) \
+			and game.spectate.target_of(player.player_id) == body.player_id:
+		return false
+	return true
+
+
+func _present_others() -> void:
+	for id in game.players:
+		var body := game.players[id] as G2GPlayer
+		if body != null and body != player:
+			body.visible = not _hidden(body)
+
+
+# --- Settings that land on the client ------------------------------------------------
+
+## Everything in the settings document that is the client's to apply rather than the
+## presentation layer's: the HUD switches, the view, the mouse. Cheap, and called on any
+## change and whenever a player or a HUD appears — both arrive after the settings do.
+func apply_client_settings() -> void:
+	if presentation == null or presentation.settings == null:
+		return
+	var st := presentation.settings
+
+	if hud != null:
+		hud.apply_visibility(st.get_bool(&"show_speed", true), st.get_bool(&"show_splits", true),
+			st.get_bool(&"show_keys", true), st.get_bool(&"show_crosshair", true))
+
+	if _fps_label != null:
+		_fps_label.visible = st.get_bool(&"show_fps", false)
+
+	if player != null and player.camera != null:
+		player.camera.fov_desired = float(st.get_int(&"field_of_view", 90))
+
+	_apply_look()
+
+
+## The mouse, onto whichever tunables the sampler is reading. Neither field is in the
+## movement fingerprint (`DotFpsTunables` leaves every `mouse_` key and `invert_look_y`
+## out of it), so a client changing them can never disagree with the server.
+func _apply_look() -> void:
+	if presentation == null or presentation.settings == null:
+		return
+	var sampler := _active_sampler()
+	if sampler == null or sampler.tunables == null:
+		return
+	sampler.tunables.mouse_sensitivity = G2GUnits.sensitivity_to_degrees(
+		presentation.settings.get_float(&"sensitivity", 2.5))
+	sampler.tunables.invert_look_y = presentation.settings.get_bool(&"invert_mouse", false)
+
+
+## The server said what it allows on this client's screen.
+func _on_rules(new_rules: Dictionary) -> void:
+	var light_was_allowed := bool(rules.get("flashlight", true))
+	rules = new_rules
+
+	if flashlight != null:
+		flashlight.allowed = bool(rules.get("flashlight", true))
+		if light_was_allowed and not flashlight.allowed and hud != null:
+			hud.notice("The server turned flashlights off.")
+
+	if help != null:
+		help.commands = rules.get("commands", [])
+
+	_apply_rules_to_player()
+
+
+func _apply_rules_to_player() -> void:
+	if player == null or player.camera == null:
+		return
+	player.camera.allow_third_person = bool(rules.get("thirdperson", true))
+	if not player.camera.allow_third_person and player.camera.is_third_person():
+		var _first := player.camera.set_mode(G2GCamera.Mode.FIRST_PERSON)
+
+
+## Asks once, on the first player this client gets, for the style the player last chose.
+func _restore_style() -> void:
+	if _style_restored or player == null or presentation == null or game == null:
+		return
+	_style_restored = true
+
+	var wanted := StringName(presentation.settings.get_string(&"preferred_style", "normal"))
+	if wanted == &"" or wanted == menu_style():
+		return
+
+	for style in game.timers.styles_in_order():
+		if style.id == wanted:
+			menu_choose_style(wanted, false)
+			return
+
+
+# --- What the menu asks the client (see G2GMenu.host) --------------------------------
+
+func menu_where() -> String:
+	var map_name := game.maps.current.name_or_id() if game != null and game.maps != null \
+		and game.maps.current != null else "no map yet"
+	return "%s  ·  %s" % [map_name, "offline" if _offline else "online"]
+
+
+func menu_leave_label() -> String:
+	if not _offline:
+		return "Disconnect"
+	# A browser tab cannot be closed by the page in it, and a quit there is a frozen canvas.
+	return "" if DotPlatform.is_web() else "Quit game"
+
+
+func menu_styles() -> Array:
+	var out: Array = []
+	if game == null or game.timers == null:
+		return out
+	for style in game.timers.styles_in_order():
+		out.append({"id": style.id, "name": style.display_name})
+	return out
+
+
+func menu_style() -> StringName:
+	if player != null and player.timer_style != null:
+		return player.timer_style.id
+	return &"normal"
+
+
+## Asks for a style: the server online, the game offline. Remembered as the preferred style
+## unless [param remember] is false — which is only the restore itself.
+func menu_choose_style(id: StringName, remember: bool = true) -> void:
+	var styles := game.timers.styles_in_order()
+	for i in range(styles.size()):
+		if styles[i].id == id:
+			_style_index = i
+
+	if not _offline:
+		if bridge != null:
+			bridge.ask_style(id)
+	elif game.set_player_style(&"local", id):
+		var shown := id
+		for style in styles:
+			if style.id == id:
+				shown = StringName(style.display_name)
+		if hud != null:
+			hud.notice("Style: %s" % shown)
+
+	if remember and presentation != null:
+		var _kept := presentation.settings.set_value(&"preferred_style", String(id))
+
+
+func menu_flashlight_allowed() -> bool:
+	return flashlight == null or flashlight.allowed
+
+
+func menu_flashlight_on() -> bool:
+	return flashlight != null and flashlight.on
+
+
+func menu_set_flashlight(on: bool) -> void:
+	if flashlight != null:
+		var _ok := flashlight.set_on(on)
+
+
+func menu_third_person_allowed() -> bool:
+	return bool(rules.get("thirdperson", true))
+
+
+func menu_third_person_on() -> bool:
+	return player != null and player.camera != null and player.camera.is_third_person()
+
+
+func menu_set_third_person(on: bool) -> void:
+	if player == null or player.camera == null:
+		return
+	var _ok := player.camera.set_mode(
+		G2GCamera.Mode.THIRD_PERSON if on else G2GCamera.Mode.FIRST_PERSON)

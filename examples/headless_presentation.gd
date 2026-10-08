@@ -11,6 +11,12 @@ const G2GGame := preload("../game/g2g_game.gd")
 const G2GHud := preload("../game/g2g_hud.gd")
 const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
+const G2GBindings := preload("../game/g2g_bindings.gd")
+const G2GFlashlight := preload("../game/g2g_flashlight.gd")
+const G2GMenu := preload("../game/ui/g2g_menu.gd")
+const G2GHelp := preload("../game/ui/g2g_help.gd")
+const G2GSwitch := preload("../game/ui/g2g_switch.gd")
+const G2GKeyButton := preload("../game/ui/g2g_key_button.gd")
 
 ## Settings, audio, effects, the console and the practice session.
 ##
@@ -24,7 +30,7 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 109
+const CHECKS := 146
 
 var _passed := 0
 var _failed := 0
@@ -61,6 +67,11 @@ func _run() -> void:
 	_test_the_vote_is_heard()
 	await _test_blind_and_beacon()
 	_test_a_map_credits_its_author()
+	_test_every_key_is_the_players()
+	_test_the_flashlight_reaches_unshaded_maps()
+	_test_settings_reach_the_engine()
+	await _test_the_menu_is_a_view_of_the_settings()
+	await _test_help_lists_what_it_is_told()
 
 	print("")
 	_check(
@@ -1097,6 +1108,255 @@ func _test_a_map_credits_its_author() -> void:
 		G2GHud.now_playing_text(mesa) if mesa != null else "no surf_mesa")
 	_done()
 
+
+
+# --- Keys, the flashlight and the menus --------------------------------------------
+
+func _test_every_key_is_the_players() -> void:
+	_section("Every key the client reads is a setting the player can move")
+
+	var p := _make()
+
+	var bound := 0
+	for row in G2GBindings.ROWS:
+		if DotInputBinding.describe_action(row["action"]) == str(row["default"]) \
+				and InputMap.action_get_events(row["action"]).size() == 1:
+			bound += 1
+	_check(bound == G2GBindings.ROWS.size(),
+		"every action is on its default and on one key only (%d of %d)" % [bound, G2GBindings.ROWS.size()])
+
+	var declared := 0
+	for row in G2GBindings.ROWS:
+		var def := p.settings.schema.find(row["setting"])
+		if def != null and def.kind == DotSettingsDef.Kind.BINDING:
+			declared += 1
+	_check(declared == G2GBindings.ROWS.size(), "and every one is a binding in the settings document")
+
+	var clash := ""
+	for row in G2GBindings.ROWS:
+		var other := G2GBindings.row_using(str(row["default"]), row["setting"], p.settings)
+		if not other.is_empty():
+			clash = "%s and %s" % [row["label"], other["label"]]
+	_check(clash == "", "no two defaults share a key", clash)
+
+	_check(DotInputBinding.describe_action(&"dot_fps_crouch") == "Ctrl",
+		"Duck is Ctrl, the genre's, and the text form of it round-trips")
+
+	p.settings.set_value(&"bind_flashlight", "G")
+	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "G"
+		and InputMap.action_get_events(&"g2g_flashlight").size() == 1,
+		"rebinding moves the action, and leaves one key rather than two")
+
+	p.settings.set_value(&"bind_flashlight", "Qwerty")
+	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "F",
+		"a binding that names no key falls back to the default rather than unbinding")
+
+	var escape := false
+	for row in G2GBindings.ROWS:
+		if str(row["default"]) == "Escape":
+			escape = true
+	_check(not escape, "and nothing is on Escape, which is the menu and the browser's own")
+
+	p.settings.reset_value(&"bind_flashlight")
+	_done()
+
+
+func _test_the_flashlight_reaches_unshaded_maps() -> void:
+	_section("A flashlight lights the maps that ignore every light")
+
+	var code_ok := 0
+	for path in ["res://game/g2g_bsp_lightmapped.gdshader", "res://game/g2g_bsp_translucent.gdshader"]:
+		var text := FileAccess.get_file_as_string(path)
+		if text.contains("uniform sampler2D flashlight_tex : hint_default_black") \
+				and text.contains("flashlight(world, normal)"):
+			code_ok += 1
+	_check(code_ok == 2, "both imported-map shaders compute the cone, off by default (%d of 2)" % code_ok,
+		"an unshaded surface ignores a SpotLight3D, so the shader is the only way to light one")
+
+	var light := G2GFlashlight.new()
+	add_child(light)
+	var shader := load("res://game/g2g_bsp_lightmapped.gdshader") as Shader
+	_check(shader != null and shader.get_default_texture_parameter(G2GFlashlight.SHADER_PARAMETER) == light._texture,
+		"it hands the shader its parameters as the shader's own default, never per material")
+	_check(light._image.get_pixel(0, 0).a == 0.0, "and starts off")
+
+	_check(light.set_on(true) and light.on and light.spot.visible, "F switches it on, spotlight and all")
+	light.present(1.0 / 60.0, Transform3D(Basis.IDENTITY, Vector3(1.0, 2.0, 3.0)))
+	var at := light._image.get_pixel(0, 0)
+	var aim := light._image.get_pixel(1, 0)
+	var off_eye := Vector3(at.r, at.g, at.b).distance_to(Vector3(1.0, 2.0, 3.0))
+	_check(at.a == 1.0 and off_eye < 0.25, "it is carried at the eye, a hand's width off it (%.2f m)" % off_eye)
+	_check(Vector3(aim.r, aim.g, aim.b).distance_to(Vector3.FORWARD) < 0.001, "and points where the eye does")
+
+	light.allowed = false
+	_check(not light.on and light._image.get_pixel(0, 0).a == 0.0,
+		"sv_flashlight 0 switches it off, on every surface")
+	_check(not light.set_on(true), "and keeps it off")
+
+	remove_child(light)
+	light.free()
+	_check(shader.get_default_texture_parameter(G2GFlashlight.SHADER_PARAMETER) == null,
+		"and a client that goes away takes its texture back off the shader")
+	_done()
+
+
+func _test_settings_reach_the_engine() -> void:
+	_section("A setting in the menu is a setting that does something")
+
+	var p := _make()
+	_check(Engine.max_fps == 0, "the frame rate is unlimited by default")
+	p.settings.set_value(&"fps_max", 144)
+	_check(Engine.max_fps == 144, "and capping it caps the engine")
+	p.settings.set_value(&"fps_max", 0)
+
+	p.settings.set_value(&"ui_volume", 0.3)
+	_check(is_equal_approx(p.audio.mixer.ui, 0.3), "the timer's volume is the UI bus's")
+
+	_check(p.settings.get_int(&"field_of_view", 0) == 90,
+		"the field of view starts at 90, the genre's fov_desired, rather than 110")
+	_check(not p.settings.get_bool(&"hide_others", true) and not p.settings.get_bool(&"vsync", true),
+		"other players are shown and V-Sync is off until somebody says otherwise")
+
+	# Every document on disk stores 110, the old default that nothing read.
+	var step: Callable = G2GPresentation.migrations()[1]
+	_check(not (step.call({"field_of_view": 110, "sensitivity": 3.0}) as Dictionary).has("field_of_view"),
+		"a stored 110 from before the camera read it is dropped, so the player gets 90")
+	_check(int((step.call({"field_of_view": 100}) as Dictionary)["field_of_view"]) == 100,
+		"and any other value is somebody's choice, and kept")
+	_done()
+
+
+## A host with the methods the menu asks. Nothing in it decides anything.
+class FakeHost:
+	extends Node
+	var style: StringName = &"normal"
+	var light := false
+
+	func menu_styles() -> Array:
+		return [{"id": &"normal", "name": "Normal"}, {"id": &"sideways", "name": "Sideways"}]
+
+	func menu_style() -> StringName:
+		return style
+
+	func menu_choose_style(id: StringName) -> void:
+		style = id
+
+	func menu_flashlight_allowed() -> bool:
+		return true
+
+	func menu_flashlight_on() -> bool:
+		return light
+
+	func menu_set_flashlight(on: bool) -> void:
+		light = on
+
+	func menu_where() -> String:
+		return "surf_test  ·  offline"
+
+	func menu_leave_label() -> String:
+		return "Quit game"
+
+
+func _switches(root: Node) -> Array:
+	return root.find_children("*", "Button", true, false).filter(
+		func(n: Node) -> bool: return n.get_script() == G2GSwitch and n.is_inside_tree() and not n.is_queued_for_deletion())
+
+
+func _test_the_menu_is_a_view_of_the_settings() -> void:
+	_section("The Escape menu writes the settings and keeps no copy of them")
+
+	var p := _make()
+	var host := FakeHost.new()
+	add_child(host)
+	var menu := G2GMenu.new()
+	menu.settings = p.settings
+	menu.host = host
+	add_child(menu)
+	await get_tree().process_frame
+
+	menu.open(&"general")
+	_check(menu.is_open() and menu.visible, "it opens")
+	var switches := _switches(menu)
+	_check(switches.size() == 5, "the General page has a switch per HUD setting (%d)" % switches.size())
+
+	(switches[0] as Button).button_pressed = false
+	_check(not p.settings.get_bool(&"show_speed", true), "flipping one writes the setting it shows")
+
+	p.settings.set_value(&"show_speed", true)
+	menu.open(&"general")
+	await get_tree().process_frame
+	_check((_switches(menu)[0] as Button).button_pressed,
+		"and a change made elsewhere (the console) is what it shows next time")
+
+	menu.open(&"gameplay")
+	await get_tree().process_frame
+	var picks := menu.find_children("*", "OptionButton", true, false).filter(
+		func(n: Node) -> bool: return not n.is_queued_for_deletion())
+	_check(not picks.is_empty() and (picks[0] as OptionButton).item_count == 2,
+		"the style list is the host's, not one the menu keeps")
+	if not picks.is_empty():
+		(picks[0] as OptionButton).select(1)
+		(picks[0] as OptionButton).item_selected.emit(1)
+	_check(host.style == &"sideways", "and choosing one asks the host for it")
+
+	menu.open(&"controls")
+	await get_tree().process_frame
+	var keys := menu.find_children("*", "Button", true, false).filter(
+		func(n: Node) -> bool: return n.get_script() == G2GKeyButton and not n.is_queued_for_deletion())
+	_check(keys.size() == G2GBindings.ROWS.size(), "the Controls page has a key per action (%d)" % keys.size())
+
+	# Flashlight onto R: R was Restart, so Restart gets F rather than nothing.
+	menu._rebind(G2GBindings.row_for_action(&"g2g_flashlight"), "R")
+	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "R"
+		and DotInputBinding.describe_action(&"g2g_restart") == "F",
+		"binding a key that is taken swaps the two, so nothing is left unbound")
+
+	menu._reset_bindings()
+	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "F"
+		and DotInputBinding.describe_action(&"g2g_restart") == "R",
+		"and Reset puts every key back")
+
+	var closed := [false]
+	menu.closed.connect(func() -> void: closed[0] = true)
+	menu.close()
+	_check(not menu.visible and closed[0], "it closes, and says so, so the client can take the mouse back")
+
+	menu.queue_free()
+	host.queue_free()
+	_done()
+
+
+func _test_help_lists_what_it_is_told() -> void:
+	_section("The help screen lists the player's keys and the server's commands")
+
+	var help := G2GHelp.new()
+	add_child(help)
+	await get_tree().process_frame
+
+	var texts := func() -> PackedStringArray:
+		var out := PackedStringArray()
+		for n in help.find_children("*", "Label", true, false):
+			if not n.is_queued_for_deletion():
+				out.append((n as Label).text)
+		return out
+
+	help.online = true
+	help.commands = [["spec", "Watch somebody"], ["wr", "Fastest times here"]]
+	help.open()
+	var shown: PackedStringArray = texts.call()
+	_check(help.visible and shown.has("!spec") and shown.has("!wr"), "online, it lists the commands the server sent")
+	_check(shown.has("Flashlight") and shown.has(G2GBindings.shown(G2GBindings.row_for_action(&"g2g_flashlight"))),
+		"and every key, as it is bound now")
+	_check(not shown.has("Ctrl + W"), "the browser's tips are for a browser, and this is not one")
+
+	help.close()
+	help.online = false
+	help.open()
+	shown = texts.call()
+	_check(not shown.has("!spec"), "offline there is no server, so no commands are offered")
+
+	help.queue_free()
+	_done()
 
 
 func _section(title: String) -> void:
