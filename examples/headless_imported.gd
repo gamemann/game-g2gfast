@@ -3,6 +3,7 @@ extends Node
 const G2GBspMap := preload("../game/g2g_bsp_map.gd")
 const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
+const G2GLighting := preload("../game/g2g_lighting.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
 const G2GStockSubstitutes := preload("../game/g2g_stock_substitutes.gd")
@@ -133,7 +134,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 44
+const CHECKS_PER_MAP := 45
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -550,6 +551,26 @@ func _test_lighting() -> void:
 	_check(minf(top.r, minf(top.g, top.b)) < 0.99,
 		"and its sky is not a blank white dome", "sky top %s, sky name '%s'"
 			% [top, node.manifest.get("lighting", {}).get("sky_name", "")])
+
+	# [b]And a sky named black is black, horizon included.[/b] surf_kitsune names `blacksky`
+	# and sets nothing else, and was drawn under dot-lighting's pale default dome. Passes on
+	# every map whose sky is not named black. Armed by taking `_darken_black_sky` out of
+	# G2GLighting.apply: it fires on surf_kitsune alone.
+	var lit: Dictionary = node.manifest.get("lighting", {})
+	var dark := true
+	var seen := "no sky material"
+	if G2GLighting.is_black_sky(lit) and world != null and world.environment != null:
+		var env := world.environment
+		var smat := env.sky.sky_material as ProceduralSkyMaterial if env.sky != null else null
+		var colours: Array[Color] = [env.background_color]
+		if smat != null:
+			colours.append_array([smat.sky_top_color, smat.sky_horizon_color,
+				smat.ground_horizon_color, smat.ground_bottom_color])
+		seen = str(colours)
+		for c: Color in colours:
+			dark = dark and c.get_luminance() < 0.02
+	_check(dark, "and a sky named black is drawn black",
+		"sky name '%s': %s" % [lit.get("sky_name", ""), seen])
 	_done()
 
 

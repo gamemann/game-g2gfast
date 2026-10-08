@@ -18,6 +18,7 @@ static func apply(parent: Node3D, lighting: Dictionary) -> DirectionalLight3D:
 		parent, DotLightDocument.from_dictionary(lighting), profile()
 	)
 	_recolour_white_sky(parent, lighting)
+	_darken_black_sky(parent, lighting)
 	return sun
 
 
@@ -105,6 +106,42 @@ static func _recolour_white_sky(parent: Node3D, lighting: Dictionary) -> void:
 		mat.sky_top_color = top
 		if mirrored:
 			mat.ground_bottom_color = top
+
+
+## Whether a map's sky is black by name: the whole of it, horizon and below included.
+##
+## [b]A sky called black is a statement about the sky, and nothing else in the file is.[/b]
+## surf_kitsune names `blacksky` and sets no sun, no ambient and no fog, so dot-lighting
+## drew it under its default daylight dome: a pale grey-blue all round a map built as neon
+## lines on black, which is the brightest thing on screen wherever a wall is open
+## (Christian's 2026-10-08 footage: "way too bright / distracting"). The name is read the
+## way the importer reads `tools/toolsblack` -- a black is trusted when the name says so.
+static func is_black_sky(lighting: Dictionary) -> bool:
+	return str(lighting.get("sky_name", "")).to_lower().contains("black")
+
+
+static func _darken_black_sky(parent: Node3D, lighting: Dictionary) -> void:
+	if not is_black_sky(lighting):
+		return
+
+	for child in parent.get_children():
+		var world := child as WorldEnvironment
+
+		if world == null or world.environment == null:
+			continue
+
+		var env := world.environment
+		env.background_color = Color.BLACK
+		env.fog_light_color = Color.BLACK
+		var mat := env.sky.sky_material as ProceduralSkyMaterial if env.sky != null else null
+
+		if mat == null:
+			continue
+
+		mat.sky_top_color = Color.BLACK
+		mat.sky_horizon_color = Color.BLACK
+		mat.ground_horizon_color = Color.BLACK
+		mat.ground_bottom_color = Color.BLACK
 
 
 ## What this machine draws.

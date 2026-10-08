@@ -94,7 +94,7 @@ scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
 examples/           headless_run (219), headless_net (157), dedicated (180),
-                    headless_imported (44 per map, plus one per track and stage),
+                    headless_imported (45 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -494,7 +494,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 109 check
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 44 per map, +1 per track and stage: 2032 over the 42 (run with --fixed-fps 128)
+godot --headless --path . res://examples/headless_imported.tscn  # 45 per map, +1 per track and stage: 2074 over the 42 (run with --fixed-fps 128)
 godot --headless --path . res://examples/headless_maps.tscn      # 51 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1784,7 +1784,7 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 
 ## A recorded run, followed with the real movement (2026-10-07, `[g2gfast-route-bot-1]`)
 
-A ghost (`G2GPlayer.replay`) writes each frame's pose into the state: it passes through walls, finishes every map whatever the collision is, and proves nothing about the map. `tools/replay_follow.gd` does the opposite. It drives the motor with ordinary `DotFpsCommand`s along a dot-timer replay (`maps/routes/<id>.replay`). A run it cannot repeat is a place where the map is no longer the map the run was made on, and it reports that place: *"left the recorded line at frame N, (x, y, z) u"*, which is where to look for the collision fault. `headless_imported`'s **recording** section (11 sections and 44 checks per map now) follows the map's recording and asserts the game's own timer finishes it. It then follows a copy lifted 200 u off the map from frame 2000 and asserts the report names that frame, not a pit or the clock. A map with no recording passes both and says so. `tools/follow_replay.tscn -- <id> [seconds] [file]` is the same drive as a tool (`FOLLOW_LOG_EVERY=8` traces it). `RIDE_SAVE_REPLAY=maps/routes/<id>.replay tools/stage_ride.tscn -- <id> 0 200` saves a route bot's finished run as one.
+A ghost (`G2GPlayer.replay`) writes each frame's pose into the state: it passes through walls, finishes every map whatever the collision is, and proves nothing about the map. `tools/replay_follow.gd` does the opposite. It drives the motor with ordinary `DotFpsCommand`s along a dot-timer replay (`maps/routes/<id>.replay`). A run it cannot repeat is a place where the map is no longer the map the run was made on, and it reports that place: *"left the recorded line at frame N, (x, y, z) u"*, which is where to look for the collision fault. `headless_imported`'s **recording** section (11 sections and 45 checks per map now) follows the map's recording and asserts the game's own timer finishes it. It then follows a copy lifted 200 u off the map from frame 2000 and asserts the report names that frame, not a pit or the clock. A map with no recording passes both and says so. `tools/follow_replay.tscn -- <id> [seconds] [file]` is the same drive as a tool (`FOLLOW_LOG_EVERY=8` traces it). `RIDE_SAVE_REPLAY=maps/routes/<id>.replay tools/stage_ride.tscn -- <id> 0 200` saves a route bot's finished run as one.
 
 **bhop_grove is followed end to end.** The route bot recorded the run (133.82 s). The follower finishes it in 140.00 s, never more than 46 u off the line, deterministic, and the lifted copy is reported at frame 1999. **Its recording is a bot's, not a person's.** A person's record replay (`G2GReplays` writes it beside the records) copied to `maps/routes/<id>.replay` is the line the item asked for. One ride from `!s3` on surf_summit would also settle `[arrive-3]`. None exists yet: this needs a ride from Christian.
 

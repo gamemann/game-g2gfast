@@ -39,7 +39,7 @@ import sys
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bsp_read import (Bsp, SKIP_MASK, clean_material, to_godot, yaw_to_godot,  # noqa: E402
+from bsp_read import (Bsp, SKIP_MASK, SURF_SKY, SURF_SKY2D, clean_material, to_godot, yaw_to_godot,  # noqa: E402
                       LUMP_ENTITIES, MASK_PLAYERSOLID, CONTENTS_PLAYERCLIP,
                       SOLID_BRUSH_ENTITIES, NONSOLID_BRUSH_ENTITIES)
 import vtf  # noqa: E402
@@ -553,7 +553,7 @@ def surface_colour(refl, name=""):
 
 
 def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=None,
-               blends=()):
+               blends=(), material_of=None):
     """One vertex block and one index block per (material, role).
 
     [b]Per role and not per material, because a role is per face.[/b] The role comes
@@ -575,7 +575,12 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
     vertex layout every other surface -- and every loader written before this -- reads
     is unchanged. A brush face of a blend material takes alpha 0, its first texture,
     which is what the engine draws there.
+
+    `material_of` draws a face its own flags would skip, as another material: {id(face):
+    (material, texdata index)}, from `sky_walls`. The texdata is the stand-in's, so its
+    size is what the face's texture vectors are divided by.
     """
+    material_of = material_of or {}
     groups = collections.defaultdict(lambda: ([], []))     # (mat, role) -> (verts, indices)
     dedupe = collections.defaultdict(dict)
     # The average colour of each material's texture, which vrad measured when the map was
@@ -603,9 +608,10 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
         drawn = [(f, (0.0, 0.0, 0.0)) for f in bsp.model_faces(0)]
     for f, off in drawn:
         mat_raw, flags = bsp.face_material(f)
-        if flags & SKIP_MASK:
+        stand_in = material_of.get(id(f))
+        if flags & SKIP_MASK and stand_in is None:
             continue
-        mat = clean_material(mat_raw)
+        mat = clean_material(mat_raw) if stand_in is None else stand_in[0]
 
         def at(p, off=off):
             # Where the vertex IS; `p` stays where vbsp stored it, for the UVs.
@@ -625,7 +631,7 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
 
         ti = bsp.texinfo[f[5]]
         tw, th = 1, 1
-        td = int(ti[17])
+        td = int(ti[17]) if stand_in is None else stand_in[1]
         if 0 <= td < len(bsp.texdata):
             tw, th = max(1, bsp.texdata[td][4]), max(1, bsp.texdata[td][5])
             reflectivity.setdefault(mat, tuple(bsp.texdata[td][0:3]))
@@ -1386,6 +1392,56 @@ def sky_drawn_scale(bsp, sky, drawn, props_drawn):
 
 def in_box(p, box):
     return all(box[0][a] <= p[a] <= box[1][a] for a in range(3))
+
+
+def sky_walls(bsp, rule, drawn, room):
+    """World sky faces a map's zones file asks to have drawn as walls: ([(face, offset)],
+    {id(face): (material, texdata index)}).
+
+    [b]A sky face is a wall in the engine these maps were built for, and it was a window
+    here.[/b] `tools/toolsskybox` draws the sky, and nothing behind it: the world on the
+    far side is never drawn through one. Skipped, which is right for a map whose sky faces
+    are its ceiling and its horizon, it is a hole -- and surf_kitsune builds the end wall of
+    every one of its nine sections from them, so from each stage start a player saw the
+    whole of the rest of the map hanging in the sky (Christian's 2026-10-08 footage). The
+    sky itself cannot be drawn on it (its textures are another game's), so the face takes a
+    material the map does carry: `{"nearest": "grids/"}` is, per face, the material of the
+    nearest drawn face whose name starts with that, which on a map built in coloured
+    sections is the section's own. Opt-in per map, because on most maps a sky face is open
+    sky and a wall there would close it. Faces inside the 3D skybox's room are left alone:
+    that room is the backdrop, not the play space.
+    """
+    if not rule:
+        return [], {}
+    prefix = str(rule.get("nearest", "")).strip().lower()
+    if not prefix:
+        raise ValueError("sky_walls needs `nearest`, the material prefix to draw them in")
+
+    def centre(f, off):
+        pts = bsp.face_points(f)
+        return [sum(p[a] for p in pts) / len(pts) + off[a] for a in range(3)]
+
+    candidates = []
+    for f, off in drawn:
+        name = clean_material(bsp.face_material(f)[0])
+        if name.startswith(prefix) and len(off) == 3:
+            candidates.append((centre(f, off), name, int(bsp.texinfo[f[5]][17])))
+    if not candidates:
+        raise ValueError("sky_walls: no drawn face's material starts with %r" % prefix)
+    walls, material_of = [], {}
+    for f in bsp.model_faces(0):
+        flags = bsp.face_material(f)[1]
+        if not flags & (SURF_SKY | SURF_SKY2D) or f[6] >= 0:
+            continue
+        pts = bsp.face_points(f)
+        if len(pts) < 3 or (room is not None and all(in_box(p, room) for p in pts)):
+            continue
+        c = centre(f, (0.0, 0.0, 0.0))
+        _, name, td = min(candidates,
+                          key=lambda k: sum((k[0][a] - c[a]) ** 2 for a in range(3)))
+        walls.append((f, (0.0, 0.0, 0.0)))
+        material_of[id(f)] = (name, td)
+    return walls, material_of
 
 
 def drawn_faces(bsp):
@@ -2745,8 +2801,14 @@ def main(argv=None):
     sky = skybox_of(bsp)
     sky_off = sky is not None and doc.get("skybox", True) is False
     sky_faces = 0
+    walls, wall_material = sky_walls(bsp, doc.get("sky_walls"), drawn,
+                                     None if sky is None else sky[2])
 
     notes = []
+    if walls:
+        notes.append("%d sky faces drawn as walls (sky_walls: %s)" % (
+            len(walls), ", ".join("%s x%d" % kv for kv in sorted(
+                collections.Counter(m for m, _td in wall_material.values()).items()))))
     pak = read_pak(bsp, notes)
 
     # Static props, and one light probe per prop drawn -- they have to be known before
@@ -2826,7 +2888,7 @@ def main(argv=None):
 
     cos_limit = math.cos(math.radians(a.max_slope))
     surfaces, mesh_blob = build_mesh(bsp, place, lm_w, lm_h, textured, cos_limit,
-                                     a.prototype, drawn, blends)
+                                     a.prototype, drawn + walls, blends, wall_material)
     prop_groups = build_props(props_drawn, prop_mats, block_of, place, lm_w, lm_h)
     prop_tint = prop_colours(bsp, [m for m in prop_groups if m not in textured])
     prop_surfaces, prop_blob = emit_prop_surfaces(prop_groups, textured, len(mesh_blob), prop_tint)

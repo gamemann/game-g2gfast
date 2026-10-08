@@ -10,6 +10,8 @@
  },
  "skybox": false,
  "skybox_why": "The 3D skybox (261 faces, 709 triangles, nearly all tools/toolsblack, sky camera at -8192 -4096 0) drawn 16x about its camera is a black cage around the whole map with the sky showing through the gaps, and the reference frame of the map in its own engine (inspirations/g2gfast/extracted/kitsune_ingame_spawn.png) shows open pale sky behind the silhouettes. Rendered both ways on 2026-09-27; off until somebody has a reference that shows it.",
+ "conditional_teleports": {"filters": ["TealF"], "note": "the two Kitsecret windows either side of the way out of teal. Their filter passes only a player named X4: teal's start names you X42 and a trigger past the windows, in front of the door to blue, renames you X4 -- so on the way through the windows do nothing, and only somebody who reaches the door and turns back is taken to the secret room. This game does not run the map's outputs, so imported unconditionally they took every player who flew high off teal's last ramp, and the secret room's own teleport sends you to spawn: a restart mid-run (Christian's 2026-10-08 footage, twice). Dropped, so the secret room is not reachable here"},
+ "sky_walls": {"nearest": "grids/", "note": "130 world faces are tools/toolsskybox, and they are the end walls of every section: the wall behind each stage start and the wall around each exit door. Under the map's black sky they read as a black wall; not drawn, they were a window onto every other section (2026-10-08 footage). Each is drawn in the grid of the nearest grid face, which is its own section's colour"},
  "zones": [
   {
    "kind": "START",
