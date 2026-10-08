@@ -228,6 +228,7 @@ func set_style(movement: DotFpsStyle, ranking: DotTimerStyle) -> DotResult:
 ## the next, and it is PART of the route. `G2GGame._on_effect_requested` is the only
 ## caller that passes true.
 func teleport(to: Vector3, yaw: float = INF, keep_run: bool = false) -> void:
+	_teleported = true
 	controller.state.position = to
 	controller.state.velocity = Vector3.ZERO
 
@@ -470,3 +471,24 @@ func describe() -> Dictionary:
 		"blinded": blinded,
 		"beacon": beacon,
 	}
+
+
+## Set by [method teleport], read once by [method replay_flags].
+var _teleported: bool = false
+
+
+## This tick's dot-timer replay flags: ducked, jumped and teleported. A replay declared all
+## three from the start and nothing wrote them, so a ghost never crouched or jumped and was
+## smeared across every teleport. Read once a tick, by whatever feeds the timer.
+func replay_flags() -> int:
+	var flags := 0
+	if controller != null and controller.state != null:
+		var state := controller.state
+		if state.crouch_fraction > 0.5:
+			flags |= DotTimerReplay.FLAG_DUCKED
+		if state.time_since_jump < 1.5 / float(maxi(controller.tick_rate, 1)):
+			flags |= DotTimerReplay.FLAG_JUMPED
+	if _teleported:
+		flags |= DotTimerReplay.FLAG_TELEPORT
+		_teleported = false
+	return flags

@@ -981,7 +981,8 @@ func _feed_timers() -> void:
 		player.fill_sample(sample)
 		timers.tick_player(
 			id, sample.position, sample.velocity, sample.grounded, sample.alive,
-			player.controller.state.yaw, player.controller.state.pitch, sample.buttons
+			player.controller.state.yaw, player.controller.state.pitch, sample.buttons,
+			player.replay_flags()
 		)
 
 
