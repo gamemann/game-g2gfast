@@ -682,8 +682,20 @@ def build_mesh(bsp, lm_place, lm_w, lm_h, textured, cos_limit, prototype, drawn=
                 continue
             ring = [emit(key, at(p), n, uv_of(p), uv2_of(p)) for p in pts]
             for k in range(1, len(ring) - 1):
-                # Source winds its faces the other way round from Godot's front face.
-                idx.extend((ring[0], ring[k + 1], ring[k]))
+                # [b]In the order vbsp stored them, which is already Godot's front face.[/b]
+                # Both engines draw a clockwise-from-the-viewer triangle, and `to_godot`
+                # is a rotation (determinant +1), so nothing between them flips a
+                # winding. This line used to reverse the ring "because Source winds the
+                # other way", and every brush face of every imported map was drawn
+                # inside out for as long as that stood: culled from the side a player is
+                # on, and drawn from behind. Most surfaces hid it -- what a player saw of
+                # a floor was the slab's own underside, and of a wall its far face -- and
+                # a surf ramp could not, because its underside is nodraw: from on top of
+                # it there was nothing behind the face, and the ramp a player was riding
+                # was clear (surf_mesa's first ramp, in Christian's 2026-10-07 footage).
+                # `headless_imported`'s "a brush face is drawn from the side its normal
+                # points to" fails if this is ever reversed again.
+                idx.extend((ring[0], ring[k], ring[k + 1]))
 
     surfaces, blob = [], bytearray()
     for key in sorted(groups):
@@ -941,6 +953,99 @@ def prop_hulls(pak, drawn):
     return out
 
 
+MERGE_EPSILON = 0.05
+
+
+def merge_convex_brushes(bsp, brushes):
+    """The world's brushes as convex solids, with every seam that need not exist removed.
+
+    [b]A seam between two brushes is an edge a sliding hull can catch, even when the two
+    faces either side of it are one plane.[/b] Every brush is its own convex shape in
+    the collider, and a hull crossing from one to the next meets the leading edge of
+    the second: on Surf_Mesa's first ramp, which the mapper built as segments 500 units
+    long, the real motor gets kicked off the face at 36 u/s at the seam and rises 1.5
+    units before gravity brings it back -- a bump on a flat ramp, every half second, and
+    "the ramps are a bit bumpy" (Christian's 2026-10-07 footage). Source's own trace
+    walks one BSP tree and never sees the seam at all.
+
+    So two brushes that touch on a plane -- one's side is the other's, facing the other
+    way -- are merged when their union is convex, which is exactly when each one's
+    corners are behind every OTHER side of the other. That is the merge test the
+    classic brush compilers use, and it is exact: the merged solid is the same volume,
+    so nothing a player can stand on or hit moves; only the edge between them goes.
+    Repeated until nothing merges, so a ramp of twenty segments becomes one wedge.
+
+    Bevel sides are left out of the test (vbsp adds them for its own tracing, and they
+    can exclude a neighbour that the brush's real sides do not), and only brushes of
+    the same contents merge, so a playerclip never swallows the solid beside it.
+    Returns [(points, offset, contents)] in the shape `build_collision` keeps.
+    """
+    def key(n, d):
+        return (round(n[0], 3), round(n[1], 3), round(n[2], 3), round(d, 1))
+
+    items = []
+    for i in brushes:
+        first, count, contents = bsp.brushes[i]
+        planes = []
+        for side in bsp.brushsides[first:first + count]:
+            if side[3]:
+                continue
+            pl = bsp.planes[side[0]]
+            planes.append(((pl[0], pl[1], pl[2]), pl[3]))
+        items.append({"pts": [tuple(p) for p in bsp.brush_hull(i)], "planes": planes,
+                      "contents": contents, "alive": True})
+
+    def behind(pts, planes, skip):
+        for n, d in planes:
+            if key(n, d) == skip:
+                continue
+            for p in pts:
+                if n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - d > MERGE_EPSILON:
+                    return False
+        return True
+
+    by_plane = collections.defaultdict(list)
+    for k, it in enumerate(items):
+        it["keys"] = {key(n, d) for n, d in it["planes"]}
+        for q in it["keys"]:
+            by_plane[q].append(k)
+    # A worklist rather than a restart after every merge: a brush that grew is asked
+    # again, with the sides it gained, until nothing beside it will join it.
+    pending = collections.deque(range(len(items)))
+    while pending:
+        a = pending.popleft()
+        it = items[a]
+        grew = it["alive"]
+        while grew:
+            grew = False
+            for n, d in list(it["planes"]):
+                mine = key(n, d)
+                theirs = key((-n[0], -n[1], -n[2]), -d)
+                for b in by_plane.get(theirs, ()):
+                    other = items[b]
+                    if b == a or not other["alive"] or other["contents"] != it["contents"] \
+                            or theirs not in other["keys"]:
+                        continue
+                    if not (behind(other["pts"], it["planes"], mine)
+                            and behind(it["pts"], other["planes"], theirs)):
+                        continue
+                    it["planes"] = [q for q in it["planes"] if key(*q) != mine] + \
+                        [q for q in other["planes"] if key(*q) != theirs]
+                    it["keys"] = {key(*q) for q in it["planes"]}
+                    for q in it["keys"]:
+                        by_plane[q].append(a)
+                    # Keep the corners; the faces they shared are inside now and a convex
+                    # shape built from these points is the merged hull regardless.
+                    it["pts"] = list({(round(p[0], 3), round(p[1], 3), round(p[2], 3))
+                                      for p in it["pts"] + other["pts"]})
+                    other["alive"] = False
+                    grew = True
+                    break
+                if grew:
+                    break
+    return [(it["pts"], (0.0, 0.0, 0.0), it["contents"]) for it in items if it["alive"]]
+
+
 def build_collision(bsp, notes, props=()):
     """Every solid in the map as convex hulls, plus the displacements as triangles.
 
@@ -982,6 +1087,13 @@ def build_collision(bsp, notes, props=()):
             hulls.append((pts, offset, contents))
 
     add_model(0, (0.0, 0.0, 0.0), "world")
+    world_brushes = sorted(i for i in bsp.model_brushes(0)
+                           if bsp.brushes[i][2] & MASK_PLAYERSOLID and len(bsp.brush_hull(i)) >= 4)
+    merged_from = len(hulls)
+    hulls = merge_convex_brushes(bsp, world_brushes)
+    if len(hulls) < merged_from:
+        notes.append("%d world brushes merged into %d convex solids along shared faces"
+                     % (merged_from, len(hulls)))
 
     skipped = collections.Counter()
     for e in bsp.entities:
@@ -2101,6 +2213,114 @@ def pit_tracks(z, e):
     return tracks or [0]
 
 
+HULL_SLAB = 256.0
+HULL_SLAB_RISE = 48.0
+HULL_SLAB_MIN = 48.0
+HULL_SLABS_MAX = 64
+
+
+def hull_boxes(bsp, brush, origin, box):
+    """A teleport brush as boxes that are all inside it, rather than one box around it.
+
+    [b]The box around a wedge is not the wedge, and a box is all a zone can be.[/b] A
+    mapper's pit under a ramp is routinely a brush whose top follows the slope, and its
+    bounding box reaches up over the ramp the slope runs beneath. Surf_Mesa's
+    `trigger_teleport` under its last descent is 2,816 by 9,192 units with a roof that
+    climbs 3,776 units along it: its box held 158 ramp triangles, and riding them sent
+    a player back to the start in the middle of the run (Christian's 2026-10-07 footage,
+    0:40 on the timer). [method trim_to_hull] only ever cut the box back off an
+    ARRIVAL, so it had lowered this one's top to the door and left everything above the
+    slope where it was.
+
+    A brush that IS its box -- every corner on the box -- is returned as it is, which
+    is nearly all of them. Anything else is cut into slabs along its longer horizontal
+    axis, and each slab is given the vertical extent that is inside the brush at all
+    four of its corner columns, solved from the brush's own planes. A convex brush holds
+    a box exactly when it holds the box's eight corners, so such a slab is inside the
+    mapper's trigger: a player is never teleported from somewhere the map would not, and
+    the stair-steps under a slope are at most one slab's rise, which a falling player
+    crosses into the slab below.
+
+    [b]A thin sloped sheet has no box inside it at all.[/b] The one under Surf_Mesa's
+    island descent is 24 units thick and climbs 4,240, so across any slab wider than a
+    few dozen units its top end is above its bottom end's roof. There the slab BOUNDS
+    the brush instead -- the lowest floor to the highest roof of its four columns -- and
+    the slabs are made narrow enough (`HULL_SLAB_RISE` of climb each) that what it
+    over-reaches by is a few dozen units, not the 4,264 of the whole box.
+    """
+    lo, hi = box
+    pts = [[p[a] + origin[a] for a in range(3)] for p in bsp.brush_hull(brush)]
+    if all(min(abs(p[a] - lo[a]), abs(p[a] - hi[a])) < 0.5 for p in pts for a in range(3)):
+        return [box]
+    first, count, _ = bsp.brushes[brush]
+    planes = []
+    for side in bsp.brushsides[first:first + count]:
+        pl = bsp.planes[side[0]]
+        # Shifted by the entity's origin, so the box is solved where it is drawn.
+        planes.append((pl[0], pl[1], pl[2],
+                       pl[3] + pl[0] * origin[0] + pl[1] * origin[1] + pl[2] * origin[2]))
+
+    def column(x, y):
+        """The z interval of the brush on one vertical line, or None if it misses."""
+        zlo, zhi = -1e9, 1e9
+        for nx, ny, nz, d in planes:
+            rest = d - nx * x - ny * y
+            if abs(nz) < 1e-6:
+                if rest < -0.1:
+                    return None
+            elif nz > 0:
+                zhi = min(zhi, rest / nz)
+            else:
+                zlo = max(zlo, rest / nz)
+        return (zlo, zhi) if zlo < zhi else None
+
+    def slabs(axis):
+        """Cut along one horizontal axis; also returns how far the cut over-reaches."""
+        other = 1 - axis
+        n = max(1, min(HULL_SLABS_MAX, int(math.ceil(max((hi[axis] - lo[axis]) / HULL_SLAB,
+                                                         (hi[2] - lo[2]) / HULL_SLAB_RISE)))))
+        # Never so thin along the cut that a fast player crosses one between two ticks
+        # (3500 u/s at 128 Hz is 27 units; `headless_imported` asks every zone that).
+        n = max(1, min(n, int((hi[axis] - lo[axis]) // HULL_SLAB_MIN)))
+        step = (hi[axis] - lo[axis]) / n
+        out, over = [], 0.0
+        for i in range(n):
+            s0, s1 = lo[axis] + step * i, lo[axis] + step * (i + 1)
+            o0, o1 = lo[other] + 1.0, hi[other] - 1.0
+            cols = []
+            for s in (s0, s1):
+                for o in (o0, o1):
+                    xy = [0.0, 0.0]
+                    xy[axis], xy[other] = s, o
+                    cols.append(column(xy[0], xy[1]))
+            if any(c is None for c in cols):
+                continue
+            zb = max(c[0] for c in cols)
+            zt = min(c[1] for c in cols)
+            if zt - zb < 1.0:
+                zb = max(lo[2], min(c[0] for c in cols))
+                zt = min(hi[2], max(c[1] for c in cols))
+                over += (zt - zb) * step
+            a, b = [0.0, 0.0, zb], [0.0, 0.0, zt]
+            a[axis], b[axis] = s0, s1
+            a[other], b[other] = o0, o1
+            out.append((a, b))
+        return out, over
+
+    # Along whichever axis the brush climbs: a wedge cut across its slope is a row of
+    # slabs each holding the whole climb, which bounds it no better than its box did.
+    # The cut that over-reaches less wins, the longer axis on a tie.
+    first_axis = 0 if hi[0] - lo[0] >= hi[1] - lo[1] else 1
+    out, over = slabs(first_axis)
+    alt, alt_over = slabs(1 - first_axis)
+    if alt_over < over - 1e-6 or (not out and alt):
+        out = alt
+    # A brush no slab fits inside (a sliver, a spike) keeps its box: a pit that catches
+    # a little too much is a run lost, and one that catches nothing is a player falling
+    # forever, which no run survives.
+    return out or [box]
+
+
 def trim_to_hull(zone, arrivals, bsp, brush, origin):
     """Cut a pit's box back off an arrival that is inside the box but not the brush.
 
@@ -2231,9 +2451,39 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
                 continue
             boxes = [(None, None, box)]
         z.claimed.add(i)
+        pieces = []
+        for brush, origin, box in boxes:
+            cut = hull_boxes(bsp, brush, origin, box) if brush is not None else [box]
+            for piece in cut:
+                pieces.append((brush, origin, piece, box if len(cut) > 1 else None))
         for track in pit_tracks(z, e):
-            for brush, origin, box in boxes:
+            for brush, origin, box, full in pieces:
+                sliced = full is not None
                 zone = z.add("RESPAWN", track, box=box)
+                if sliced:
+                    # A slab of a sloped brush has the route right above it by
+                    # construction, and its neighbours on either side by construction
+                    # too: `inflate_pit` growing it sideways reaches over the next
+                    # slab's slope, and growing it up reaches the ride. So it is not
+                    # grown sideways at all -- the slabs tile the brush, and a pit needs
+                    # depth, not width -- and every unit of depth it needs goes down.
+                    lo, hi = list(box[0]), list(box[1])
+                    zone["inflated"] = False
+                    for a in (0, 1):
+                        # Across the cut a slab spans the whole brush, so growing it
+                        # there reaches over nothing a neighbour has; along the cut it
+                        # would. A brush narrower than a pit may be still gets its
+                        # width, centred, as it did before it was cut.
+                        whole = abs(lo[a] - full[0][a]) < 1.5 and abs(hi[a] - full[1][a]) < 1.5
+                        if whole and hi[a] - lo[a] < z.min_thickness:
+                            grow = (z.min_thickness - (hi[a] - lo[a])) / 2.0
+                            lo[a], hi[a] = lo[a] - grow, hi[a] + grow
+                            zone["inflated"] = True
+                    if hi[2] - lo[2] < z.min_thickness:
+                        lo[2] = hi[2] - z.min_thickness
+                        zone["hung"] = True
+                        zone["inflated"] = True
+                    zone["min"], zone["max"] = lo, hi
                 clear_arrivals(zone, arrivals)
                 if brush is not None:
                     trim_to_hull(zone, arrivals, bsp, brush, origin)

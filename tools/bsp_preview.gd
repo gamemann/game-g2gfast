@@ -71,6 +71,21 @@ func _ready() -> void:
 				m.set_shader_parameter("ambient", 0.0)
 				m.set_shader_parameter("light_boost", 1.0)
 
+	# PREVIEW_MARK=<substring> draws every surface whose material names it in flat
+	# magenta, double-sided. A face that is missing in a frame is either not drawn or
+	# drawn and then covered, and this is what tells the two apart.
+	var mark := OS.get_environment("PREVIEW_MARK")
+	if mark != "":
+		var flat := StandardMaterial3D.new()
+		flat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		flat.albedo_color = Color.MAGENTA
+		if OS.get_environment("PREVIEW_MARK_CULL") == "":
+			flat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		for mi: MeshInstance3D in _meshes(map):
+			for i in range(mi.mesh.get_surface_count()):
+				if mi.mesh.surface_get_name(i).contains(mark):
+					mi.set_surface_override_material(i, flat)
+
 	var aabb := _world_aabb(map)
 	print("[preview] %s aabb pos=%s size=%s m" % [id, aabb.position, aabb.size])
 
@@ -126,8 +141,19 @@ func _ready() -> void:
 		pitch = float(OS.get_environment("PREVIEW_PITCH"))
 	if from_spawn and map is G2GMap:
 		eye = (map as G2GMap).spawn_for(0) + Vector3(0.0, 1.2, 0.0)
+	# PREVIEW_EYE="x,y,z" (metres, Godot axes) stands somewhere other than the spawn --
+	# ON a ramp, say, because a face that draws from across the canyon and vanishes when
+	# a player is riding it is invisible from every spawn frame. PREVIEW_YAW turns the
+	# first shot (radians, 0 looks down -Z).
+	var eye_env := OS.get_environment("PREVIEW_EYE").split(",")
+	var yaw0 := 0.6
+	if eye_env.size() == 3 and from_spawn:
+		eye = Vector3(float(eye_env[0]), float(eye_env[1]), float(eye_env[2]))
+		yaw0 = 0.0
+	if OS.get_environment("PREVIEW_YAW").is_valid_float():
+		yaw0 = float(OS.get_environment("PREVIEW_YAW"))
 	for i in range(shots):
-		var a := TAU * float(i) / float(shots) + 0.6
+		var a := TAU * float(i) / float(shots) + yaw0
 		if from_spawn:
 			cam.global_position = eye
 			cam.rotation = Vector3(pitch, a, 0.0)

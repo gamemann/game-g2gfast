@@ -443,6 +443,10 @@ func _build_vote() -> DotResult:
 		vote = null
 		return ready
 
+	# An empty server hibernates (dot-server, 2026-10-07): the map clock waits instead of
+	# running out with nobody on, and restarts from the top on the first join.
+	vote.director.follow_hibernation(server)
+
 	# The cues and the countdown, to every ready client. Chat carries what the ballot
 	# says; a sound and a number a HUD counts are what it cannot carry.
 	vote.cue_due.connect(

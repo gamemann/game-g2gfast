@@ -4,13 +4,14 @@
  "tier": 1,
  "author": "Kiiru",
  "attribution": {"author": "Kiiru", "source": "https://gamebanana.com/mods/137722 (confirmed: Page: submitter Kiiru, 'Creator: Kiiru - Mapper', bonuses by S a g a n, Koga73, Spy Complex, NM-Frag. No local archive; the page's surf_beginner2.zip (16135499 bytes) contains a BSP SHA1-identical to ours (5e8a609a...). In-map: 35 textures under materials/kiiru/, incl. beginner2_spawn_kiiru.vtf reading 'KIIRU' and beginner2_twitch.vtf 'TWITCH.TV/KHERUBAE'. Also the YouTube title 'surf_beginner2 by kiiru' (REFERENCE.md) and SurfHeaven author 'Kiiru'.)", "archive": null, "recorded": "2026-09-27"},
- "notes": "Seven stages and four bonuses, all of which the map labels itself as startzone_s1..s7 and start/endzone_koga|sagan|spy|frag. The only thing missing is the main track's finish, because the map does not end in a zone: the end of stage 7 is a trigger_teleport into 'heaven', the reward room beside the spawn. That teleport is the finish line.",
+ "doorways": {"max_horizontal": 256},
+ "notes": "Seven stages and four bonuses, all of which the map labels itself as startzone_s1..s7 and start/endzone_koga|sagan|spy|frag. The only thing missing is the main track's finish, because the map does not end in a zone: the end of stage 7 is a trigger_teleport into 'heaven', the reward room beside the spawn. That teleport is the finish line. Every stage ENDS in a door, too: a 16x224x240 trigger_teleport (the glass panel in a wooden frame) aimed at the next stage's failman_s<n>, the same destination that stage's pits use. Taken as pits, each door sent a player back to the start of the stage they had just finished, for ever (Christian's 2026-10-07 footage: Stage 0/7 for two and a half minutes).  `doorways` at 256 makes exactly the door-sized ones TELEPORT: the seven stage exits, the four bonus entrances in the spawn room and the three bonus exits back to it. The narrowest pit is 320 by 128 (failman_s4) and 224 by 384 (failman_s3), so 512, surf_kitsune's figure, would take four pits for doors.",
  "zones": [
   {
    "kind": "END",
    "track": 0,
    "teleport_to": "failman_entrance_to_heaven",
-   "note": "the one thing in the map that sends a player to heaven, and the only non-fail teleport on the main route"
+   "note": "the one thing in the map that sends a player to heaven; the other door-sized teleports on the main route are stage exits (see doorways)"
   }
  ]
 }

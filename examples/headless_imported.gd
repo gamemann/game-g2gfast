@@ -132,7 +132,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 41
+const CHECKS_PER_MAP := 42
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -296,6 +296,47 @@ func _test_geometry() -> void:
 	var listed: int = (node as G2GBspMap).manifest.get("surfaces", []).size()
 	_check(drawn == listed, "and every surface the manifest lists is drawn",
 		"%d of %d" % [drawn, listed])
+
+	# [b]A floor is drawn from above (2026-10-07).[/b] Every brush face was wound inside
+	# out until then: culled from the side a player stands on and drawn from behind, so a
+	# floor showed its slab's underside and a surf ramp with a nodraw underside showed
+	# nothing at all -- surf_mesa's first ramp was clear from on top of it. Every check
+	# here passed throughout, because a culled triangle is still a triangle in the mesh.
+	# So the winding is asked directly: on every surface whose faces point up (PLATFORM),
+	# most triangles must be front-facing from above. Godot's front face is clockwise from
+	# the viewer, which is a right-hand cross product pointing AWAY from them -- down.
+	var upside_down := PackedStringArray()
+	var world_surfaces: Array[Dictionary] = []
+	for s: Dictionary in (node as G2GBspMap).manifest.get("surfaces", []):
+		if G2GBspMap._family(s) == "World" and int(s.get("index_count", 0)) > 0 \
+				and int(s.get("vertex_count", 0)) > 0:
+			world_surfaces.append(s)
+	var at := 0
+	for child in node.get_children():
+		if not (child is MeshInstance3D and String(child.name).begins_with("World")):
+			continue
+		var m := (child as MeshInstance3D).mesh
+		for i in range(m.get_surface_count()):
+			var s: Dictionary = world_surfaces[at] if at < world_surfaces.size() else {}
+			at += 1
+			if str(s.get("role", "")) != "PLATFORM":
+				continue
+			var arrays := m.surface_get_arrays(i)
+			var pos: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var up := 0
+			var down := 0
+			for t in range(0, idx.size() - 2, 3):
+				var a := pos[idx[t]]
+				var y := (pos[idx[t + 1]] - a).cross(pos[idx[t + 2]] - a).y
+				if y < -1e-6:
+					up += 1
+				elif y > 1e-6:
+					down += 1
+			if down > up:
+				upside_down.append("%s (%d of %d)" % [s.get("material", "?"), down, up + down])
+	_check(upside_down.is_empty(), "and a floor is drawn from the side a player stands on",
+		", ".join(upside_down))
 
 	# [b]Static props are drawn (2026-09-27).[/b] 17 of the 26 maps place them and every
 	# one was absent: surf_aquaflow's whole reef, surf_greensway's forest, surf_summit's
