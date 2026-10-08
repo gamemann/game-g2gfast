@@ -119,6 +119,8 @@ tools/              export_zones.gd — run after changing a map
                     replay_follow.gd, follow_replay.tscn -- drive the real movement
                     along a recorded run (maps/routes/<id>.replay) and say where it
                     leaves the line; headless_imported asserts it
+                    ramp_bump_probe.gd/.tscn — ride ramps with the real motor and
+                    count the ticks a camera would see jump, by cause
                     collision_probe.gd/.tscn — drop the player's hull on every
                     standable triangle in an imported map and count what it goes
                     through. `--trimesh` builds the old collider for comparison
@@ -1862,6 +1864,10 @@ Three faults in Christian's surf_mesa and surf_beginner2 footage (`/extra/extern
 - **surf_mesa has no water at its start.** Its only water is the secret island at the bottom of the map; there was nothing to remove. surf_beginner2's stage doors (each stage ends in a door-sized teleport that imported as a pit) are a `doorways` rule in its zones file, from the surf-beginner2 session.
 
 `headless_imported` 1948 / 0 over 42 maps on the final imports; `headless_net`, `dedicated`, `headless_run` pass.
+
+## The ramps were still jumpy, and it was one engine answer (2026-10-08, `[g2gfast-surf-mesa-1]`)
+
+Christian's surf_mesa footage from a local Windows build (`/extra/external/video/26-10-08/`) has no dropped or repeated frames, so it was not the render-jitter class: it is single frames where the view jumps off the ramp and snaps back, about eight frames apart on a curved ramp. `tools/ramp_bump_probe.tscn -- <map> [rides] [entry u/s] [strafe 0|1]` rides ramp triangles with the real motor and counts ticks whose position step leaves its smooth line by more than a unit, by what corrected the hull that tick (`TRACE_RIDE=n` prints one ride). On surf_mesa 9.5% of ramp ticks did, a third of them by 17 to 20 units, which is `step_height`, the clamp on `DotFpsMotor._depenetrate`. Traced: a rider resting on the face read clear, then 57 units deep along the face's exact reverse with nothing moved between, was pushed a step into the ramp and back out the next tick. Godot's `get_rest_info` reverses a resting normal; it happens on a plain box too. Fixed in dot-player-controller (its CLAUDE.md, `[ramp-pop-1]`): bumps 9.5% -> 2.6% strafing and 8.4% -> 4.7% not, steps over 17 units 3,200 -> 10. The rest are 1 to 6 units with no correction behind them, most likely the ramp's own facets turning the velocity; not investigated. **bhop_grove's recording was re-recorded on the fixed motor** (133.81 s, against 133.82): the route bot had been shoved into a side wall four times by reversed wall normals, and with those gone `headless_imported`'s follower left the old line at 39%; the standalone `follow_replay` finished it either way, so the follow is marginal and the recording is the motor's. Re-recording found that `RIDE_SAVE_REPLAY` had saved nothing since dot-timer's records change, which drops `last_replay` the moment no store will keep the run; `stage_ride` takes it on `player_finished` now. Same motor on the server and in a client's prediction, so a server is affected the same way and fixed the same way; the shell carries dot-player-controller, so a browser or desktop client needs a shell rebuild to get it.
 
 ## What a full server costs (2026-10-07)
 

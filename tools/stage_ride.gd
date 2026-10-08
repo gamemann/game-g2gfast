@@ -153,6 +153,15 @@ func _run() -> void:
 					str(G2GUnits.vector_to_units(bot.global_position).round()),
 					str(G2GUnits.vector_to_units(zone.destination).round())])
 	game.timers.effect_requested.connect(on_effect)
+	# Taken on the finish rather than read after it: the manager drops `last_replay` once
+	# it learns nothing will keep the run, and with no store (this tool has none) that is
+	# straight after `player_finished`. Read afterwards, RIDE_SAVE_REPLAY saved nothing.
+	var finished_replay: Array[DotTimerReplay] = [null]
+	var on_finished := func(pid: StringName, _run) -> void:
+		var p := game.timers.player(pid)
+		if pid == &"bot" and p != null and p.last_replay != null:
+			finished_replay[0] = p.last_replay
+	game.timers.player_finished.connect(on_finished)
 
 	var start := bot.global_position
 	var limit := bot.controller.tunables.max_slope_angle
@@ -233,14 +242,14 @@ func _run() -> void:
 			break
 
 	game.timers.effect_requested.disconnect(on_effect)
+	game.timers.player_finished.disconnect(on_finished)
 	# `RIDE_SAVE_REPLAY=maps/routes/<id>.replay` keeps the finished run's dot-timer replay:
 	# what `tools/follow_replay.tscn` and `headless_imported`'s *follows a recorded run*
 	# drive the real movement along. A person's own record is the better line to keep
 	# (G2GReplays writes it beside the records); this is the one a bot can make.
 	var save_to := OS.get_environment("RIDE_SAVE_REPLAY")
 	if save_to != "" and not finished.is_empty():
-		var who := game.timers.player(&"bot")
-		var replay: DotTimerReplay = who.last_replay if who != null else null
+		var replay: DotTimerReplay = finished_replay[0]
 		if replay == null:
 			print("[ride] no replay to save: the timer kept none")
 		else:

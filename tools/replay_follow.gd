@@ -111,6 +111,24 @@ func teleported(at: Vector3) -> void:
 
 ## This tick's command. Off the line too long, it returns an empty command and
 ## [member left_at] says where.
+## When a pit catches the bot while it is already off the line, that is where it left it:
+## sets [member left_at] and says so. A bot ON the line that falls into a pit is a fault in
+## the map or the drive, and stays a put-back.
+func left_while_off(at: Vector3) -> bool:
+	if not left_at.is_empty():
+		return true
+	if _off_for <= 0:
+		return false
+	var here: DotTimerReplay.Frame = replay.frames[index]
+	left_at = {
+		"frame": index,
+		"at": G2GUnits.vector_to_units(here.position).round(),
+		"was": G2GUnits.vector_to_units(at).round(),
+		"off": G2GUnits.to_units(at.distance_to(here.position)),
+	}
+	return true
+
+
 func command(state: DotFpsState, tunables: DotFpsTunables, delta: float) -> DotFpsCommand:
 	var c := DotFpsCommand.new()
 	if not left_at.is_empty():
@@ -341,7 +359,9 @@ static func drive(game: Node, bot: Node, replay: DotTimerReplay, seconds: float)
 			return
 		match zone.kind:
 			DotTimerZone.Kind.RESPAWN, DotTimerZone.Kind.SLAY:
-				if put_back.is_empty():
+				# A pit that ends an excursion already off the line is the line being
+				# left, not the map failing a bot that was on it: report the frame.
+				if put_back.is_empty() and not follow.left_while_off(follow.last_seen):
 					put_back.append(G2GUnits.vector_to_units(follow.last_seen).round())
 			DotTimerZone.Kind.TELEPORT:
 				(func() -> void: follow.teleported(bot.controller.state.position)).call_deferred()
@@ -351,6 +371,14 @@ static func drive(game: Node, bot: Node, replay: DotTimerReplay, seconds: float)
 	bot.timer.run_finished.connect(on_finish)
 	bot.timer.stop()
 	bot.teleport(follow.start_position(), follow.start_yaw())
+	# Nothing held while it settles. The controller re-applies the last command it was
+	# given, so a bot handed over from another drive (headless_imported's route section)
+	# walked off the start at 30 u/s on whatever that drive last held, and the follow
+	# began a frame late from a different state than the tool's: enough, on bhop_grove,
+	# to meet a door over a pit 6 u lower and take the pit.
+	var still := DotFpsCommand.new()
+	still.yaw = follow.start_yaw()
+	bot.controller.apply_command(still)
 	await tree.physics_frame
 
 	var delta := 1.0 / float(game.tick_rate)
