@@ -1849,3 +1849,16 @@ Three faults in Christian's surf_mesa and surf_beginner2 footage (`/extra/extern
 | 64 | 64.1 ms | 222 | 15.4 | 48.6 | 39,516 |
 
 Before dot-net's per-snapshot caches the 32 row was 25.0 ms (snapshots 17.7). **`max_players: 32` at 128 ticks is not holdable**: the game alone is 0.24 ms per player per tick, so 32 runners fill the whole budget before a byte is sent, and snapshots grow with the square of the player count (every peer is sent every player, and the per-peer bookkeeping -- dirty sets, believed and pending values, bit packing -- is GDScript per property per peer). What would move it, in order: encode each entity's state once per snapshot and share the bytes between peers whose dirty set is the same (every non-owner, for a moving player); `sv_tickrate 64` on a big server (snapshots stay 32 Hz, the game's share halves); and the motor's per-player cost in dot-player-controller.
+
+## Records, standings and the site (2026-10-08)
+
+**A database is optional and reached by path.** `G2GConfig.records_database` (`sqlite`, `postgres`, `mysql`) makes `_build_timers` hand the timer manager a `DotTimerStoreSql` before it is in the tree (so the manager's configuration keeps it instead of building the file store), and `_ready` opens it before the first map. dot-sql is loaded as `res://addons/dot_sql/core/dot_sql.gd` and never named: this game ships as a pack and parses against whatever addons the host build carries. A database that will not open is an ERROR and a session on files, not a server that will not start. `records_database_token` is refused from the environment and argv (`sensitive_keys`).
+
+**Three things that were wrong, none of which errored:**
+- **Nothing reached the site.** Both leaderboard boards were defined with `publish` off, and the reporter skips an unpublished board, so `report_to_backbone` sent nothing. `publish` now follows `report_to_backbone`.
+- **Points grew with every retry.** `_on_record_accepted` added each accepted record's whole points to a running `points` stat, so improving a map five times counted it five times. Points now come from the timer store's own total (re-scored when a record moves, weighted down the player's list) and are submitted to the `points` board in `_on_timer_filed`. The stat set keeps `completions` only.
+- **The HUD never had a record or a best to compare against.** `DotTimerHud.set_comparisons` was called nowhere, so the split beside the clock never showed. `G2GGame.standing_changed` (`{pb, wr, rank, total}`, on every spawn, style change and filing) drives the HUD's new standing line; on a client it arrives as the `STANDING` event (appended to `G2GEvents.Kind`), because a client has no store.
+
+**What a finish says** is `G2GGame.announced`: a new record to everybody (the `RECORD` event), a personal best or a miss to the finisher, and a refused run with the place it would have taken (`practice_finished`). The HUD's old "time — rank" notice is now only for a game without a store.
+
+**The commands are phrasing only.** `!pb`, `!rank`, `!players`, `!rr`, `!profile`, `!mapsdone`, `!mapsleft`, `!wrcp`, `!prinfo`, `!tier`, `!end`, `!pause`, `!unpause`, `!autorestart`, `!restore`, and the admin `g2g_settier`, `g2g_rescore`, `g2g_deleterecord`, `g2g_wipeplayer` call dot-timer's manager and store; two games' `!rank` cannot disagree about what a rank is.

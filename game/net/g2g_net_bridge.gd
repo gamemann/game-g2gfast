@@ -52,6 +52,9 @@ signal vote_received(info: Dictionary)
 ## The vote's clock changed: [member clock_view] has just adopted [param state]. Client
 ## side.
 signal clock_received(state: Dictionary)
+
+## The local player's standing, from the server: [code]{pb, wr, rank, total}[/code].
+signal standing_received(player_id: int, standing: Dictionary)
 ## This client cannot follow the server to the map it announced: refused by dot-map's
 ## trust rules, not fetchable, or not loadable. Client side. [G2GClient] leaves the server
 ## on it, because a client on a world the server is not simulating is a player being
@@ -192,6 +195,8 @@ func attach(p_game: G2GGame, p_net: DotNetManager, link_parent: Node) -> DotResu
 		game.timers.player_stopped.connect(_on_run_stopped)
 		game.timers.player_staged.connect(_on_staged)
 		game.run_filed.connect(_on_run_filed)
+		game.standing_changed.connect(_on_standing_changed)
+		game.announced.connect(_on_announced)
 		game.movement_changed.connect(_on_movement_changed)
 		game.map_ready.connect(_on_map_ready)
 
@@ -901,6 +906,20 @@ func _on_staged(id: StringName, number: int, split: float) -> void:
 	))
 
 
+func _on_standing_changed(id: StringName, standing: Dictionary) -> void:
+	var session_id := session_of(id)
+	_tell(peer_for_player(session_id), G2GEvents.Kind.STANDING, G2GEvents.write_standing(session_id, standing))
+
+
+## A record is everybody's news; anything else is the finisher's.
+func _on_announced(id: StringName, text: String, everyone: bool) -> void:
+	var session_id := session_of(id)
+	if everyone:
+		_broadcast(G2GEvents.Kind.RECORD, G2GEvents.write_text(session_id, text))
+	else:
+		_tell(peer_for_player(session_id), G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id, text))
+
+
 func _on_run_filed(id: StringName, run: DotTimerRun, rank: int, reason: String) -> void:
 	var session_id := session_of(id)
 	var player: G2GPlayer = game.players.get(id)
@@ -910,13 +929,14 @@ func _on_run_filed(id: StringName, run: DotTimerRun, rank: int, reason: String) 
 	var finish := DotTimerNet.finish_of(run, _style_index(run.style_id), rank)
 	_broadcast(G2GEvents.Kind.FINISH, G2GEvents.write_finish(session_id, finish))
 
-	if reason != "":
+	# What a finish MEANT is `G2GGame.announced` (`_on_announced`): a new record to
+	# everybody, anything else to the finisher. This used to broadcast "set a server
+	# record" whenever the rank was 1 — and the rank here is the player's standing after
+	# the finish, which is 1 for every finish by the record holder, so their slower runs
+	# were announced as records too, and a real one was announced twice.
+	if reason != "" and (game.timers == null or game.timers.store == null):
 		_tell(peer_for_player(session_id), G2GEvents.Kind.NOTICE,
 			G2GEvents.write_text(session_id, "Not recorded: %s" % reason))
-	elif rank == 1:
-		_broadcast(G2GEvents.Kind.RECORD, G2GEvents.write_text(
-			session_id, "%s set a server record: %s" % [player.display_name, run.formatted_time()]
-		))
 
 
 func _on_movement_changed(config: G2GConfig) -> void:
@@ -1274,6 +1294,10 @@ func _on_event(message: DotNetMessage) -> void:
 			var gone := G2GEvents.read_npc_gone(reader)
 			if bool(gone["ok"]):
 				_drop_hunter_mirror(int(gone["net_id"]))
+		G2GEvents.Kind.STANDING:
+			var standing := G2GEvents.read_standing(reader)
+			if bool(standing["ok"]):
+				standing_received.emit(int(standing["player_id"]), standing)
 
 
 func _apply_hello(reader: DotNetReader) -> void:

@@ -205,6 +205,18 @@ func bind(p_game: G2GGame, p_player: StringName) -> void:
 	player_id = p_player
 
 	game.run_filed.connect(_on_run_filed)
+	# Where an authoritative game is in this process (offline, a listen server), it says
+	# these itself; on a client they arrive from the server instead (G2GClient).
+	game.standing_changed.connect(
+		func(id: StringName, standing: Dictionary) -> void:
+			if id == player_id:
+				apply_standing(standing)
+	)
+	game.announced.connect(
+		func(id: StringName, text: String, everyone: bool) -> void:
+			if everyone or id == player_id:
+				notice(text)
+	)
 	game.map_ready.connect(func(map: DotMapDef) -> void: notice(now_playing_text(map)))
 	game.movement_changed.connect(
 		func(config: G2GConfig) -> void:
@@ -397,8 +409,23 @@ static func time_left_text(view: DotVoteClockView, local: String, now: float) ->
 	return local
 
 
+## The standing line: the record, the player's best and their place.
+func apply_standing(standing: Dictionary) -> void:
+	timer_hud.set_comparisons(float(standing.get("pb", 0.0)), float(standing.get("wr", 0.0)))
+	timer_hud.set_standing(int(standing.get("rank", 0)), int(standing.get("total", 0)))
+	# The stage splits come from the store's cache (`stage_splits_for` peeks, it never
+	# waits), and a standing update is what has just filled it. Without this, the first
+	# read after a map change on a database-backed server finds nothing cached and the
+	# stage line shows no gap until the next finish.
+	refresh_stage_reference()
+
+
 func _on_run_filed(id: StringName, run: DotTimerRun, rank: int, reason: String) -> void:
 	if id != player_id:
+		return
+	# A game with a store says more through `announced` (the personal best, the gap, the
+	# place a refused run would have taken); this line is for one without.
+	if game.timers != null and game.timers.store != null:
 		return
 	if reason != "":
 		notice("%s — not recorded: %s" % [run.formatted_time(), reason])

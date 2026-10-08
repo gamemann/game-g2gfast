@@ -205,6 +205,45 @@ func map_content_id(id: StringName) -> String:
 ## Where records go. Empty keeps them in memory only.
 @export var records_directory: String = "user://g2gfast/records"
 
+## A database for records instead of files: [code]sqlite[/code], or [code]postgres[/code]
+## / [code]mysql[/code] through dot-sql's HTTP gateway. Empty keeps files.
+##
+## [b]A database is what lets several servers share one leaderboard[/b], which files
+## cannot: each server would keep its own. If the database cannot be opened at boot the
+## server says so at ERROR and keeps files, rather than refusing to start — a timer
+## server with no records is still a server people can play on.
+@export var records_database: String = ""
+
+## SQLite only: the database file.
+@export var records_database_path: String = "user://g2gfast/records.db"
+
+## Postgres or MySQL: the gateway's URL, e.g. http://10.0.0.5:8780.
+@export var records_database_url: String = ""
+
+## The gateway's bearer token. [b]From the config file only[/b] — refused from the
+## environment and the command line, which every process on the box can read.
+@export var records_database_token: String = ""
+
+## Table name prefix, so several games can share one database.
+@export var records_table_prefix: String = "dot_timer_"
+
+## Seconds a cached board read is served. Another server's new record is at most this
+## old on this server's HUD; this server's own are on it at once.
+@export_range(0.0, 600.0, 1.0) var records_cache_seconds: float = 10.0
+
+## How records are scored: [code]curve[/code], [code]tiered[/code] or
+## [code]placement[/code]. See DotTimerPoints. `timer_points_formula`.
+@export var points_formula: String = "curve"
+
+## Decay down a player's list of records when totalling them. 1 = a plain sum.
+@export_range(0.5, 1.0, 0.001) var points_weighting: float = 0.975
+
+## Whether a finish must have crossed every stage line to be filed.
+@export var enforce_stages: bool = true
+
+## Seconds a dropped player's run is kept for them to come back to. 0 = off.
+@export_range(0.0, 86400.0, 10.0) var resume_seconds: float = 600.0
+
 @export var record_replays: bool = true
 
 ## Whether the server record's replay runs the map as a ghost everybody can see —
@@ -250,6 +289,12 @@ func map_content_id(id: StringName) -> String:
 
 ## Whether this instance times, ranks and decides. A client sets this false.
 @export var authoritative: bool = true
+
+
+## The database token is a secret: environment variables and argv are readable by every
+## process on the box and end up in `ps` and in pasted bug reports.
+func sensitive_keys() -> PackedStringArray:
+	return PackedStringArray(["records_database_token"])
 
 
 func env_prefix() -> String:

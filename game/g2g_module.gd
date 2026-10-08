@@ -241,6 +241,33 @@ func _module_load() -> DotResult:
 	add_command("g2g_zone_undo", _cmd_zone_undo, "Remove the last zone", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_list", _cmd_zone_list, "List the zones", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_ghost", _cmd_ghost, "What the record ghost is running", "").with_chat()
+
+	# --- Records -----------------------------------------------------------------
+	#
+	# The questions a timer server is asked all evening. The answers are dot-timer's
+	# (`DotTimerManager.profile`, `recent_records`, ...); these only phrase them.
+	add_command("pb", _cmd_pb, "Your best here, or another player's: !pb [name]", "").with_chat()
+	add_command("rank", _cmd_rank, "Your ranking and title on this server", "").with_chat()
+	add_command("players", _cmd_players, "The best-ranked players: !players [page]", "").with_chat()
+	add_command("rr", _cmd_recent, "The latest records", "").with_chat()
+	add_command("recent", _cmd_recent, "The latest records (alias)", "").with_chat()
+	add_command("profile", _cmd_profile, "Your profile, or another player's", "").with_chat()
+	add_command("p", _cmd_profile, "Your profile (alias)", "").with_chat()
+	add_command("mapsdone", _cmd_maps_done, "Maps you have finished", "").with_chat()
+	add_command("mapsleft", _cmd_maps_left, "Maps you have not finished", "").with_chat()
+	add_command("wrcp", _cmd_sections, "The record for each stage of this map", "").with_chat()
+	add_command("prinfo", _cmd_progress, "Your attempts and time on this map", "").with_chat()
+	add_command("tier", _cmd_tier, "This map's tier", "").with_chat()
+	add_command("end", _cmd_end, "To the end zone (stops the run)", "").with_chat()
+	add_command("pause", _cmd_pause, "Pause your run (standing still, on the ground)", "").with_chat()
+	add_command("unpause", _cmd_unpause, "Resume a paused run", "").with_chat()
+	add_command("resume", _cmd_unpause, "Resume a paused run (alias)", "").with_chat()
+	add_command("autorestart", _cmd_auto_restart, "Restart whenever you fall behind your best", "").with_chat()
+	add_command("restore", _cmd_restore, "Take back the run you dropped", "").with_chat()
+	add_command("g2g_settier", _cmd_set_tier, "Set this map's tier (1-10) and re-score it", DotAdminFlags.CHANGEMAP)
+	add_command("g2g_deleterecord", _cmd_delete_record, "Remove a player's time: <name> [track] [style]", DotAdminFlags.BAN)
+	add_command("g2g_wipeplayer", _cmd_wipe_player, "Remove every record of a player id", DotAdminFlags.BAN)
+	add_command("g2g_rescore", _cmd_rescore, "Re-score every board on this map", DotAdminFlags.CHANGEMAP)
 	add_command("thirdperson", _cmd_thirdperson, "Third-person view", "").with_chat()
 	add_command("firstperson", _cmd_firstperson, "First-person view", "").with_chat()
 
@@ -1074,7 +1101,7 @@ func _cmd_top(ctx: DotCmdContext) -> void:
 	var timer := game.timers.timer_for(_caller_id(ctx))
 	var track := timer.track if timer != null else DotTimerTrack.MAIN
 	var style: StringName = timer.style.id if timer != null and timer.style != null else &"normal"
-	var listed := game.timers.store.top(game.maps.current.id, track, style, 10)
+	var listed: DotResult = await game.timers.store.top(game.maps.current.id, track, style, 10)
 	if not listed.ok:
 		ctx.reply_error(listed)
 		return
@@ -1083,10 +1110,330 @@ func _cmd_top(ctx: DotCmdContext) -> void:
 		ctx.reply("Nobody has finished %s on %s yet." % [String(game.maps.current.id), String(style)])
 		return
 	var lines := PackedStringArray()
+	var rank := 1
 	for i in range(rows.size()):
 		var record: DotTimerRecord = rows[i]
-		lines.append("  %2d. %-20s %s" % [i + 1, record.player_name, record.formatted_time()])
+		# Ties share a place, as the store ranks them.
+		if i > 0 and record.time > (rows[i - 1] as DotTimerRecord).time:
+			rank = i + 1
+		lines.append("  %2d. %-20s %s%s" % [
+			rank, record.player_name, record.formatted_time(),
+			"" if i == 0 else "  +" + DotTimerRun.format_time(record.time - (rows[0] as DotTimerRecord).time),
+		])
 	ctx.reply_lines(lines)
+
+
+# --- Records -----------------------------------------------------------------
+
+## The board the caller is on: this map, their track and style.
+func _board_of(ctx: DotCmdContext) -> Dictionary:
+	var timer := game.timers.timer_for(_caller_id(ctx))
+	return {
+		"map": game.maps.current.id if game.maps.current != null else &"",
+		"track": timer.track if timer != null else DotTimerTrack.MAIN,
+		"style": timer.run.style_id if timer != null else &"normal",
+	}
+
+
+func _no_records(ctx: DotCmdContext) -> bool:
+	if game.maps.current == null or game.timers.store == null:
+		ctx.reply("No records here.")
+		return true
+	return false
+
+
+## A player on this server by part of their name, or by id. The caller when empty.
+func _find_player(ctx: DotCmdContext, text: String) -> Dictionary:
+	if text.strip_edges() == "":
+		var me := _caller(ctx)
+		return {"id": _caller_id(ctx), "name": me.display_name if me != null else String(_caller_id(ctx))}
+	var wanted := text.strip_edges().to_lower()
+	for id in game.players:
+		var p: G2GPlayer = game.players[id]
+		if p.display_name.to_lower().contains(wanted) or String(id) == text.strip_edges():
+			return {"id": id, "name": p.display_name}
+	return {"id": StringName(text.strip_edges()), "name": text.strip_edges()}
+
+
+func _cmd_pb(ctx: DotCmdContext) -> void:
+	if _no_records(ctx):
+		return
+	var who := _find_player(ctx, " ".join(Array(ctx.args)))
+	var board := _board_of(ctx)
+	var best: DotResult = await game.timers.store.best_for(board["map"], board["track"], board["style"], who["id"])
+	if not best.ok:
+		ctx.reply_error(best)
+		return
+	if best.value == null:
+		ctx.reply("%s has no time on %s (%s)." % [who["name"], String(board["map"]), DotTimerTrack.name_of(board["track"])])
+		return
+	var record: DotTimerRecord = best.value
+	var rank: DotResult = await game.timers.store.rank_of(board["map"], board["track"], board["style"], who["id"])
+	var total: DotResult = await game.timers.store.count_on(board["map"], board["track"], board["style"])
+	ctx.reply("%s: %s — rank %d / %d, %d finishes, %.1f points" % [
+		who["name"], record.formatted_time(), int(rank.value), int(total.value), record.completions, record.points,
+	])
+
+
+func _cmd_rank(ctx: DotCmdContext) -> void:
+	if game.timers.store == null:
+		ctx.reply("No records here.")
+		return
+	var who := _find_player(ctx, " ".join(Array(ctx.args)))
+	var standing: DotResult = await game.timers.store.player_rank(who["id"])
+	if not standing.ok:
+		ctx.reply_error(standing)
+		return
+	var info: Dictionary = standing.value
+	if int(info["rank"]) <= 0:
+		ctx.reply("%s is not ranked yet: finish a map to be." % who["name"])
+		return
+	var title: Dictionary = await game.timers.title_for(who["id"])
+	ctx.reply("%s: rank %d / %d with %.1f points%s" % [
+		who["name"], int(info["rank"]), int(info["total"]), float(info["points"]),
+		(" — " + str(title["title"])) if title.has("title") else "",
+	])
+
+
+func _cmd_players(ctx: DotCmdContext) -> void:
+	var page := maxi(ctx.args[0].to_int(), 1) if not ctx.args.is_empty() and ctx.args[0].is_valid_int() else 1
+	var listed: DotResult = await game.timers.top_players(10, (page - 1) * 10)
+	if not listed.ok:
+		ctx.reply_error(listed)
+		return
+	var rows: Array = listed.value
+	if rows.is_empty():
+		ctx.reply("Nobody is ranked yet." if page == 1 else "No page %d." % page)
+		return
+	var lines := PackedStringArray()
+	for row in rows:
+		lines.append("  %3d. %-20s %8.1f  %s" % [int(row["rank"]), str(row["name"]), float(row["points"]), str((row["title"] as Dictionary).get("title", ""))])
+	ctx.reply_lines(lines)
+
+
+func _cmd_recent(ctx: DotCmdContext) -> void:
+	var listed: DotResult = await game.timers.recent_records(10)
+	if not listed.ok:
+		ctx.reply_error(listed)
+		return
+	var rows: Array = listed.value
+	if rows.is_empty():
+		ctx.reply("No records yet.")
+		return
+	var lines := PackedStringArray()
+	for entry in rows:
+		var r: DotTimerRecord = entry["record"]
+		var before := float(entry["previous_record_time"])
+		lines.append("  %-18s %-20s %s%s  %s" % [
+			String(r.map_id), r.player_name, r.formatted_time(),
+			("  (-%s)" % DotTimerRun.format_time(before - r.time)) if before > 0.0 and before > r.time else "",
+			"%s%s" % [DotTimerTrack.short_name_of(r.track), "" if r.style_id == &"normal" else " " + String(r.style_id)],
+		])
+	ctx.reply_lines(lines)
+
+
+func _cmd_profile(ctx: DotCmdContext) -> void:
+	var who := _find_player(ctx, " ".join(Array(ctx.args)))
+	var profile: DotResult = await game.timers.profile(who["id"])
+	if not profile.ok:
+		ctx.reply_error(profile)
+		return
+	var p: Dictionary = profile.value
+	var info: Variant = p["info"]
+	var hours := float((info as Dictionary).get("playtime", 0.0)) / 3600.0 if info is Dictionary else 0.0
+	ctx.reply_lines(PackedStringArray([
+		"%s — %s" % [who["name"], str((p["title"] as Dictionary).get("title", "Unranked"))],
+		"  rank       %s" % ("%d / %d" % [int(p["rank"]), int(p["ranked_players"])] if int(p["rank"]) > 0 else "-"),
+		"  points     %.1f" % float(p["points"]),
+		"  maps       %d / %d finished, %d bonuses" % [int(p["maps_done"]), int(p["maps_total"]), int(p["bonuses_done"])],
+		"  records    %d held" % int(p["record_holds"]),
+		"  played     %.1f h" % hours,
+	]))
+
+
+func _cmd_maps_done(ctx: DotCmdContext) -> void:
+	var board := _board_of(ctx)
+	var done: DotResult = await game.timers.maps_done(_caller_id(ctx), board["style"])
+	if not done.ok:
+		ctx.reply_error(done)
+		return
+	var rows: Array = done.value
+	if rows.is_empty():
+		ctx.reply("You have not finished any map on %s yet." % String(board["style"]))
+		return
+	var lines := PackedStringArray(["Finished on %s (%d):" % [String(board["style"]), rows.size()]])
+	for record in rows:
+		lines.append("  %-24s %s" % [String((record as DotTimerRecord).map_id), (record as DotTimerRecord).formatted_time()])
+	ctx.reply_lines(lines)
+
+
+func _cmd_maps_left(ctx: DotCmdContext) -> void:
+	var board := _board_of(ctx)
+	var left: DotResult = await game.timers.maps_left(_caller_id(ctx), board["style"])
+	if not left.ok:
+		ctx.reply_error(left)
+		return
+	var rows: Array = left.value
+	if rows.is_empty():
+		ctx.reply("Nothing left on %s. Every map this server knows is done." % String(board["style"]))
+		return
+	var lines := PackedStringArray(["Not yet finished on %s (%d):" % [String(board["style"]), rows.size()]])
+	for info in rows:
+		lines.append("  %-24s tier %d" % [str(info["map"]), int(info.get("tier", 1))])
+	ctx.reply_lines(lines)
+
+
+func _cmd_sections(ctx: DotCmdContext) -> void:
+	if _no_records(ctx):
+		return
+	var board := _board_of(ctx)
+	var listed: DotResult = await game.timers.section_records(board["track"], board["style"])
+	if not listed.ok:
+		ctx.reply_error(listed)
+		return
+	var rows: Array = listed.value
+	if rows.is_empty():
+		ctx.reply("%s has no stages on this track." % String(board["map"]))
+		return
+	var lines := PackedStringArray()
+	for i in range(rows.size()):
+		var r: Variant = rows[i]
+		lines.append("  stage %d  %s" % [i + 1, ("%s  %s" % [(r as DotTimerRecord).formatted_time(), (r as DotTimerRecord).player_name]) if r is DotTimerRecord else "-"])
+	ctx.reply_lines(lines)
+
+
+func _cmd_progress(ctx: DotCmdContext) -> void:
+	if _no_records(ctx):
+		return
+	var board := _board_of(ctx)
+	var progress: DotResult = await game.timers.store.progress_for(_caller_id(ctx), board["map"], board["track"], board["style"])
+	if not progress.ok or progress.value == null:
+		ctx.reply("No attempts here yet.")
+		return
+	var p: Dictionary = progress.value
+	ctx.reply("%d attempts, %d finishes, %s spent running%s" % [
+		int(p["attempts"]), int(p["completions"]), DotTimerRun.format_time(float(p["time_spent"])),
+		(", first finish after %s" % DotTimerRun.format_time(float(p["time_to_first"]))) if float(p["time_to_first"]) >= 0.0 else "",
+	])
+
+
+func _cmd_tier(ctx: DotCmdContext) -> void:
+	if game.maps.current == null:
+		ctx.reply("No map.")
+		return
+	ctx.reply("%s is tier %d." % [String(game.maps.current.id), game.timers.map_tier()])
+
+
+func _cmd_set_tier(ctx: DotCmdContext) -> void:
+	if ctx.args.is_empty() or not ctx.args[0].is_valid_int():
+		ctx.reply("Usage: g2g_settier <1-10>")
+		return
+	var res: DotResult = await game.timers.set_map_tier(ctx.args[0].to_int())
+	if not res.ok:
+		ctx.reply_error(res)
+		return
+	ctx.reply("Tier %d. %d records re-scored." % [ctx.args[0].to_int(), int(res.value)])
+
+
+func _cmd_end(ctx: DotCmdContext) -> void:
+	var id := _caller_id(ctx)
+	if not game.players.has(id):
+		ctx.reply("Only a player can go to the end.")
+		return
+	var res := game.timers.request_end(id)
+	if not res.ok:
+		ctx.reply_error(res)
+		return
+	var zone: DotTimerZone = res.value
+	(game.players[id] as G2GPlayer).teleport(zone.centre(), 0.0)
+	ctx.reply("At the end. The run is stopped.")
+
+
+func _cmd_pause(ctx: DotCmdContext) -> void:
+	var res := game.timers.pause_player(_caller_id(ctx))
+	ctx.reply("Paused." if res.ok else res.error.message)
+
+
+func _cmd_unpause(ctx: DotCmdContext) -> void:
+	var id := _caller_id(ctx)
+	var res := game.timers.resume_player(id)
+	if not res.ok:
+		ctx.reply(res.error.message)
+		return
+	var player: G2GPlayer = game.players.get(id)
+	if player != null:
+		player.teleport((res.value as Dictionary)["position"], player.controller.state.yaw)
+	ctx.reply("Resumed.")
+
+
+func _cmd_restore(ctx: DotCmdContext) -> void:
+	var id := _caller_id(ctx)
+	var res := game.timers.restore_player(id)
+	if not res.ok:
+		ctx.reply(res.error.message)
+		return
+	var player: G2GPlayer = game.players.get(id)
+	if player != null:
+		player.teleport((res.value as Dictionary)["position"], player.controller.state.yaw)
+	ctx.reply("Your run is back, paused where you left it. !unpause to carry on.")
+
+
+func _cmd_auto_restart(ctx: DotCmdContext) -> void:
+	var id := _caller_id(ctx)
+	var player := game.timers.player(id)
+	if player == null:
+		ctx.reply("Only a player can do that.")
+		return
+	game.timers.set_auto_restart(id, not player.auto_restart)
+	ctx.reply("Auto-restart %s." % ("on" if player.auto_restart else "off"))
+
+
+func _cmd_delete_record(ctx: DotCmdContext) -> void:
+	if _no_records(ctx):
+		return
+	if ctx.args.is_empty():
+		ctx.reply("Usage: g2g_deleterecord <name or id> [track] [style]")
+		return
+	var who := _find_player(ctx, ctx.args[0])
+	var board := _board_of(ctx)
+	var track: int = board["track"]
+	if ctx.args.size() > 1:
+		track = DotTimerTrack.parse(ctx.args[1])
+	var style: StringName = StringName(ctx.args[2]) if ctx.args.size() > 2 else board["style"]
+	# Through the manager, which re-scores the board and re-totals the player whose
+	# record went. The store's own `remove` deletes the row and nothing else, which left
+	# that player's points still counting it.
+	var removed: DotResult = await game.timers.remove_record(board["map"], track, style, who["id"])
+	if not removed.ok:
+		ctx.reply_error(removed)
+		return
+	if not bool(removed.value):
+		ctx.reply("%s has no time there." % who["name"])
+		return
+	DotLog.info(CHANNEL, "record removed by an admin", {"player": String(who["id"]), "map": String(board["map"]), "track": track, "style": String(style)})
+	ctx.reply("Removed %s's time; the board is re-scored." % who["name"])
+
+
+func _cmd_wipe_player(ctx: DotCmdContext) -> void:
+	if game.timers.store == null or ctx.args.is_empty():
+		ctx.reply("Usage: g2g_wipeplayer <player id>")
+		return
+	var id := StringName(ctx.args[0])
+	# Every map they were on is re-scored, not only this one: a wiped record holder's time
+	# was the scale everybody else's points on those maps were measured against.
+	var wiped: DotResult = await game.timers.wipe_player(id)
+	if not wiped.ok:
+		ctx.reply_error(wiped)
+		return
+	DotLog.info(CHANNEL, "player wiped by an admin", {"player": String(id), "records": int(wiped.value)})
+	ctx.reply("Removed %d records of %s." % [int(wiped.value), String(id)])
+
+
+func _cmd_rescore(ctx: DotCmdContext) -> void:
+	if _no_records(ctx):
+		return
+	var res: DotResult = await game.timers.rescore_map(game.maps.current.id)
+	ctx.reply("%d records re-scored." % int(res.value) if res.ok else res.error.message)
 
 
 func _cmd_map(ctx: DotCmdContext) -> void:

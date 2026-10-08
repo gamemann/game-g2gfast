@@ -47,6 +47,10 @@ enum Kind {
 	NPC,
 	## A hunter is gone — killed, reclaimed or cleared.
 	NPC_GONE,
+	## Where one player stands on the board they are on: their best, the record, their
+	## rank and the board's size. Server to that player only — a client has no store to
+	## ask. Appended: a kind is its index on the wire.
+	STANDING,
 }
 
 enum Ask {
@@ -316,6 +320,30 @@ static func read_vote(reader: DotNetReader) -> Dictionary:
 ## The vote's clock as [method DotVoteClockView.state_of] describes it: whether there is
 ## one, the whole seconds left, and whether it is counting. A client counts it down
 ## itself between messages; the server sends another only when that count would be wrong.
+## Times as whole microseconds in a varint: exact to the thousandth the boards are sorted
+## by, at any length of run, where a float32 starts losing them past an hour.
+static func write_standing(player_id: int, standing: Dictionary) -> PackedByteArray:
+	var writer := _w()
+	writer.write_varint(player_id)
+	writer.write_varint(maxi(int(round(float(standing.get("pb", 0.0)) * 1000000.0)), 0))
+	writer.write_varint(maxi(int(round(float(standing.get("wr", 0.0)) * 1000000.0)), 0))
+	writer.write_varint(maxi(int(standing.get("rank", 0)), 0))
+	writer.write_varint(maxi(int(standing.get("total", 0)), 0))
+	return writer.to_bytes()
+
+
+static func read_standing(reader: DotNetReader) -> Dictionary:
+	var out := {
+		"player_id": reader.read_varint(),
+		"pb": float(reader.read_varint()) / 1000000.0,
+		"wr": float(reader.read_varint()) / 1000000.0,
+		"rank": reader.read_varint(),
+		"total": reader.read_varint(),
+	}
+	out["ok"] = reader.ok()
+	return out
+
+
 static func write_clock(state: Dictionary) -> PackedByteArray:
 	var writer := _w()
 	writer.write_bool(bool(state.get("has_clock", false)))

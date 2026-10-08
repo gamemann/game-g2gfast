@@ -82,3 +82,4 @@ screenshots/
 
 # One-off debug scenes a session leaves at the root.
 /_scratch_*
+/addons/dot_sql

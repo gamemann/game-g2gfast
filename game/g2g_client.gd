@@ -344,6 +344,10 @@ func _build_netcode() -> DotResult:
 		if hud != null:
 			hud.notice(text)
 	)
+	bridge.standing_received.connect(func(pid: int, standing: Dictionary) -> void:
+		if hud != null and pid == bridge.local_player_id:
+			hud.apply_standing(standing)
+	)
 	# The map's time left, from the server's vote. The bridge holds it; the HUD draws it.
 	bridge.clock_received.connect(func(_state: Dictionary) -> void:
 		if hud != null:

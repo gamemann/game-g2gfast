@@ -40,6 +40,8 @@ The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` a
 
 In chat: `!r` (restart), `!wr` or `!top` (fastest times), `!style`, `!track bonus 1`, `!s <n>` (go to stage n), `!rs` (restart this stage), `!stats`, `!rtv`.
 
+Records in chat: `!pb [name]`, `!rank`, `!players`, `!rr` (latest records), `!profile` or `!p`, `!mapsdone`, `!mapsleft`, `!wrcp` (stage records), `!prinfo` (your attempts here), `!tier`, `!end`, `!pause` and `!unpause`, `!autorestart`, and `!restore` to take back a run you dropped by disconnecting.
+
 `show_own_body 1` in the console draws your own character in first person. It is off by default.
 
 ## Getting started
@@ -97,6 +99,28 @@ Console commands:
 | `g2g_vote` | Open a map vote now |
 | `g2g_hunt [clear\|spawn <id>]` | Show, clear or place hunters |
 | `g2g_place_clear` | Clear every placed block |
+
+### Records
+Records are kept in files under `user://g2gfast/records` unless you give the server a database. SQLite needs the [godot-sqlite](https://github.com/2shady4u/godot-sqlite) extension; PostgreSQL and MySQL go through [dot-sql](https://github.com/modcommunity/dot-sql)'s HTTP gateway, which is what lets several servers share one leaderboard. In the server's config file:
+
+```json
+{
+  "records_database": "mysql",
+  "records_database_url": "http://10.0.0.5:8780",
+  "records_database_token": "keep this in the file, not on the command line",
+  "records_table_prefix": "dot_timer_",
+  "records_cache_seconds": 10,
+  "points_formula": "curve",
+  "points_weighting": 0.975,
+  "enforce_stages": true,
+  "resume_seconds": 600,
+  "report_to_backbone": false
+}
+```
+
+`points_formula` is `curve`, `tiered` or `placement`. If the database will not open, the server logs an error and keeps files for that session. With `report_to_backbone` on, times and ranking points are published to the server's page on TMC.
+
+Admin commands for records: `g2g_settier <1-10>`, `g2g_rescore`, `g2g_deleterecord <name> [track] [style]` and `g2g_wipeplayer <id>`.
 
 When the map changes, every client is told first, downloads the map if it needs to, and the server switches once everybody is ready (or after `sv_map_sync_timeout`).
 

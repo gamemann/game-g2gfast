@@ -52,6 +52,15 @@ signal map_ready(map: DotMapDef)
 signal maps_rescanned(change: Dictionary)
 signal run_filed(player_id: StringName, run: DotTimerRun, rank: int, reason: String)
 
+## Where a player stands on the board they are on: [code]{pb, wr, rank, total}[/code],
+## seconds and places, 0 for "none". The HUD's standing line, and what the net bridge
+## sends to that player's client — a client has no store to ask.
+signal standing_changed(player_id: StringName, standing: Dictionary)
+
+## Something worth saying about a finish. [param everyone] for a new record, which the
+## whole server hears; otherwise only [param player_id].
+signal announced(player_id: StringName, text: String, everyone: bool)
+
 ## The movement changed under everybody — a cvar, or a config reload.
 signal movement_changed(config: G2GConfig)
 
@@ -255,6 +264,9 @@ func _ready() -> void:
 	_build_maps()
 	_build_player_stack()
 
+	if authoritative:
+		await _open_records_store()
+
 	set_physics_process(true)
 
 	if config.initial_map != &"":
@@ -449,13 +461,22 @@ func _build_boards() -> void:
 	boards.report_to_backbone = config.report_to_backbone
 	add_child(boards)
 
+	# `publish` follows the server's own switch. Both were defined with it off, the
+	# reporter skips an unpublished board, and so a server with report_to_backbone on
+	# sent nothing at all — the site had no records from any g2gfast server, with no
+	# error anywhere, because "this board is not published" is a normal configuration.
 	var fastest := DotLeaderboardDef.make(&"fastest", DotLeaderboardDef.Kind.TIME)
 	fastest.display_name = "Fastest time"
+	fastest.publish = config.report_to_backbone
 	boards.define(fastest)
 
 	var points := DotLeaderboardDef.make(&"points", DotLeaderboardDef.Kind.POINTS)
 	points.display_name = "Ranking points"
 	points.decimals = 1
+	points.publish = config.report_to_backbone
+	# A ranking total goes DOWN when somebody else's record moves the scale; a board
+	# that kept each player's best would freeze them at their highest-ever total.
+	points.running_total = true
 	boards.define(points)
 
 
@@ -471,7 +492,16 @@ func _build_timers() -> void:
 	timer_config.records_directory = config.records_directory
 	timer_config.record_replays = config.record_replays
 	timer_config.fastest_expected_speed = G2GUnits.to_metres(config.max_velocity)
+	timer_config.points_formula = config.points_formula
+	timer_config.points_weighting = config.points_weighting
+	timer_config.enforce_stages = config.enforce_stages
+	timer_config.resume_seconds = config.resume_seconds
 	timers.config = timer_config
+
+	# Assigned before the manager is in the tree, so its configuration keeps it rather
+	# than building the file store. Opened in `_open_records_store`, before the first map.
+	if authoritative and config.records_database.strip_edges() != "":
+		timers.store = _records_store_from_config()
 
 	add_child(timers)
 	tick_rate = timers.tick_rate
@@ -490,9 +520,78 @@ func _build_timers() -> void:
 		DotLog.warn(CHANNEL, "replays will not persist", {"why": replays_ready.error.message})
 	timers.record_accepted.connect(_on_record_accepted)
 	timers.record_refused.connect(_on_record_refused)
+	timers.run_filed.connect(_on_timer_filed)
+	timers.practice_finished.connect(_on_practice_finished)
+	timers.start_refused.connect(
+		func(id: StringName, reason: String) -> void: announced.emit(id, reason, false)
+	)
+	# Restarts only: `!end` asks for the end zone and the command puts the player there
+	# itself. Spawning first would spend a start site's cooldown on a player leaving it.
+	timers.teleport_requested.connect(
+		func(id: StringName, _zone: DotTimerZone, why: StringName) -> void:
+			if why != &"end":
+				spawn_player(id)
+	)
+	timers.points_changed.connect(_on_points_changed)
 	timers.effect_requested.connect(_on_effect_requested)
 	timers.stage_requested.connect(_on_stage_requested)
 	timers.player_finished.connect(_on_player_finished)
+
+
+## The SQL records store [member G2GConfig.records_database] names, not yet open. Null
+## when dot-sql is not installed or the settings are wrong — said at ERROR, and the
+## manager then builds the file store as it always did.
+##
+## [b]dot-sql is reached by path, never by name.[/b] This game is delivered as a pack, and
+## a pack's scripts parse against whatever addons the host build carries; naming
+## `DotSql` would make every one of them fail to parse on a host without it. Loading the
+## script by path is a missing feature on such a host, not a broken game.
+func _records_store_from_config() -> DotTimerStoreSql:
+	var path := "res://addons/dot_sql/core/dot_sql.gd"
+	if not ResourceLoader.exists(path):
+		DotLog.error(CHANNEL, "records_database is set but dot-sql is not installed; records stay in files", {
+			"records_database": config.records_database,
+		})
+		return null
+	var sql_script: Script = load(path)
+	var kind := config.records_database.strip_edges().to_lower()
+	var made: DotResult = sql_script.call("from_config", {
+		"driver": kind if kind == "sqlite" else "gateway",
+		"dialect": kind if kind != "sqlite" else "sqlite",
+		"path": config.records_database_path,
+		"url": config.records_database_url,
+		"token": config.records_database_token,
+	}, self)
+	if not made.ok or made.value == null:
+		DotLog.error(CHANNEL, "the records database settings are not usable; records stay in files", {
+			"why": made.error.message if not made.ok else "no driver", "detail": made.error.detail if not made.ok else "",
+		})
+		return null
+	var store := DotTimerStoreSql.new(made.value)
+	store.prefix = config.records_table_prefix
+	store.cache_seconds = config.records_cache_seconds
+	return store
+
+
+## Opens the SQL store, or falls back to files if it will not open.
+func _open_records_store() -> void:
+	var sql := timers.store as DotTimerStoreSql
+	if sql == null:
+		return
+	var opened: DotResult = await sql.open()
+	if opened.ok:
+		DotLog.info(CHANNEL, "records are kept in a database", {"database": config.records_database, "prefix": sql.prefix})
+		return
+	DotLog.error(CHANNEL, "the records database would not open; records stay in files this session", {
+		"why": opened.error.message, "detail": opened.error.detail,
+	})
+	# Files only where the configuration said there is a directory; with none it means
+	# "memory", and a file store pointed at "" writes to the filesystem root and fails
+	# every flush for the rest of the session.
+	timers.store = (
+		DotTimerStoreFile.at(config.records_directory) if config.records_directory.strip_edges() != ""
+		else DotTimerStoreMemory.new()
+	)
 
 
 ## Statistics and achievements, if this instance keeps any.
@@ -841,6 +940,10 @@ func spawn_player(id: StringName) -> void:
 	if player == null:
 		return
 
+	# A spawn follows a join, a track or style change, a map change and a restart —
+	# every moment the board a player is measured against may have changed.
+	refresh_standing(id)
+
 	var track := player.timer.track if player.timer != null else DotTimerTrack.MAIN
 	var map := current_map_node()
 
@@ -878,7 +981,9 @@ func set_player_style(id: StringName, style_id: StringName) -> bool:
 	if ranking == null:
 		return false
 
-	return player.set_style(movement_styles[style_id], ranking).ok
+	var changed := player.set_style(movement_styles[style_id], ranking).ok
+	refresh_standing(id)
+	return changed
 
 
 func current_map_node() -> G2GMap:
@@ -1338,11 +1443,14 @@ func _on_record_accepted(record: DotTimerRecord, _previous: DotTimerRecord, rank
 
 	await boards.submit(&"fastest", scope, record.player_id, record.player_name, record.time)
 
+	# Completions are a counter. Points are NOT: they used to be added here too, record
+	# by record, so every improvement added the run's whole worth on top of what the
+	# previous best had already added — a total that grew with every retry of the same
+	# map. The real total is the timer store's (re-scored when a record moves, weighted
+	# down a player's list) and is filed in `_on_timer_filed`.
 	var totals := DotStatSet.new()
-	totals.add(&"points", record.points)
 	totals.add(&"completions", 1.0)
 	await boards.add_stats(record.player_id, totals)
-	await boards.publish_stat(&"points", {}, record.player_id, record.player_name, &"points")
 
 	var who := timers.player(record.player_id)
 	if who != null:
@@ -1355,6 +1463,90 @@ func _on_record_accepted(record: DotTimerRecord, _previous: DotTimerRecord, rank
 
 func _on_record_refused(player_id: StringName, run: DotTimerRun, reason: String) -> void:
 	run_filed.emit(player_id, run, 0, reason)
+
+
+## Says what a finish meant, and moves the player's standing and points.
+func _on_timer_filed(result: Dictionary) -> void:
+	var id: StringName = result["player"]
+	var record: DotTimerRecord = result["record"]
+	var previous: DotTimerRecord = result["previous"]
+	var leader: DotTimerRecord = result["previous_record"]
+	var where := "%s%s" % [
+		DotTimerTrack.name_of(record.track),
+		"" if record.style_id == &"normal" else " · " + String(record.style_id),
+	]
+
+	if bool(result["world_record"]):
+		var beat := ""
+		if leader != null and leader.player_id != record.player_id:
+			beat = ", beating %s by %s" % [leader.player_name, DotTimerRun.format_time(leader.time - record.time)]
+		elif leader != null:
+			beat = ", improving it by %s" % DotTimerRun.format_time(leader.time - record.time)
+		announced.emit(id, "NEW RECORD: %s %s on %s (%s)%s" % [
+			record.player_name, record.formatted_time(), String(record.map_id), where, beat,
+		], true)
+	elif bool(result["improved"]):
+		var gain := " (-%s)" % DotTimerRun.format_time(previous.time - record.time) if previous != null else ""
+		announced.emit(id, "Personal best %s%s — rank %d / %d" % [
+			record.formatted_time(), gain, int(result["rank"]), int(result["total"]),
+		], false)
+	else:
+		announced.emit(id, "%s, %s behind your best — rank %d / %d" % [
+			record.formatted_time(),
+			DotTimerRun.format_time(record.time - previous.time) if previous != null else "",
+			int(result["rank"]), int(result["total"]),
+		], false)
+
+	refresh_standing(id)
+
+
+## Re-files the points board for everybody whose total moved. Everybody, not only the
+## finisher: a new record re-scores every row on its board, and a removal or wipe moves
+## the totals of people who did nothing. Replaced, not "kept if better" — see
+## `running_total` on the board.
+func _on_points_changed(player_ids: Array) -> void:
+	if boards == null or timers.store == null:
+		return
+	for raw in player_ids:
+		var id := StringName(str(raw))
+		var standing: DotResult = await timers.store.player_rank(id)
+		var info: DotResult = await timers.store.player_info(id)
+		if not standing.ok:
+			continue
+		var name := str((info.value as Dictionary).get("name", raw)) if info.ok and info.value is Dictionary else str(raw)
+		await boards.replace_async(&"points", {}, id, name, float(standing.value["points"]))
+
+
+func _on_practice_finished(id: StringName, run: DotTimerRun, would: int, total: int, reason: String) -> void:
+	if would > 0:
+		announced.emit(id, "%s — not recorded (%s). It would have placed %d / %d." % [
+			run.formatted_time(), reason.trim_suffix("."), would, total + 1,
+		], false)
+
+
+## Recomputes [signal standing_changed] for a player, from the store (cached reads).
+func refresh_standing(id: StringName) -> void:
+	if not authoritative or timers == null or timers.store == null or maps == null or maps.current == null:
+		return
+	var player: G2GPlayer = players.get(id)
+	if player == null or player.timer == null:
+		return
+	var map_id := maps.current.id
+	var track: int = player.timer.track
+	var style: StringName = player.timer.run.style_id
+	var store := timers.store
+	var best: DotResult = await store.best_for(map_id, track, style, id)
+	var top: DotResult = await store.top(map_id, track, style, 1)
+	var rank: DotResult = await store.rank_of(map_id, track, style, id)
+	var total: DotResult = await store.count_on(map_id, track, style)
+	if not players.has(id):
+		return
+	standing_changed.emit(id, {
+		"pb": (best.value as DotTimerRecord).time if best.ok and best.value is DotTimerRecord else 0.0,
+		"wr": (top.value[0] as DotTimerRecord).time if top.ok and not (top.value as Array).is_empty() else 0.0,
+		"rank": int(rank.value) if rank.ok else 0,
+		"total": int(total.value) if total.ok else 0,
+	})
 
 
 # --- Diagnostics -----------------------------------------------------------
