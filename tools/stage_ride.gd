@@ -20,6 +20,8 @@ const RouteBot := preload("route_bot.gd")
 ##     godot --headless --path . tools/stage_ride.tscn -- surf_summit 3 20
 ##     godot --headless --path . tools/stage_ride.tscn -- surf_summit 3 20 2448 -200 0 90
 ##     godot --headless --path . tools/stage_ride.tscn -- bhop_eazy 0 120   # the whole run
+##     RIDE_SAVE_REPLAY=maps/routes/bhop_grove.replay godot --headless --fixed-fps 128 \
+##         --path . tools/stage_ride.tscn -- bhop_grove 0 200   # and keep its replay
 ##
 ## Stage 0 is the whole run, from the main spawn to the finish, on a map with or without
 ## stages; off a ramp the bot then heads straight for the finish.
@@ -231,6 +233,23 @@ func _run() -> void:
 			break
 
 	game.timers.effect_requested.disconnect(on_effect)
+	# `RIDE_SAVE_REPLAY=maps/routes/<id>.replay` keeps the finished run's dot-timer replay:
+	# what `tools/follow_replay.tscn` and `headless_imported`'s *follows a recorded run*
+	# drive the real movement along. A person's own record is the better line to keep
+	# (G2GReplays writes it beside the records); this is the one a bot can make.
+	var save_to := OS.get_environment("RIDE_SAVE_REPLAY")
+	if save_to != "" and not finished.is_empty():
+		var who := game.timers.player(&"bot")
+		var replay: DotTimerReplay = who.last_replay if who != null else null
+		if replay == null:
+			print("[ride] no replay to save: the timer kept none")
+		else:
+			replay.map_id = id
+			replay.player_name = "route bot"
+			var saved := replay.save(ProjectSettings.globalize_path("res://" + save_to) if not save_to.is_absolute_path() else save_to)
+			print("[ride] saved the run's replay (%d frames, run %d..%d) to %s%s" % [
+				replay.frames.size(), replay.start_frame, replay.run_end_frame(), save_to,
+				"" if saved.ok else ": FAILED, " + saved.error.message])
 	for line in events:
 		print("[ride]   %s" % line)
 	var end := bot.controller.state.position

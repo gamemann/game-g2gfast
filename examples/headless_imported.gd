@@ -7,6 +7,7 @@ const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
 const G2GStockSubstitutes := preload("../game/g2g_stock_substitutes.gd")
 const RouteBot := preload("../tools/route_bot.gd")
+const ReplayFollow := preload("../tools/replay_follow.gd")
 
 ## Checks a map imported from a Source .bsp: it loads, it is the right size, it is
 ## lit, and — the only question that matters — a player put on it stays on it.
@@ -132,13 +133,13 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 42
+const CHECKS_PER_MAP := 44
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
 ## failed guard is counted as not finished on purpose, and the two that end early because
 ## a map legitimately has nothing to check (no course, no door) say so first.
-const SECTIONS_PER_MAP := 10
+const SECTIONS_PER_MAP := 11
 
 ## A script error inside a test aborts THAT TEST and not the run, so a suite that has
 ## quietly lost two checks still prints "0 failed" — which is what happened while this
@@ -186,6 +187,7 @@ func _run() -> void:
 		_test_arrivals_miss_the_pits()
 		_test_a_door_keeps_the_run()
 		await _test_runs_its_route()
+		await _test_follows_its_recording()
 		if game != null:
 			game.queue_free()
 			game = null
@@ -1016,5 +1018,57 @@ func _test_runs_its_route() -> void:
 		else ("put back by a pit (sent to %s u), aiming at point %d of %d" % [put_back[0], router.index + 1, points.size()])
 			if not put_back.is_empty()
 		else ("not finished after %.0f s at %s u, aiming at point %d of %d" % [ROUTE_SECONDS, at, router.index + 1, points.size()]))
+	bot.timer.stop()
+	_done()
+
+
+## The frame a recording is lifted off the map from, in the check that a run which cannot
+## be followed is reported where it stops being followable.
+const LIFT_FROM_FRAME := 2000
+const LIFT_UNITS := 200.0
+
+
+## A bot drives the REAL movement along the run recorded for the map
+## (`maps/routes/<id>.replay`, a dot-timer replay) and the game's own timer finishes it
+## (`g2gfast-route-bot-1`). See replay_follow.gd.
+##
+## [b]This and the route section ask different things.[/b] The route is points a planner
+## or a person wrote down and a bot that finds its own way between them; a recording is
+## the way one run actually went, tick by tick, and following it is the check that the
+## collision is still the collision that run was made on. When it is not, the answer
+## is a place: "left the recorded line at frame N, (x, y, z)". The second check proves
+## that report, on a copy of the recording lifted off the map from [constant
+## LIFT_FROM_FRAME]: it must say the line was left there, not that a pit fired or that
+## time ran out. A map with no recording passes both and says so: a recording is a
+## person's ride (or `stage_ride`'s, saved with RIDE_SAVE_REPLAY), one per map.
+func _test_follows_its_recording() -> void:
+	_section("recording")
+	var why: Array = []
+	var replay := ReplayFollow.load_for(_map_id, why)
+	if replay == null:
+		_check(true, "a bot follows its recorded run start to finish", why[0])
+		_check(true, "and a recording it cannot follow is reported where it leaves the line", why[0])
+		_done()
+		return
+	var bot: G2GPlayer = game.players.get(&"bot")
+	if bot == null:
+		bot = game.add_player(&"bot", "Bot", true)
+		bot.sampler = null
+
+	var result: Dictionary = await ReplayFollow.drive(game, bot, replay, replay.duration() * 1.2)
+	print("        %s" % ReplayFollow.summary(result))
+	_check(float(result["finished"]) >= 0.0, "a bot follows its recorded run start to finish",
+		ReplayFollow.summary(result))
+
+	var lifted := DotTimerReplay.from_bytes(replay.to_bytes()).value as DotTimerReplay
+	for i in range(LIFT_FROM_FRAME, lifted.frames.size()):
+		lifted.frames[i].position.y += G2GUnits.to_metres(LIFT_UNITS)
+	var off: Dictionary = await ReplayFollow.drive(game, bot, lifted, replay.duration() * 1.2)
+	var left: Dictionary = off["left_at"]
+	print("        lifted from frame %d: %s" % [LIFT_FROM_FRAME, ReplayFollow.summary(off)])
+	_check(not left.is_empty() and int(left["frame"]) >= LIFT_FROM_FRAME - ReplayFollow.SEARCH_BEHIND
+			and int(left["frame"]) < LIFT_FROM_FRAME + ReplayFollow.LEAD_FRAMES * 4,
+		"and a recording it cannot follow is reported where it leaves the line",
+		ReplayFollow.summary(off))
 	bot.timer.stop()
 	_done()

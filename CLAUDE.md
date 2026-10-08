@@ -94,7 +94,7 @@ scenes/
   g2g_server.tscn   what a dot-server loads. A G2GGame under a plain Node
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
 examples/           headless_run (219), headless_net (157), dedicated (180),
-                    headless_imported (39 per map, plus one per track and stage),
+                    headless_imported (44 per map, plus one per track and stage),
                     headless_maps (51), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
@@ -109,6 +109,9 @@ tools/              export_zones.gd — run after changing a map
                     route_bot.gd — a bot that follows maps/routes/<id>.json and
                     air-strafes; route_plan.py writes that file from collision.
                     stage_ride.tscn -- <id> 0 rides it; headless_imported asserts it
+                    replay_follow.gd, follow_replay.tscn -- drive the real movement
+                    along a recorded run (maps/routes/<id>.replay) and say where it
+                    leaves the line; headless_imported asserts it
                     collision_probe.gd/.tscn — drop the player's hull on every
                     standable triangle in an imported map and count what it goes
                     through. `--trimesh` builds the old collider for comparison
@@ -491,7 +494,7 @@ godot --headless --path . res://examples/headless_presentation.tscn  # 109 check
 godot --headless --path . res://examples/headless_net.tscn   # 157 checks, 23 sections
 godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
-godot --headless --path . res://examples/headless_imported.tscn  # 39 per map, +1 per stage: 1173 over the 26
+godot --headless --path . res://examples/headless_imported.tscn  # 44 per map, +1 per track and stage: 2032 over the 42 (run with --fixed-fps 128)
 godot --headless --path . res://examples/headless_maps.tscn      # 51 checks
 godot --headless --path . res://examples/headless_stack.tscn     # 29 checks
 ```
@@ -1778,6 +1781,20 @@ Props are drawn in `Props` instances, not `World`, so `collision_probe`, `surf_p
 **bhop_grove runs end to end:** 157 points, finished in 133.82 s with no put-back, top 419 u/s, deterministic. `headless_imported`'s new **route** section (10 sections and 39 checks per map now) drives it from the main spawn and asserts the game's own timer finishes a run with no pit on the way; a map without a route file passes and says so. Armed: points 31 to 45 removed, the bot is put back aiming at point 31 of 142. Without a route (the stage-line fallback) grove puts the bot back at 6.6 s. **The section runs in real time** like the rest of the suite (297 s for all 26 maps, 134 of them grove); `--fixed-fps 128` runs it as fast as the CPU allows with the same one tick per frame, and `stage_ride` is always worth running that way.
 
 **Why the other maps have no route, measured with the planner (reach 280):** bhop_aztec plans at reach 340 but its 289-unit gap from a 258 u/s take-off is not something a bot that lands and runs can clear (it falls at point 5 of 95; hopping on every landing instead falls off the start pad). bhop_evolve's start pad is left by a teleport the importer made a pit (its zones file: "the sunken start pad ... teleports onto the block"), so 32 tops are reachable. bhop_badges_mini, bhop_tesquo_v2 and bhop_pandora2_fix join sections with teleports that are not all TELEPORT zones and stop at 42, 0 and 104 tops; bhop_badges and bhop_tesquo_v2 find no top under the spawn. bhop_fur stops at a raised box in its first room (115 tops), bhop_mario_fxd after 1,510 tops, bhop_supernova at its stage-2 room (rotated brushes make box tops), bhop_interloper, bhop_monster_jam and bhop_pit inside their first rooms. None of the surf maps was tried: the surf half of the bot is `stage_ride`'s ramp rule pointed at the next point and has not been driven down a map. What would buy the most next: the planner's top model (rotated brushes, terrain cells, the importer's pit/teleport split on staged maps), and a hand-written `via` point where it picks a wall.
+
+## A recorded run, followed with the real movement (2026-10-07, `[g2gfast-route-bot-1]`)
+
+A ghost (`G2GPlayer.replay`) writes each frame's pose into the state: it passes through walls, finishes every map whatever the collision is, and proves nothing about the map. `tools/replay_follow.gd` does the opposite. It drives the motor with ordinary `DotFpsCommand`s along a dot-timer replay (`maps/routes/<id>.replay`). A run it cannot repeat is a place where the map is no longer the map the run was made on, and it reports that place: *"left the recorded line at frame N, (x, y, z) u"*, which is where to look for the collision fault. `headless_imported`'s **recording** section (11 sections and 44 checks per map now) follows the map's recording and asserts the game's own timer finishes it. It then follows a copy lifted 200 u off the map from frame 2000 and asserts the report names that frame, not a pit or the clock. A map with no recording passes both and says so. `tools/follow_replay.tscn -- <id> [seconds] [file]` is the same drive as a tool (`FOLLOW_LOG_EVERY=8` traces it). `RIDE_SAVE_REPLAY=maps/routes/<id>.replay tools/stage_ride.tscn -- <id> 0 200` saves a route bot's finished run as one.
+
+**bhop_grove is followed end to end.** The route bot recorded the run (133.82 s). The follower finishes it in 140.00 s, never more than 46 u off the line, deterministic, and the lifted copy is reported at frame 1999. **Its recording is a bot's, not a person's.** A person's record replay (`G2GReplays` writes it beside the records) copied to `maps/routes/<id>.replay` is the line the item asked for. One ride from `!s3` on surf_summit would also settle `[arrive-3]`. None exists yet: this needs a ride from Christian.
+
+What it took, each found by tracing a fall. All of it is the genre's air physics, and the first three are why a "pull back onto the line" controller cannot work:
+
+- **A wish near the velocity adds nothing.** Air acceleration only adds speed along the wish up to 30 u/s past what the velocity already has along it. The first version steered at "line velocity + a pull back", whose wish was mostly along the velocity, so it never turned, and it fell at 7%. A turn is a wish at right angles to the velocity, toward the side wanted.
+- **The same holds on the ground above run speed.** A landing from a hop is at 270-360 u/s against a run of 250, so a wish within about twenty degrees of the velocity adds nothing there either. The bot drifted 13 u wide over 50 ticks while "steering" and jumped off the block's side.
+- **Short of speed, a full strafe toward the turn.** Small corrective turns gain almost nothing, so the follower ran 10-15 u/s slower than the recording in every flight and missed the block whose lip the recording made by 2 u. Strafing at full wish on the side the line bends toward gains and turns at once, which is what a player's strafe is. That change took it from 39% to the finish.
+- **A jump is copied by place and held until airborne.** The take-off is the recorded frame where jump goes down, and the bot presses once it has reached that frame or passed it along the line. A one-tick press matched to the wrong tick is never seen. If the bot is grounded while the recording is in the air more than a step above it, it jumps again.
+- **Within 24 frames of a recorded landing, the air aims at the landing itself**, timed by the fall the way `route_bot._air` is, so a bot a tick behind in phase still comes down on the lip.
 
 ## The imported maps live in g2gfast-maps
 
