@@ -2906,6 +2906,61 @@ def attribution_problem(doc, map_id):
     return None
 
 
+def remove_geometry(bsp, specs):
+    """Cut world geometry out of a map, where its zones file says to (`"remove"`).
+
+    Each spec is `{"box": [[x, y, z], [x, y, z]], "note": "..."}` in Hammer units. A
+    world brush whose whole hull is inside a box is dropped, and so is every world face
+    that belongs only to dropped brushes -- judged by its centre, which a face shares
+    with the brush it was cut from. "Only" is what keeps a floor: the face under a
+    dropped wall also lies on the floor brush that stays, so it stays too.
+
+    [b]On the Bsp, not in each consumer.[/b] Collision, drawing, water, ladders, clips
+    and the mechanics all read `model_brushes(0)` and `model_faces(0)`; filtering those
+    two drops the geometry from every one of them at once, where a filter in each would
+    be six places for the next consumer to miss. Brush entities are untouched.
+
+    surf_year3000's spawn was a sealed 240 x 128 unit void between two arrival booths,
+    and the request was to take the middle building away rather than move the spawn.
+    Returns (brushes dropped, faces dropped).
+    """
+    boxes = []
+    for spec in specs:
+        lo, hi = spec["box"]
+        boxes.append(([min(lo[k], hi[k]) for k in range(3)], [max(lo[k], hi[k]) for k in range(3)]))
+
+    def inside(pts):
+        return bool(pts) and any(
+            all(lo[k] - 0.5 <= p[k] <= hi[k] + 0.5 for p in pts for k in range(3))
+            for lo, hi in boxes)
+
+    world = bsp.model_brushes(0)
+    gone = {i for i in world if inside(bsp.brush_hull(i))}
+    kept = world - gone
+
+    def on_any(point, brushes):
+        return any(point_in_brush(bsp, i, point, 0.5) for i in brushes)
+
+    # Only kept brushes near a box can share a face with a dropped one.
+    near = {i for i in kept if any(
+        all(lo[k] - 16 <= c[k] <= hi[k] + 16 for k in range(3))
+        for c in bsp.brush_hull(i) for lo, hi in boxes)}
+    gone_faces = set()
+    for f in bsp.model_faces(0):
+        pts = bsp.face_points(f)
+        if not pts:
+            continue
+        centre = [sum(p[k] for p in pts) / len(pts) for k in range(3)]
+        if on_any(centre, gone) and not on_any(centre, near):
+            gone_faces.add(id(f))
+
+    model_brushes, model_faces = bsp.model_brushes, bsp.model_faces
+    bsp.model_brushes = lambda model=0: model_brushes(model) - gone if model == 0 else model_brushes(model)
+    bsp.model_faces = lambda model=0: ([f for f in model_faces(0) if id(f) not in gone_faces]
+                                       if model == 0 else model_faces(model))
+    return len(gone), len(gone_faces)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("bsp")
@@ -2945,6 +3000,9 @@ def main(argv=None):
         return 2
 
     bsp = Bsp(a.bsp).load()
+    if doc.get("remove"):
+        gone_b, gone_f = remove_geometry(bsp, doc["remove"])
+        print("  removed %d brush(es) and %d face(s) the zones file cuts out" % (gone_b, gone_f))
     # A "fake skybox" is a brush a mapper painted to look like sky -- a custom texture,
     # not `tools/toolsskybox`, so SKIP_MASK does not know it. Its pixels never ship, so
     # it came out as a pale prototype slab across the sky (surf_interference's white

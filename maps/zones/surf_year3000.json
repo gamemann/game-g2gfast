@@ -8,6 +8,10 @@
  "doorways": {
   "max_horizontal": 512
  },
+ "remove": [
+  {"box": [[-90, -3000, 9090], [180, -2315, 9310]],
+   "note": "the middle building between the two team platforms: two arrival booths (t_01/t_02 and ct_01/ct_02, with the pushers that throw arrivals to their side), the wall between them, a sealed 240 x 128 void between the booths, and the roof. The spawn sat in that void with no way out (Christian, 2026-10-09: remove the middle). The floor stays; the arrival points still work, in the open."}
+ ],
  "zones": [
   {"kind": "START", "track": 0, "box": [[-330, -3030, 9020], [530, -2430, 9210]],
    "note": "the start room, both team platforms"},

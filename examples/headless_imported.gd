@@ -145,7 +145,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 46
+const CHECKS_PER_MAP := 47
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -822,6 +822,25 @@ func _test_stands_on_it() -> void:
 		_check(start_zone.contains(at), "and comes to rest inside the start zone",
 			"at %s, zone %s..%s" % [at / G2GUnits.METRES_PER_UNIT,
 				start_zone.from / G2GUnits.METRES_PER_UNIT, start_zone.to / G2GUnits.METRES_PER_UNIT])
+
+	# [b]And it is not shut in (2026-10-09).[/b] surf_year3000's spawn was a sealed
+	# 240 x 128 unit void between two arrival booths: the player stood on a floor, inside
+	# the start zone, and could go nowhere, and every check above passed. Sixteen rays at
+	# waist height from where it came to rest; one has to run 5 m before it meets anything.
+	# The void's longest was 3.2 m. 5 and not more because a start room a mapper leaves by
+	# a teleport is a closed room too, and the smallest of those here are kz_bhop_badg3s's
+	# (6.9 m) and bhop_tesquo_v2's (7.4 m): rays cannot tell a room with a teleport in it
+	# from one without. Armed by taking surf_year3000's "remove" back out of its zones file.
+	var space := bot.get_world_3d().direct_space_state
+	var waist := bot.global_position + Vector3.UP * 0.9
+	var longest := 0.0
+	for k in range(16):
+		var dir := Vector3.FORWARD.rotated(Vector3.UP, TAU * k / 16.0)
+		var ray := PhysicsRayQueryParameters3D.create(waist, waist + dir * 5.0)
+		var hit := space.intersect_ray(ray)
+		longest = maxf(longest, 5.0 if hit.is_empty() else waist.distance_to(hit["position"]))
+	_check(longest >= 5.0, "and is not shut in where it stands",
+		"the longest of 16 rays from the spawn runs %.1f m" % longest)
 
 	var bounds: Dictionary = (node as G2GBspMap).manifest.get("bounds", {})
 	var min_y: float = float((bounds.get("min", [0, -16384, 0]) as Array)[1]) * G2GUnits.METRES_PER_UNIT
