@@ -39,7 +39,8 @@ const ROWS: Array[Dictionary] = [
 	{"action": &"g2g_checkpoint_save", "setting": &"bind_checkpoint_save", "label": "Save checkpoint", "default": "C", "group": "Running"},
 	{"action": &"g2g_checkpoint_load", "setting": &"bind_checkpoint_load", "label": "Go to checkpoint", "default": "V", "group": "Running"},
 	{"action": &"g2g_style_next", "setting": &"bind_style_next", "label": "Next style", "default": "Tab", "group": "Running"},
-	{"action": &"g2g_map_next", "setting": &"bind_map_next", "label": "Next map (offline)", "default": "M", "group": "Running"},
+	{"action": &"g2g_map_next", "setting": &"bind_map_next", "label": "Map list (offline, or an admin)", "default": "M", "group": "Running"},
+	{"action": &"g2g_zones", "setting": &"bind_zones", "label": "Zone editor (offline, or an admin)", "default": "Z", "group": "Running"},
 
 	{"action": &"g2g_flashlight", "setting": &"bind_flashlight", "label": "Flashlight", "default": "F", "group": "View"},
 	{"action": &"g2g_hide_others", "setting": &"bind_hide_others", "label": "Hide other players", "default": "O", "group": "View"},

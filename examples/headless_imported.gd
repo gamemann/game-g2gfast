@@ -36,10 +36,12 @@ const ReplayFollow := preload("../tools/replay_follow.gd")
 ##
 ## - `buses_from_hell_fixed` is a vehicle map. No teleports, no destinations, eight
 ##   `func_rotating` and a `game_ui` — there is no route to time.
-## - `bhop_eazy` and `bhop_lego2` are section-chain maps (`t11`..`t2727`, `s_1`..`s_30`)
-##   whose sections are all labelled and whose END is not. Nothing in either file
-##   distinguishes the last gate from the twenty-six before it, and guessing would produce a
-##   leaderboard that looks right and measures a route the map does not have.
+## - `bhop_lego2` is a section-chain map (`s_1`..`s_30`) whose sections are all labelled and
+##   whose END is not. Nothing in the file distinguishes the last gate from the ones before
+##   it, and guessing would produce a leaderboard that looks right and measures a route the
+##   map does not have. `bhop_eazy` was here for the same reason until 2026-10-08, when its
+##   teleport graph was read through (its last gate is the only arrival nothing in a section
+##   leads back to: a hub of menu teleports) and it got a zones file.
 ## - `surf_grave_reloaded` is a combat surf map: weapon stashes behind doors in both spawn
 ##   rooms, a bomb target, and every teleport aims back at a spawn, the prison or the cliff
 ##   top. A loop to fight on, with no line anywhere that a run could end at.
@@ -56,7 +58,7 @@ const ReplayFollow := preload("../tools/replay_follow.gd")
 ## the reason it is listed has stopped being true and the list is now the lie. That is the
 ## same bargain every skip in this family makes: it is allowed to skip a check, it is not
 ## allowed to stop asking the question.
-const NOT_COURSES := ["buses_from_hell_fixed", "bhop_eazy", "bhop_lego2", "surf_grave_reloaded",
+const NOT_COURSES := ["buses_from_hell_fixed", "bhop_lego2", "surf_grave_reloaded",
 	"surf_10x_final", "surf_10x_reloaded_fixed", "surf_forbidden_ways_reloaded", "surf_mai_remix",
 	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits"]
 

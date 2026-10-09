@@ -3,6 +3,8 @@ extends Node3D
 const G2GBeacon := preload("g2g_beacon.gd")
 const G2GCamera := preload("g2g_camera.gd")
 const G2GConfig := preload("g2g_config.gd")
+const G2GLadderMode := preload("g2g_ladder_mode.gd")
+const G2GMapMechanics := preload("g2g_map_mechanics.gd")
 const G2GMovement := preload("g2g_movement.gd")
 const G2GRig := preload("g2g_rig.gd")
 const G2GUnits := preload("g2g_units.gd")
@@ -28,6 +30,12 @@ const CHANNEL := "g2g.player"
 var _assisted := false
 
 signal finished(run: DotTimerRun)
+
+## The map did something to this player that the GAME has to finish: a sinking block
+## carried them into its plate ([code]G2GMapMechanics.Event.BLOCK_SANK[/code]) or a lethal
+## hurt volume killed them ([code]HURT[/code]). [param index] is the block or volume. Fired
+## on every machine that simulates the player; only the server acts on it.
+signal map_event(event: int, index: int)
 
 ## A beacon on this player sent out a ripple: once a second while it is on, and once the
 ## moment it comes on. Client side, from [method present]; the client plays the ping here.
@@ -55,6 +63,20 @@ var show_own_body: bool = false:
 	set(value):
 		show_own_body = value
 		_apply_own_body()
+
+## What the loaded map's brush entities do: water, pushes, gravity, conveyors, sinking
+## blocks, hurt. Set by [method set_mechanics]; null on a map that has none.
+var mechanics: G2GMapMechanics = null
+
+## This player's memory of those volumes. See [G2GMapMechanics.Rider].
+var rider := G2GMapMechanics.Rider.new()
+
+## Swimming, in the map's water. Registered on every player on every map, the same on
+## every machine because the mode's id is on the wire; with no water it is never entered.
+var swim := DotFpsSwimMode.new()
+
+## Climbing, on the map's ladders. Registered beside [member swim], for the same reason.
+var ladder := G2GLadderMode.new()
 
 var controller: DotFpsController = null
 var sampler: DotFpsSampler = null
@@ -127,6 +149,17 @@ func _ready() -> void:
 	# wire. See dot-player-controller's DotFpsAdminModifiers.
 	controller.admin_abilities = true
 	base_tunables.collision_mask = collision_mask
+	# The genre's water, not a sandbox's: 200 u/s at most (its 0.8 of the run speed), and
+	# a player who presses nothing sinks at 60 u/s rather than floating up, so a pit full
+	# of water is climbed out of by holding jump -- which is how these maps were built.
+	swim.swim_speed = G2GUnits.to_metres(200.0)
+	swim.idle_sink_speed = G2GUnits.to_metres(60.0)
+	swim.accelerate = 10.0
+	swim.waist = G2GUnits.to_metres(36.0)
+	swim.float_depth = G2GUnits.to_metres(56.0)
+	swim.exit_speed = G2GUnits.to_metres(300.0)
+	swim.exit_reach = G2GUnits.to_metres(24.0)
+	controller.extra_modes = [swim, ladder]
 	# body_ref left unset so it resolves to this node. `of_self()` would resolve to
 	# the CONTROLLER, a plain Node, and setup() would refuse — the player would then
 	# simply never move, with nine failures pointing anywhere but here.
@@ -158,6 +191,19 @@ func _ready() -> void:
 
 
 # --- Movement and style ----------------------------------------------------
+
+## Hands the player the loaded map's mechanics (null for none). A map change calls this
+## for everybody; whatever the last map was doing to them is forgotten.
+func set_mechanics(value: G2GMapMechanics) -> void:
+	mechanics = value
+	rider.reset()
+	swim.volumes = value.water if value != null else ([] as Array[AABB])
+	ladder.volumes = value.ladders if value != null else ([] as Array[AABB])
+	if controller != null and controller.state != null and controller.motor != null \
+			and ((controller.state.mode == swim.mode_id and swim.volumes.is_empty())
+				or (controller.state.mode == ladder.mode_id and ladder.volumes.is_empty())):
+		controller.motor.set_mode(controller.state, DotFpsState.Mode.AIR)
+
 
 ## Hands the player a new base movement, keeping whatever style they are on.
 ##
@@ -293,6 +339,16 @@ func _play_replay(delta: float) -> void:
 
 
 func _on_simulated(_tick: int, state: DotFpsState) -> void:
+	if mechanics != null and replay == null:
+		var step := 1.0 / float(maxi(controller.tick_rate, 1))
+		var event := mechanics.simulate(rider, controller.motor, state, step)
+		if not swim.volumes.is_empty():
+			swim.update(controller.motor, state)
+		if not ladder.volumes.is_empty():
+			ladder.update(controller.motor, state)
+		if event != G2GMapMechanics.Event.NONE:
+			map_event.emit(event, rider.last_index)
+
 	global_position = state.position
 
 	if timer == null:

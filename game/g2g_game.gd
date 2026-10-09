@@ -9,6 +9,8 @@ const G2GEffects := preload("g2g_effects.gd")
 const G2GHunters := preload("g2g_hunters.gd")
 const G2GMap := preload("g2g_map.gd")
 const G2GMapCatalogue := preload("g2g_map_catalogue.gd")
+const G2GMapMechanics := preload("g2g_map_mechanics.gd")
+const G2GMapRotationFile := preload("g2g_map_rotation_file.gd")
 const G2GMovement := preload("g2g_movement.gd")
 const G2GPlayer := preload("g2g_player.gd")
 const G2GPlayerStack := preload("g2g_player_stack.gd")
@@ -110,6 +112,17 @@ var _pinned_maps: Dictionary = {}
 var _fetching_content_maps: bool = false
 
 var authoritative: bool = true
+
+## What the loaded map's brush entities do to a player (water, pushes, sinking blocks...).
+## Built from the manifest on every map change, on both ends: the client predicts with it.
+var mechanics: G2GMapMechanics = null
+
+## The map ids the rotation file lists, in its order; empty rotates every map. See
+## [member G2GConfig.map_rotation_file] and [method load_rotation].
+var rotation_ids: PackedStringArray = PackedStringArray()
+
+## Where [member rotation_ids] was read from, or "" when there was no file.
+var rotation_source: String = ""
 
 var maps: DotMapSession = null
 
@@ -730,10 +743,96 @@ func _build_maps() -> void:
 	maps.rotation = DotMapRotation.of(maps.catalogue)
 	maps.rotation.cooldown = 1
 	maps.time_limit.duration = config.map_seconds
+	load_rotation()
+	# A map that arrives later (a rescan, a fetched pack) is judged against the same file.
+	maps_rescanned.connect(func(_change: Dictionary) -> void: apply_rotation())
 
 	maps.changing.connect(_on_map_changing)
 	maps.changed.connect(_on_map_changed)
 	maps.map_over.connect(_on_map_over)
+
+
+## Reads [member G2GConfig.map_rotation_file] and applies it. Called at boot and by
+## [method rescan_maps], so an operator who edits the file runs `g2g_maps_reload`.
+##
+## A file that is present and unreadable is an ERROR and changes nothing: rotating every
+## map is a better failure than rotating none.
+func load_rotation() -> DotResult:
+	var path := G2GMapRotationFile.find(config.map_rotation_file if config != null else "")
+	var result := DotResult.success(PackedStringArray())
+	if path != "":
+		var read := G2GMapRotationFile.load_file(path)
+		if not read.ok:
+			DotLog.error(CHANNEL, "the map rotation file could not be read; every map rotates",
+				{"path": path, "why": read.error.message})
+			result = read
+		else:
+			rotation_ids = read.value["maps"]
+			rotation_source = path
+			var settings: Dictionary = read.value["settings"]
+			if maps != null and maps.rotation != null:
+				if settings.has("mode"):
+					var mode := str(settings["mode"]).to_lower()
+					maps.rotation.mode = DotMapRotation.Mode.SEQUENTIAL if mode == "sequential" \
+						else DotMapRotation.Mode.RANDOM
+				if settings.has("cooldown"):
+					maps.rotation.cooldown = maxi(int(settings["cooldown"]), 0)
+			DotLog.info(CHANNEL, "the map rotation file", {"path": path, "maps": rotation_ids.size()})
+			result = DotResult.success(rotation_ids)
+	else:
+		rotation_ids = PackedStringArray()
+		rotation_source = ""
+	apply_rotation()
+	return result
+
+
+## Marks every catalogue map in or out of rotation from [member rotation_ids].
+##
+## Out of rotation is [member DotMapDef.enabled] off, which is what the rotation's pool,
+## the vote's ballot and a nomination already read -- so a map can be left installed and
+## loadable by name without being played. An `arena`-kind map (a combat surf map, which
+## is game-arena's) is out unless the file names it.
+func apply_rotation() -> void:
+	if maps == null or maps.catalogue == null:
+		return
+	var order: Array[StringName] = []
+	for id in rotation_ids:
+		order.append(StringName(id))
+	maps.rotation.order = order
+	for map: DotMapDef in maps.catalogue.maps:
+		var listed := rotation_ids.has(String(map.id)) if not rotation_ids.is_empty() \
+			else map.kind != DotMapDef.KIND_ARENA
+		map.enabled = listed
+		map.meta["in_rotation"] = listed
+
+
+## Whether [param id] is in rotation. A map the catalogue does not hold is not.
+func in_rotation(id: StringName) -> bool:
+	var map: DotMapDef = maps.catalogue.get_map(id) if maps != null and maps.catalogue != null else null
+	return map != null and bool(map.meta.get("in_rotation", map.enabled))
+
+
+## Where zones drawn in-game for map [param id] are saved and read from.
+static func user_zones_path(id: StringName) -> String:
+	return "user://zones/%s.json" % String(id)
+
+
+## Every map in the catalogue as the M screen shows it, by id: `{id, name, tier, kind,
+## rotation, current}`. The offline client reads it directly; a server sends it.
+func map_rows() -> Array:
+	var out: Array = []
+	if maps == null or maps.catalogue == null:
+		return out
+	var current: StringName = maps.current.id if maps.current != null else &""
+	var list: Array[DotMapDef] = maps.catalogue.maps.duplicate()
+	list.sort_custom(func(a: DotMapDef, b: DotMapDef) -> bool: return String(a.id) < String(b.id))
+	for map in list:
+		out.append({
+			"id": String(map.id), "name": map.name_or_id(), "tier": map.tier,
+			"kind": String(map.kind), "rotation": bool(map.meta.get("in_rotation", map.enabled)),
+			"current": map.id == current,
+		})
+	return out
 
 
 ## Every map on disk. See [G2GMapCatalogue] — there is no list here on purpose.
@@ -765,6 +864,7 @@ func rescan_maps() -> Dictionary:
 
 	var playing: StringName = maps.current.id if maps.current != null else &""
 	var change := G2GMapCatalogue.rescan(maps.catalogue, _map_roots())
+	var _rotation := load_rotation()
 
 	if playing != &"" and not maps.catalogue.has(playing):
 		DotLog.warn(CHANNEL, "the map being played is no longer on disk",
@@ -869,6 +969,8 @@ func add_player(
 
 	players[id] = player
 	_samples[id] = DotTimerSample.new()
+	player.set_mechanics(mechanics)
+	player.map_event.connect(_on_map_event.bind(id))
 
 	if progress != null:
 		# Not awaited: an achievement store may be remote and a join may not wait on
@@ -1316,12 +1418,34 @@ func _on_map_changed(map: DotMapDef, loaded: Node) -> void:
 
 	var zones: DotTimerZoneSet = g2g_map.timer_zones() if g2g_map != null else null
 
+	# Zones somebody drew in-game (Z offline, `g2g_zone_save` on a server) win over the
+	# map's own. They were saved to this path from the day the console could draw a zone
+	# and read from nowhere, so a saved zone set lasted until the next map change.
+	var drawn := user_zones_path(map.id)
+	if FileAccess.file_exists(drawn):
+		var loaded_zones := DotTimerZoneSet.load_json(drawn)
+		if loaded_zones.ok:
+			zones = loaded_zones.value
+			DotLog.info(CHANNEL, "zones drawn in-game replace the map's own", {"map": String(map.id), "path": drawn})
+		else:
+			DotLog.warn(CHANNEL, "a saved zone file could not be read; the map's own zones are used",
+				{"path": drawn, "why": loaded_zones.error.message})
+
 	if zones == null and maps.zones_json != "":
 		var parsed := DotTimerZoneSet.from_json(maps.zones_json)
 		if parsed.ok:
 			zones = parsed.value
 
 	timers.set_zones(zones)
+
+	mechanics = G2GMapMechanics.new()
+	if bsp != null:
+		mechanics.read(bsp.manifest)
+	if not mechanics.is_empty():
+		DotLog.debug(CHANNEL, "the map's brush entities", {
+			"map": String(map.id), "mechanics": mechanics.describe_lines()[0]})
+	for id in players:
+		(players[id] as G2GPlayer).set_mechanics(mechanics)
 
 	for id in players:
 		spawn_player(id)
@@ -1358,6 +1482,13 @@ func _on_effect_requested(player_id: StringName, zone: DotTimerZone) -> void:
 		return
 
 	match zone.kind:
+		DotTimerZone.Kind.RESPAWN when zone.payload.has(G2GBspMap.SENDS_TO):
+			# The map's own pit, sending the player where its trigger_teleport aims: the
+			# start of the section they fell out of, the far side of a gate. The run goes
+			# on, as it does in Source -- a fall costs the time it takes, not the run.
+			# Until 2026-10-08 every pit put the player back at the track's spawn, which
+			# on a staged map restarted the whole run from section one.
+			player.teleport(zone.destination, zone.destination_yaw, true)
 		DotTimerZone.Kind.RESPAWN, DotTimerZone.Kind.SLAY:
 			spawn_player(player_id)
 		DotTimerZone.Kind.TELEPORT:
@@ -1368,6 +1499,25 @@ func _on_effect_requested(player_id: StringName, zone: DotTimerZone) -> void:
 			player.teleport(zone.destination, zone.destination_yaw, true)
 		_:
 			pass
+
+
+## A map volume finished something only the server may: a block sank under a player
+## who stayed on it, or a lethal hurt volume caught one. See [G2GMapMechanics].
+func _on_map_event(event: int, index: int, player_id: StringName) -> void:
+	if not authoritative or mechanics == null:
+		return
+	var player: G2GPlayer = players.get(player_id)
+	if player == null:
+		return
+	match event:
+		G2GMapMechanics.Event.BLOCK_SANK:
+			if index >= 0 and index < mechanics.blocks.size():
+				var block: Dictionary = mechanics.blocks[index]
+				# Where the plate under the block sends people, with the run kept -- the
+				# same as falling into it, which is what standing on a block is in Source.
+				player.teleport(block["destination"], float(block["yaw"]), true)
+		G2GMapMechanics.Event.HURT:
+			spawn_player(player_id)
 
 
 ## `!s <n>` and `!rs` land here: [method DotTimerManager.request_stage] has already

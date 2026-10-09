@@ -43,6 +43,7 @@ from bsp_read import (Bsp, SKIP_MASK, SURF_SKY, SURF_SKY2D, clean_material, to_g
                       LUMP_ENTITIES, MASK_PLAYERSOLID, CONTENTS_PLAYERCLIP,
                       SOLID_BRUSH_ENTITIES, NONSOLID_BRUSH_ENTITIES)
 import vtf  # noqa: E402
+import bsp_mechanics  # noqa: E402
 import bsp_props  # noqa: E402
 
 LUMP_LIGHTING, LUMP_PAKFILE, LUMP_PLANES = 8, 40, 1
@@ -1110,8 +1111,10 @@ def build_collision(bsp, notes, props=()):
         if not 0 < index < len(bsp.models):
             continue
         name = e.get("classname", "?")
-        if name in SOLID_BRUSH_ENTITIES:
+        if name in SOLID_BRUSH_ENTITIES and bsp_mechanics.solid_for_players(e):
             add_model(index, tuple(entity_origin(e)), name)
+        elif name in SOLID_BRUSH_ENTITIES:
+            skipped[name + " (not solid by its own keys)"] += 1
         else:
             skipped[name] += 1
             if name not in NONSOLID_BRUSH_ENTITIES and not name.startswith("trigger_"):
@@ -1653,12 +1656,19 @@ class Zoner:
         """
         want = name.strip().lower()
         out = []
+        others = []
         for e in self.bsp.entities:
-            if e.get("classname", "") != "info_teleport_destination":
+            if e.get("targetname", "").strip().lower() != want or not want:
                 continue
-            if e.get("targetname", "").strip().lower() == want:
+            if e.get("classname", "") == "info_teleport_destination":
                 out.append((entity_origin(e), entity_yaw(e)))
-        return out
+            elif "origin" in e and not e.get("model", "").startswith("*"):
+                # A teleport may aim at ANY point entity, and mappers use that:
+                # surf_greatriver_xdre4m aims twelve at `info_target`s and
+                # surf_grave_reloaded all eight at `info_landmark`s. A destination wins
+                # where both carry the name.
+                others.append((entity_origin(e), entity_yaw(e)))
+        return out or others
 
     def teleports_to(self, name):
         """Every unclaimed `trigger_teleport` aimed at that destination name."""
@@ -2427,6 +2437,12 @@ def dead_teleports(z):
     in a section's start. Unlike [method conditional_teleports] there is nothing to
     decide here: the map's own file says the teleport is inert.
     """
+    # Any class but `player`, whether or not the map's logic renames a player's class:
+    # bhop_tesquo_v2 does (`AddOutput classname filter1` on each stage line), which makes
+    # these checkpoint returns that fire only for a player who reached that stage -- logic
+    # this game does not run, and imported unconditionally they are pits in a section's
+    # start. Dropped either way. (bsp_mechanics.inert_filters is the assignment-aware
+    # rule pushes and blocks are asked by, where being wrong costs a boost, not a run.)
     dead = set()
     for e in z.bsp.entities:
         if e.get("classname", "") != "filter_activator_class":
@@ -2435,13 +2451,22 @@ def dead_teleports(z):
         if not negated and e.get("filterclass", "").strip().lower() != "player":
             dead.add(e.get("targetname", "").strip().lower())
     dropped = 0
+    noclient = 0
     for i, e in list(z.entities("trigger_teleport")):
         if e.get("filtername", "").strip().lower() in dead:
             z.claimed.add(i)
             dropped += 1
+        elif not int(float(e.get("spawnflags", "1") or 0)) & 1:
+            # No "Clients" flag: Source never fires it for a player. Five of the 42
+            # maps carry one, and imported as a pit it caught people Source never did.
+            z.claimed.add(i)
+            noclient += 1
     if dropped:
         z.notes.append("%d teleports dropped whose class filter no player passes" % dropped)
-    return dropped
+    if noclient:
+        z.notes.append("%d teleports dropped that do not fire for players (no Clients flag)"
+                       % noclient)
+    return dropped + noclient
 
 
 def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None):
@@ -2498,8 +2523,23 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
                  zz["destination"][2] + DESTINATION_LIFT]
                 for zz in z.zones
                 if zz.get("destination") is not None and zz["kind"] in ("SPAWN", "STAGE", "TELEPORT")]
+    # And every place a pit sends somebody, now that a pit sends somebody somewhere: a
+    # slab grown over its own section's start would catch the player it just put there,
+    # on every tick, for ever.
+    for _i, e in z.entities("trigger_teleport"):
+        for at, _yaw in z.destinations(e.get("target", ""))[:1]:
+            arrivals.append([at[0], at[1], at[2] + DESTINATION_LIFT])
     respawn = []
     for i, e in z.entities("trigger_teleport"):
+        # [b]A pit sends a player where the map says, not to the start.[/b] Every one of
+        # these used to send a player back to the track's spawn, which is a restart --
+        # on a staged bhop map, falling in section five put you back in section one and
+        # took the run with it, and on bhop_eazy every gate between its sections did the
+        # same, because a gate is a teleport too. Source sends the player to the
+        # trigger's own destination and the run goes on, so that is what the zone carries
+        # now; only a teleport whose target resolves to nothing still means the spawn.
+        sends = z.destinations(e.get("target", ""))
+        sends_to, sends_yaw = (sends[0] if sends else (None, 0.0))
         boxes = brush_boxes_indexed(bsp, e)
         if not boxes:
             box = brush_box(bsp, e)
@@ -2515,7 +2555,7 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
         for track in pit_tracks(z, e):
             for brush, origin, box, full in pieces:
                 sliced = full is not None
-                zone = z.add("RESPAWN", track, box=box)
+                zone = z.add("RESPAWN", track, box=box, destination=sends_to, yaw=sends_yaw)
                 if sliced:
                     # A slab of a sloped brush has the route right above it by
                     # construction, and its neighbours on either side by construction
@@ -2551,6 +2591,52 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
                     "track": track,
                                 "original_min": zone["original_min"],
                                 "original_max": zone["original_max"]})
+
+    # A pit whose destination is inside another pit is usually a HUB, not a loop: the
+    # speed-stopping box mappers send a fallen player into so that the second teleport,
+    # the one in the box, puts them at the stage start with no speed (bhop_arcane_v2's
+    # `stage1_stop`: 239 of its 334 pits). The chain is followed to where it ends and the
+    # pit sends there; a chain that comes back round, or runs into a pit with nowhere to
+    # send, falls back to the spawn, which is what every pit did before, and is counted.
+    pits = [zz for zz in z.zones if zz["kind"] == "RESPAWN"]
+
+    def pit_at(point):
+        p = [point[0], point[1], point[2] + DESTINATION_LIFT]
+        for o in pits:
+            if all(o["min"][a] <= p[a] <= o["max"][a] for a in range(3)):
+                return o
+        return None
+
+    looped = chained = 0
+    for zz in pits:
+        at = zz.get("destination")
+        if at is None:
+            continue
+        yaw = zz.get("destination_yaw", 0.0)
+        seen = {id(zz)}
+        ok = True
+        for _hop in range(8):
+            q = pit_at(at)
+            if q is None:
+                break
+            if id(q) in seen or q.get("destination") is None:
+                ok = False
+                break
+            seen.add(id(q))
+            at, yaw = q["destination"], q.get("destination_yaw", 0.0)
+        else:
+            ok = False
+        if not ok:
+            del zz["destination"]
+            zz.pop("destination_yaw", None)
+            looped += 1
+        elif len(seen) > 1:
+            zz["destination"], zz["destination_yaw"] = list(at), yaw
+            chained += 1
+    if chained:
+        z.notes.append("%d pits send through a hub teleport; they send to where it ends" % chained)
+    if looped:
+        z.notes.append("%d pits send round a loop; they send to the spawn instead" % looped)
 
     return z, spawns, respawn, push, other, dropped
 
@@ -2915,6 +3001,8 @@ def main(argv=None):
     z, spawns, respawn, push, other, dropped = classify_zones(
         bsp, a.min_zone_thickness, doc, solids)
     zones = emit_zones(z)
+    mech = bsp_mechanics.mechanics(bsp, entity_origin, z.destinations, DESTINATION_LIFT,
+                                   yaw_to_godot)
     for s in spawns:
         s.pop("origin_src", None)
         s.pop("yaw_src", None)
@@ -2973,7 +3061,10 @@ def main(argv=None):
         "zones": zones,
         "track_names": z.track_names,
         "respawn_volumes": respawn,
-        "push_volumes": push,
+        # What the volumes DO to a player: water, pushes, gravity, hurt, conveyors,
+        # ladders and the blocks that sink. See tools/bsp_mechanics.py.
+        "mechanics": mech,
+        "push_volumes": mech["push"],
         "trigger_volumes": other,
     }
     for key in ("display_name", "author", "kind", "notes"):
@@ -3048,6 +3139,7 @@ def main(argv=None):
     # one is exactly the kind of thing somebody wants to be told about.
     for note in z.notes + notes:
         print("  note: %s" % note)
+    print("  mechanics: %s" % ", ".join("%d %s" % (len(v), k) for k, v in mech.items()))
     print("  start spawn at %s units" % [round(v) for v in manifest["spawn"]["origin"]])
 
     print("  drop that directory anywhere the game looks and it is a map:")

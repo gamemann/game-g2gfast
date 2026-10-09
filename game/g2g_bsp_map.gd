@@ -43,6 +43,11 @@ const VERTEX_FLOATS := 10          # position 3, normal 3, uv 2, uv2 2
 ## `G2GGame.request_stage` refuses `!s<n>` there and `restart_stage` goes back a stage.
 const NO_RESTART := "no_restart"
 
+## Payload key on a RESPAWN zone that carries its own destination: the map's
+## `trigger_teleport` sends a player there and the run goes on, the way Source does. A
+## pit without it (an old manifest, a teleport aimed at nothing) still means the spawn.
+const SENDS_TO := "sends_to"
+
 ## Zone kinds by the name the manifest writes, which is [enum DotTimerZone.Kind]'s.
 ##
 ## [b]Names on the wire, not numbers.[/b] A manifest is read by a build that may be
@@ -591,6 +596,8 @@ func _zone_from(entry: Dictionary) -> DotTimerZone:
 	if entry.has("destination"):
 		zone.destination = G2GUnits.vector_to_metres(_vec(entry["destination"]))
 		zone.destination_yaw = float(entry.get("destination_yaw", 0.0))
+		if kind == DotTimerZone.Kind.RESPAWN:
+			zone.payload[SENDS_TO] = true
 	zone.comment = str(entry.get("comment", ""))
 	# A stage with nowhere to stand is a split only; see `G2GGame.request_stage`.
 	if entry.get("restart", true) == false:

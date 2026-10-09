@@ -331,9 +331,9 @@ func _process(delta: float) -> void:
 		game.maps.current.name_or_id() if game.maps.current != null else "-",
 	])
 
-	var time_left := time_left_text(
-		clock_view, game.maps.time_limit.formatted_remaining(), Time.get_ticks_msec() / 1000.0
-	)
+	# No limit (offline, by default) is no clock, not "0:00": the same rule as a vote with none.
+	var local := game.maps.time_limit.formatted_remaining() if game.maps.time_limit.duration > 0.0 else ""
+	var time_left := time_left_text(clock_view, local, Time.get_ticks_msec() / 1000.0)
 
 	# Nothing at all when the vote has no clock, rather than "no limit": a status line
 	# spending a slot on something that is not happening is a slot a player learns to skip.

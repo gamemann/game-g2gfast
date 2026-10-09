@@ -1,5 +1,7 @@
 {
  "id": "surf_10x_final",
+ "kind": "arena",
+ "kind_why": "A combat surf map: small, built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
  "author": "Wof-",
  "attribution": {
   "author": "Wof-",

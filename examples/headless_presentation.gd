@@ -1277,7 +1277,7 @@ func _test_the_menu_is_a_view_of_the_settings() -> void:
 	menu.open(&"general")
 	_check(menu.is_open() and menu.visible, "it opens")
 	var switches := _switches(menu)
-	_check(switches.size() == 5, "the General page has a switch per HUD setting (%d)" % switches.size())
+	_check(switches.size() == 6, "the General page has a switch per HUD setting, zones included (%d)" % switches.size())
 
 	(switches[0] as Button).button_pressed = false
 	_check(not p.settings.get_bool(&"show_speed", true), "flipping one writes the setting it shows")

@@ -132,6 +132,11 @@ static func schema() -> DotSettingsSchema:
 	s.add(DotSettingsDef.boolean(&"show_crosshair", true, &"running").with_scope(
 		DotSettingsDef.Scope.ACCOUNT
 	))
+	# Every start, stage and finish drawn as a glowing box. On by default: a line a runner
+	# cannot see is a line they find by failing. See G2GZoneOutlines.
+	s.add(DotSettingsDef.boolean(&"show_zones", true, &"running").with_scope(
+		DotSettingsDef.Scope.ACCOUNT
+	).with_description("Draw the start, stage and finish zones as glowing boxes."))
 
 	# [b]Everybody else, the ghost, and what they carry.[/b] The genre's `!hide`, which every
 	# timer server has because a runner learning a section does not want somebody else's

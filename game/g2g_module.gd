@@ -224,6 +224,16 @@ func _module_load() -> DotResult:
 	if not game.config.content_maps.is_empty():
 		game.fetch_content_maps()
 
+	# Which installed maps rotate: cfg/map_rotation.yml (or .json/.txt/.cfg/.ini). Changing
+	# it re-reads the file now, as `g2g_maps_reload` does.
+	add_cvar("sv_map_rotation_file", game.config.map_rotation_file,
+		"File listing the maps that rotate (yml/json/txt/cfg/ini). Unlisted maps stay installed."
+	).changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.map_rotation_file = new_value.strip_edges()
+			var _read := game.load_rotation()
+	)
+
 	# How long a map change waits for clients to have the map. See
 	# [member G2GConfig.map_sync_seconds] for why it is thirty and not dot-map's three
 	# hundred. Read by the next change; one in flight keeps the deadline it started with.
@@ -248,7 +258,7 @@ func _module_load() -> DotResult:
 	add_command("stage", _cmd_stage, "To the start of stage <n> (alias)", "").with_chat()
 	add_command("rs", _cmd_stage, "To the start of this stage (alias)", "").with_chat()
 	add_command("g2g_zone", _cmd_zone, "Draw a zone: g2g_zone <kind> [track] [number]", DotAdminFlags.CHANGEMAP)
-	add_command("g2g_zone_mark", _cmd_zone_mark, "Mark a corner where you stand", DotAdminFlags.CHANGEMAP)
+	add_command("g2g_zone_mark", _cmd_zone_mark, "Mark a corner where you stand, or at x y z [height] (units)", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_save", _cmd_zone_save, "Write the zones to disk", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_undo", _cmd_zone_undo, "Remove the last zone", DotAdminFlags.CHANGEMAP)
 	add_command("g2g_zone_list", _cmd_zone_list, "List the zones", DotAdminFlags.CHANGEMAP)
@@ -841,6 +851,10 @@ func _build_netcode() -> DotResult:
 		return attached
 
 	bridge.commands_fn = chat_commands
+	# The M screen asks the same question `g2g_map` does: the changemap flag.
+	bridge.may_change_map_fn = func(session_id: int) -> bool:
+		var session := server.session_by_userid(session_id)
+		return session != null and session.permissions.has(DotAdminFlags.CHANGEMAP)
 
 	net.messages.seal()
 	# [b]A client whose game messages cannot work with this server's is dropped, in words.[/b]
@@ -1603,7 +1617,18 @@ func _cmd_zone_mark(ctx: DotCmdContext) -> void:
 	if painter.zones == null:
 		ctx.reply("This map has no zone set.")
 		return
-	var marked := painter.mark(_mark_position(ctx))
+	var at := _mark_position(ctx)
+	# `g2g_zone_mark x y z [height]` in genre units is the corner the client's zone editor
+	# aimed at (Z): exact, so no padding, and the height the editor showed. Standing on
+	# the corner and marking without numbers is what it always was.
+	if ctx.args.size() >= 3 and ctx.args[0].is_valid_float() and ctx.args[1].is_valid_float() \
+			and ctx.args[2].is_valid_float():
+		at = G2GUnits.vector_to_metres(Vector3(ctx.args[0].to_float(), ctx.args[1].to_float(),
+			ctx.args[2].to_float()))
+		painter.padding = 0.0
+		if ctx.args.size() >= 4 and ctx.args[3].is_valid_float() and ctx.args[3].to_float() > 0.0:
+			painter.height = G2GUnits.to_metres(clampf(ctx.args[3].to_float(), 8.0, 4096.0))
+	var marked := painter.mark(at)
 	if not marked.ok:
 		ctx.reply_error(marked)
 		return

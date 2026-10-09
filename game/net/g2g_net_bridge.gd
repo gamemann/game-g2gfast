@@ -103,6 +103,14 @@ var clock_fn: Callable = Callable()
 ## screen says it has none rather than inventing one.
 var commands_fn: Callable = Callable()
 
+## `(session_id: int) -> bool`: whether that player may change the map. Set by the module
+## from the session's changemap flag; unset, nobody may (a bridge with no module has no
+## admins to ask about).
+var may_change_map_fn: Callable = Callable()
+
+## The server's map list arrived, for the M screen.
+signal maps_received(rows: Array)
+
 ## The map's time left as the server last described it. Client side; what the HUD draws.
 ## Never adopted means never told, which the HUD answers with the local clock.
 var clock_view: DotVoteClockView = DotVoteClockView.new()
@@ -1203,6 +1211,12 @@ func ask_checkpoint(action: int) -> void:
 	_ask(G2GEvents.Ask.CHECKPOINT, G2GEvents.write_int(action))
 
 
+## Asks for the server's map list (empty id) or to change to [param id]. The server
+## checks the changemap flag for both and says no in a NOTICE.
+func ask_maps(id: String = "") -> void:
+	_ask(G2GEvents.Ask.MAPS, G2GEvents.write_map_id(id))
+
+
 func publish_avatar(avatar: DotAvatar) -> void:
 	_ask(G2GEvents.Ask.AVATAR, G2GEvents.write_avatar(avatar))
 
@@ -1256,6 +1270,27 @@ func _on_request(message: DotNetMessage) -> void:
 			_checkpoint(id, G2GEvents.read_int(reader))
 		G2GEvents.Ask.MAP:
 			_on_map_reply(peer_id, G2GEvents.read_map_message(reader, G2GEvents.MAP_REPLY_BYTES))
+		G2GEvents.Ask.MAPS:
+			_on_maps_asked(peer_id, session_id, G2GEvents.read_map_id(reader).strip_edges())
+
+
+## The M screen's two questions. Refused unless the session may change the map, checked
+## here and not on the client, because a client can send anything.
+func _on_maps_asked(peer_id: int, session_id: int, id: String) -> void:
+	if not (may_change_map_fn.is_valid() and bool(may_change_map_fn.call(session_id))):
+		_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id,
+			"Changing the map needs the changemap flag. !rtv asks for a vote."))
+		return
+	if id.is_empty():
+		_tell(peer_id, G2GEvents.Kind.MAPS, G2GEvents.write_maps(game.map_rows()))
+		return
+	if game.maps.catalogue == null or not game.maps.catalogue.has(StringName(id)):
+		_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id, "No map called %s." % id))
+		return
+	DotLog.info(CHANNEL, "a map change from the map list", {"by": session_id, "map": id})
+	var changed: DotResult = await game.change_map(StringName(id))
+	if not changed.ok:
+		_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id, changed.error.message))
 
 
 func _checkpoint(id: StringName, action: int) -> void:
@@ -1333,6 +1368,8 @@ func _on_event(message: DotNetMessage) -> void:
 			var standing := G2GEvents.read_standing(reader)
 			if bool(standing["ok"]):
 				standing_received.emit(int(standing["player_id"]), standing)
+		G2GEvents.Kind.MAPS:
+			maps_received.emit(G2GEvents.read_maps(reader))
 		G2GEvents.Kind.RULES:
 			var rules := G2GEvents.read_rules(reader)
 			if bool(rules["ok"]):

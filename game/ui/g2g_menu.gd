@@ -306,6 +306,7 @@ func _page_general() -> void:
 	var hud := _card("Heads-up display")
 	_switch_setting(hud, &"show_speed", "Speed", "Your speed in units per second, under the clock.")
 	_switch_setting(hud, &"show_splits", "Splits", "How each stage compares with your best and the record.")
+	_switch_setting(hud, &"show_zones", "Zones", "The start, stages and finish drawn as glowing boxes in the world.")
 	_switch_setting(hud, &"show_keys", "Key display", "Which movement keys the simulation saw this tick.")
 	_switch_setting(hud, &"show_crosshair", "Crosshair", "")
 	_switch_setting(hud, &"show_fps", "Frame rate counter", "In the top-right corner.")

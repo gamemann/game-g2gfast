@@ -17,6 +17,10 @@ const G2GClient := preload("../game/g2g_client.gd")
 ## menus_play           the game, nothing open
 ## menus_light_off      the view the flashlight frame is taken from, light off
 ## menus_light_on       the same view with the flashlight on
+## menus_zones          looking back at the start zone: the glowing zone boxes
+## menus_zone_editor    Z, one corner placed, the box following the aim
+## menus_maplist        M: the map list, first page
+## menus_maplist_page2  and the next
 ## menus_general        the menu's five pages
 ## menus_gameplay
 ## menus_video
@@ -73,7 +77,35 @@ func _initialize() -> void:
 			_client.toggle_flashlight()
 			_wait = 20,
 		func() -> void: _capture("menus_light_on"),
-		func() -> void: _client.open_menu(&"general"),
+		func() -> void:
+			_client.toggle_flashlight()
+			# Look back and down at the start zone the player is standing in.
+			var sampler := _client.player.sampler
+			if sampler != null:
+				sampler.yaw = (_yaw if is_finite(_yaw) else 0.0) + 180.0
+				sampler.pitch = -35.0
+			_wait = 20,
+		func() -> void: _capture("menus_zones"),
+		func() -> void:
+			_client.zone_editor.open()
+			_wait = 10,
+		func() -> void:
+			_client.zone_editor.place()
+			var sampler := _client.player.sampler
+			if sampler != null:
+				sampler.yaw += 25.0
+			_wait = 20,
+		func() -> void: _capture("menus_zone_editor"),
+		func() -> void:
+			_client.zone_editor.close()
+			_client.open_map_list(),
+		func() -> void: _capture("menus_maplist"),
+		func() -> void:
+			_client.map_menu.turn(1),
+		func() -> void: _capture("menus_maplist_page2"),
+		func() -> void:
+			_client.map_menu.close()
+			_client.open_menu(&"general"),
 		func() -> void: _capture("menus_general"),
 		func() -> void: _client.open_menu(&"gameplay"),
 		func() -> void: _capture("menus_gameplay"),

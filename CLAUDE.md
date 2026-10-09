@@ -61,6 +61,12 @@ game/
   g2g_map_survey.gd slots, unreached ground and traps, swept over a hand-built map's boxes
   g2g_bsp_map.gd    base for an IMPORTED map: mesh, materials and zones from a
                     manifest. See Decision 11
+  g2g_map_mechanics.gd  what an imported map's volumes DO, once a tick: pushes,
+                    gravity, conveyors, sinking blocks per player, lethal hurt
+  g2g_ladder_mode.gd    climbing, as a DotFpsMoveMode beside swimming
+  g2g_map_rotation_file.gd  cfg/map_rotation.yml (yml/json/txt/cfg/ini): which maps rotate
+  g2g_zone_outlines.gd  every zone drawn as a glowing box. Client only
+  g2g_zone_editor.gd    Z: drawing zones by aiming, offline or as an admin
   g2g_bsp_lightmapped.gdshader  albedo x the lighting the map's own compiler baked
   g2g_bsp_translucent.gdshader  the same, plus the ALPHA write. 20 surfaces of 420
   g2g_lighting.gd   which DotLightProfile this machine gets. The rest is dot-lighting
@@ -83,6 +89,7 @@ game/
     g2g_ui.gd       the menus' palette, Theme and pieces. No dot-ui class newer than a shell
     g2g_menu.gd     the Escape menu: five pages, every control a view of a setting
     g2g_help.gd     the H screen: keys as bound, the server's commands, browser tips
+    g2g_map_menu.gd the M screen: every map, paged, 1-7/8/9/0 or the mouse
     g2g_switch.gd, g2g_key_button.gd  a toggle switch and a key rebinder
 npcs/               two hunters and the body they share
 props/              three practice blocks, in the genre's 32/64/128 sizes
@@ -102,13 +109,17 @@ scenes/
   fx/               start_gate and finish_gate: particles, no script, nothing loaded
 examples/           headless_run (219), headless_net (157), dedicated (180),
                     headless_imported (45 per map, plus one per track and stage),
-                    headless_maps (51), jitter_probe (4 configurations)
+                    headless_maps (64), headless_mechanics (5 sections per
+                    imported map), jitter_probe (4 configurations)
 tools/              export_zones.gd — run after changing a map
                     route_preview.gd/.tscn/.sh — render ONE TRACK of a hand-written
                     map from its own spawn, looking down it. bsp_preview orbits a
                     whole map, which on a map whose four routes span 5,800 units of
                     X makes every one of them a sliver
                     bsp_read.py, vtf.py, bsp_import.py — Source .bsp to a map
+                    bsp_mechanics.py — what its brush entities do: water, pushes,
+                    gravity, hurt, conveyors, ladders, sinking blocks.
+                    docs/brush-entities.md is every class and its handling
                     bsp_props.py — static props (sprp, MDL/VVD/VTX, .phy) and
                     their light probes
                     import_maps.sh — import a whole directory of them, idempotently
@@ -995,7 +1006,10 @@ refuses the whole map over; dropped silently it is a bonus that quietly does not
 
 **A teleport is the pit unless the map says otherwise.** Every `trigger_teleport` left
 after the zones have claimed theirs becomes `DotTimerZone.Kind.RESPAWN`, which is what
-it always was and the reliable half. `surf_kitsune` is where that is not enough: all 53
+it always was and the reliable half. **Since 2026-10-08 a pit sends the player to its own
+destination with the run kept** (see *What a map's brush entities do*), so most of what
+follows about doors is now true of every teleport; `doorways` still makes a door a
+TELEPORT zone, which the timer treats the same way. `surf_kitsune` is where that is not enough: all 53
 of its teleports aim at one of nine colour destinations, and the ones the size of a
 room are the pit under that colour's section while the ones the size of a door are how
 you leave one section for the next. Treated alike — which is what "every teleport is a
@@ -1180,7 +1194,7 @@ End to end, the same view went from 7.9:1 to **87:1**, with the median at 31 aga
 ### What is not imported
 
 - **Static props from the source game's own archives.** Props whose model the pakfile carried are imported since 2026-09-27 (see *The triage of 2026-09-27* below); a prop naming a stock model is counted in the manifest's `static_props.stock_models` and not drawn -- 80 of `bhop_monster_jam`'s 81, all 72 of `surf_year3000`'s, all 13 of `bhop_mario_fxd`'s, 94 of `bhop_tesquo_v2`'s 188.
-- **Sky faces, water, animated and scrolling materials.** `tools/toolsskybox` faces are skipped, so behind the 3D skybox (drawn since 2026-09-27) is dot-lighting's procedural sky. Water is a flat surface in its own texture or the prototype grid; a `_beneath` water face is drawn from below like any other face.
+- **Sky faces, animated and scrolling materials.** `tools/toolsskybox` faces are skipped, so behind the 3D skybox (drawn since 2026-09-27) is dot-lighting's procedural sky. Water is drawn as a flat surface in its own texture or the prototype grid (a `_beneath` water face from below like any other face), and since 2026-10-08 it is also swum in: see *What a map's brush entities do*.
 - **Anything from the source game's own archives.** A `.bsp` embeds only what the mapper
   added: 84% of `surf_kitsune`'s triangles and 91% of `Surf_Mesa`'s. The rest — the stock
   texture library, which on these maps includes the ramp itself — is drawn in the
@@ -1594,7 +1608,7 @@ It is `DotMapSyncHost` and `DotMapSyncClient` now, carried over dot-net: a host 
 
 **What is left is the one decision that is this game's: the imported-map scene is a trusted template.** Every imported map is one scene in the build pointed at a manifest (see *Maps are dropped in, not listed*) — the mount constraint forbids putting a scene that extends a build class in the pack — and dot-map's rule for a map a client does not have was that its scene is in the pack, so it would have refused every delivered map this game has. The client now lists `G2GMapCatalogue.IMPORTED_SCENE` in `DotMapSyncClient.trusted_template_scenes`, and dot-map then requires the **manifest** (`meta.manifest`), and any other path the definition carries, to be inside `res://dot_cloud/<content>/<version>/`. A server marks a map it fetched into a mount as that content and version (`G2GGame._mark_delivered`, off the mount directory, so there is no second record to disagree with it); a map on the server's own disk stays local, and a client that does not have it refuses it. **That is narrower than the workaround was:** the bridge's prefetch asked the client's origin for ANY unknown id, so a map an operator dropped into the server's `user://maps` still reached a client whose origin happened to carry the same id. Now a map a client can be sent is one the server itself got from the content origin — `content_maps`, or `map <id>` on an id the catalogue lacks — which is also the only case where the two ends are known to mean the same bytes by one id. The client fetches from its own content client and origin and verifies against its own keys; the host still says only which map. `headless_net`'s *an imported map that is delivered* publishes a signed pack, has the server fetch it the way it fetches `content_maps`, and asserts the client loads the imported-map scene out of its own build from the manifest in the pack; armed by removing the template from the bridge, and again by removing `_mark_delivered`, and it fired both times. **One limit worth knowing:** the template is matched by exact path, so a client and a server must agree on where `imported_map.tscn` is — which they do when both run the same game pack, and would not with a server run from source and a client on the pack.
 
-**What running it found that was not the protocol.** `G2GCombat._on_map_ready` has called `DotMatch.remove_spawn_point` since 2026-09-10, and dot-match has never had one. The first map has no points to remove, so the call only ran on the second map change on a server with the combat layer built. It raised a script error that aborted the function before it added the new map's points, so the deathmatch kept respawning players on the previous map's pads. `dedicated` had never changed map twice with combat up. Its unload section now does, and asserts that the points are the new map's, which fired with the old line put back. And **M changed the map on a networked client** — that client's own world, and nobody else's — so the server corrected the player into geometry their screen no longer had, every tick. It is offline-only now; online it says `!rtv`.
+**What running it found that was not the protocol.** `G2GCombat._on_map_ready` has called `DotMatch.remove_spawn_point` since 2026-09-10, and dot-match has never had one. The first map has no points to remove, so the call only ran on the second map change on a server with the combat layer built. It raised a script error that aborted the function before it added the new map's points, so the deathmatch kept respawning players on the previous map's pads. `dedicated` had never changed map twice with combat up. Its unload section now does, and asserts that the points are the new map's, which fired with the old line put back. And **M changed the map on a networked client** — that client's own world, and nobody else's — so the server corrected the player into geometry their screen no longer had, every tick. It is offline-only now; online it says `!rtv`. (Since 2026-10-08 M is the map list, and online it asks the server, which checks the changemap flag: see the last section.)
 
 ## Things deliberately not here
 
@@ -1894,3 +1908,26 @@ Before dot-net's per-snapshot caches the 32 row was 25.0 ms (snapshots 17.7). **
 **What a finish says** is `G2GGame.announced`: a new record to everybody (the `RECORD` event), a personal best or a miss to the finisher, and a refused run with the place it would have taken (`practice_finished`). The HUD's old "time — rank" notice is now only for a game without a store.
 
 **The commands are phrasing only.** `!pb`, `!rank`, `!players`, `!rr`, `!profile`, `!mapsdone`, `!mapsleft`, `!wrcp`, `!prinfo`, `!tier`, `!end`, `!pause`, `!unpause`, `!autorestart`, `!restore`, and the admin `g2g_settier`, `g2g_rescore`, `g2g_deleterecord`, `g2g_wipeplayer` call dot-timer's manager and store; two games' `!rank` cannot disagree about what a rank is.
+
+## What a map's brush entities do, a map list and a zone editor (2026-10-08, `[g2gfast-more-reviews-1]`)
+
+From Christian's bhop_eazy and bhop_evolve footage (`/extra/external/video/26-10-08/`). What the footage showed, and the cause of each:
+
+- **Every pit restarted the run.** The importer turned each leftover `trigger_teleport` into a RESPAWN zone and threw its destination away, and `G2GGame._on_effect_requested` answered every RESPAWN with `spawn_player` -- the track's spawn, run stopped. On a staged map that is "fell in section five, back to section one". A pit now carries the destination its trigger aims at (`G2GBspMap.SENDS_TO` in the payload) and the game teleports the player there with the run kept, as Source does. A pit whose target is not an `info_teleport_destination` still resolves: `Zoner.destinations` takes any point entity with that name (surf_greatriver_xdre4m aims at `info_target`s, surf_grave_reloaded at `info_landmark`s). **A destination inside another pit is followed, not dropped**: it is usually a speed-stopping hub (bhop_arcane_v2's `stage1_stop`, 239 of its 334 pits; surf_fruits 216), so the pit sends to where the chain ends, and only a real cycle falls back to the spawn. Teleports without the Clients flag are dropped (Source never fires them for a player).
+- **bhop_eazy had no zones at all**, so the timer never started and every gate between sections was a pit back to the spawn. It has a zones file now: the spawn room is the start, the three gates' arrivals are stages, and `t2727` (a hub of menu teleports nothing in a section leads back to) is the finish. It left `headless_imported`'s `NOT_COURSES`.
+- **Evolve's "water that is not water"** is a `func_illusionary` painted `watersource/river/river_clear` over section one. Water now comes from world WATER/SLIME brushes, `func_water_analog`/`func_water` (which were imported SOLID), and any brush entity in a water material. g2gfast registers dot-player-controller's `DotFpsSwimMode` on every player (200 u/s, and a new `idle_sink_speed` so a player who lets go sinks at 60 u/s the way the genre's water does; holding jump rises). **On evolve that particular river is also exactly the size of a teleport to `Zyp1_1`, so in Source you are teleported the moment you touch it, and here now too** -- to `Zyp1_1`, not to the start.
+- **The "trigger_push that is an invisible wall" is not a push**: bhop_evolve has no `trigger_push` at all, and its only brush entities are non-solid, so its collision is exactly its world brushes, which Source collides with too. Whatever cut the speed is a player clip or a surface we do not draw. Not found; it needs a position from Christian (`getpos`-style) to look at.
+- **Pushes, gravity, conveyors, lethal hurt and sinking blocks are run** (`tools/bsp_mechanics.py` -> manifest `mechanics` -> `G2GMapMechanics`, ticked from `G2GPlayer._on_simulated`). A push is the engine's base velocity: displaced through the motor's own sweep while inside, added to the velocity on leaving; its "last tick" is kept per TICK so a client's replay reads what the server did. A **block** (a touch-opened `func_door`/`func_button` moving down over a teleport plate) is timed per player: stand on it longer than the door would take to carry your feet into the plate and you are sent where the plate sends people (eazy: 8 units at 25 u/s, 0.32 s). Nobody can sink a block for somebody else because nothing is shared. A push or block behind a filter nobody can pass is left out (`inert_filters`: a class filter naming no class anybody is given, a name filter whose name no output assigns -- bhop_badges_mini's `upboost_filter` launched a player up a shaft for ever); teleports keep the old class-only rule, because bhop_tesquo_v2's renamed classes are checkpoint logic we do not run.
+- **Ladders** (CONTENTS_LADDER brushes in 22 maps) are climbed: `G2GLadderMode`, the engine's own decomposition (the wish into the face becomes up the face). In the game, not the addon, so a delivered pack names no new class.
+- `func_clip_vphysics`, "passable" doors, `Solidity 1` brushes and the like are no longer solid (`solid_for_players`).
+
+**Maps that rotate are a file, and a map out of rotation is still installed.** `cfg/map_rotation(.yml|.yaml|.json|.txt|.cfg|.ini)` (`sv_map_rotation_file`, `G2GMapRotationFile`); unlisted maps get `enabled = false`, which the rotation's pool, dot-vote's ballot and nominations already read, and `meta.in_rotation` for the list. **Combat surf maps** (ten, `"kind": "arena"` in their zones files) are out of rotation unless named; game-arena loading them is `[arena-combat-surf-1]` on the nightly queue.
+
+**M is the map list**, every map with "not in rotation" and "combat" marked, 1-7 or the mouse, 8/9 page, 0 closes (`G2GMapMenu`). Online it is the server's catalogue, sent (`Ask.MAPS` / `Kind.MAPS`, both appended) only to a session with the changemap flag (`G2GNetBridge.may_change_map_fn`), which is checked again on the change.
+
+**Zones are drawn**, glowing (`G2GZoneOutlines`: one MultiMesh of edge boxes for the core and one additive halo, so it does not depend on the environment's bloom; setting `show_zones`). **Z is the zone editor** (`G2GZoneEditor`): aim-placed corners snapped to 16 units, live preview, height on PgUp/PgDn. Offline it edits the game's set and saves to `user://zones/<map>.json`; online it sends `/g2g_zone`, `/g2g_zone_mark x y z height` (new: explicit corners, no padding) and `/g2g_zone_save` in chat. **`user://zones/<map>.json` was written by `g2g_zone_save` and read by nothing**; `_on_map_changed` reads it now, in preference to the map's own zones. Online, zones a server admin draws do not reach other clients' outlines until they load the map with the file.
+
+**Offline there is no map time limit** (`G2GConfig.offline_map_seconds`, 0).
+
+`examples/headless_mechanics.tscn` puts a player on every imported map's pit destinations (lands, or rides a ramp, without falling freely or looping), through a pit with a run going (kept), on its blocks (stays: taken off; hops: not), in its pushes (pushed along) and in its water (swims, rises on jump). Each samples at most twelve per map.
+

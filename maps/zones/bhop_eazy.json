@@ -1,6 +1,99 @@
 {
  "id": "bhop_eazy",
  "author": "31K4L",
- "attribution": {"author": "31K4L", "source": "https://gamebanana.com/mods/124913 (confirmed: Page: submitter 31K4L, 'Original Authors: 31K4L - Creator'; archive 1839753 bytes matches page's bhop_eazy.rar exactly. In-map: packed 'materials/hammer textures/bhop_eazy/31_e_mapby_blue_1/_2.vtf' read 'Map By 31K4L' (every custom texture is prefixed 31_e_). The archive's 'Readme - Installation.txt' is signed '31K4L'.)", "archive": "bhop_eazy.rar", "recorded": "2026-09-27"},
- "notes": "Credit only. Everything else about this map comes from the .bsp itself; see README.md."
+ "attribution": {
+  "author": "31K4L",
+  "source": "https://gamebanana.com/mods/124913 (confirmed: Page: submitter 31K4L, 'Original Authors: 31K4L - Creator'; archive 1839753 bytes matches page's bhop_eazy.rar exactly. In-map: packed 'materials/hammer textures/bhop_eazy/31_e_mapby_blue_1/_2.vtf' read 'Map By 31K4L' (every custom texture is prefixed 31_e_). The archive's 'Readme - Installation.txt' is signed '31K4L'.)",
+  "archive": "bhop_eazy.rar",
+  "recorded": "2026-09-27"
+ },
+ "notes": "A section-chain map: four sections of door blocks, each a few lanes joined by the floor's pit teleports, and a door-sized gate at the end of each section into the next (t11 -> t1111 -> t1717 -> t2121 -> t2727). The START is the spawn room every info_player stands in, which is also where section 1's pits return you (t11 at -352 -352). The stages are the gates' arrivals: t1111 (1344 -352), t1717 (-384 -1728) and t2121 (1344 -1728). The FINISH is where the last gate (model *216 at 1252 -864) puts you, t2727 at (-864 -288): a hub room whose five teleports are the map's own menu -- top1..top4 to an upper copy of each section, bonus1 to the bonus -- and nothing in it is a section. DOUBTS: the room-as-finish is read from the teleport graph (it is the only arrival nothing in a section leads back to), not from an entity; the upper 'top' route and the bonus are not timed tracks yet.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -480,
+     -472,
+     60
+    ],
+    [
+     -232,
+     -224,
+     192
+    ]
+   ],
+   "note": "the spawn room: all 16 info_player_counterterrorist stand in it, at z 65"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -352,
+    -352,
+    65
+   ],
+   "destination_yaw": 0,
+   "note": "t11, where the map's own section-1 pits put you, facing down the first lane"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "t1111",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "t1111",
+   "note": "the arrival of section 1's gate (*48 and *99, both aimed at t1111)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "t1717",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "t1717",
+   "note": "the arrival of section 2's gate (*108)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "t2121",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "t2121",
+   "note": "the arrival of section 3's gate (*178, *179)"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "around": {
+    "point": "t2727",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "note": "the arrival of section 4's gate (*216): the hub room, t2727, facing its five menu teleports"
+  }
+ ]
 }

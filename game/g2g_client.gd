@@ -8,6 +8,9 @@ const G2GConfig := preload("g2g_config.gd")
 const G2GFlashlight := preload("g2g_flashlight.gd")
 const G2GGame := preload("g2g_game.gd")
 const G2GHelp := preload("ui/g2g_help.gd")
+const G2GMapMenu := preload("ui/g2g_map_menu.gd")
+const G2GZoneEditor := preload("g2g_zone_editor.gd")
+const G2GZoneOutlines := preload("g2g_zone_outlines.gd")
 const G2GHud := preload("g2g_hud.gd")
 const G2GMenu := preload("ui/g2g_menu.gd")
 const G2GNetBridge := preload("net/g2g_net_bridge.gd")
@@ -62,6 +65,15 @@ var flashlight: G2GFlashlight = null
 ## console — the console is the one thing an operator must always be able to reach.
 var menu: G2GMenu = null
 var help: G2GHelp = null
+
+## The M screen: every map, a page at a time. See [G2GMapMenu].
+var map_menu: G2GMapMenu = null
+
+## Every zone drawn as a glowing box. See [G2GZoneOutlines].
+var zone_outlines: G2GZoneOutlines = null
+
+## Z: drawing zones in the world. See [G2GZoneEditor].
+var zone_editor: G2GZoneEditor = null
 
 ## What the server last said about this client's own screen: `sv_flashlight`,
 ## `sv_allow_thirdperson` and the chat commands. See [method _on_rules].
@@ -124,6 +136,10 @@ func _ready() -> void:
 		DotLog.warn("g2g.client", "the configuration did not load cleanly",
 			{"why": layered.error.message})
 
+	# Alone, nobody is waiting for the next map: no clock, unless one was configured.
+	if _offline:
+		config.map_seconds = config.offline_map_seconds
+
 	# A client is never the authority. Its timer is a display; its records go nowhere.
 	config.authoritative = _offline
 	config.initial_map = config.initial_map if _offline else &""
@@ -145,6 +161,26 @@ func _ready() -> void:
 	# Every effect drawn is somewhere on the map that just went away, and the landing
 	# watcher would otherwise read the first frame on the new one as a fall.
 	game.map_ready.connect(func(_map: DotMapDef) -> void: presentation.on_map_changed())
+
+	zone_outlines = G2GZoneOutlines.new()
+	zone_outlines.name = "ZoneOutlines"
+	add_child(zone_outlines)
+	game.map_ready.connect(func(_map: DotMapDef) -> void: zone_outlines.refresh(game.timers.zones))
+	# The first map may already be up: an offline game loads it inside its own _ready.
+	if game.maps != null and game.maps.current != null:
+		zone_outlines.refresh(game.timers.zones)
+
+	zone_editor = G2GZoneEditor.new()
+	zone_editor.name = "ZoneEditor"
+	zone_editor.game = game
+	zone_editor.client = self
+	zone_editor.outlines = zone_outlines
+	zone_editor.offline = _offline
+	zone_editor.send_line = func(line: String) -> void:
+		if link != null and link.has_method("send_chat"):
+			link.send_chat(line, false)
+	zone_editor.changed.connect(func() -> void: zone_outlines.refresh(game.timers.zones))
+	add_child(zone_editor)
 
 	if _offline:
 		for _i in range(60):
@@ -387,6 +423,7 @@ func _build_netcode() -> DotResult:
 
 	bridge.hello_received.connect(_on_hello)
 	bridge.rules_received.connect(_on_rules)
+	bridge.maps_received.connect(func(rows: Array) -> void: _open_map_menu(rows, "this server"))
 	bridge.map_refused.connect(_on_map_refused)
 	bridge.finish_received.connect(func(pid: int, time: float, rank: int) -> void:
 		if hud != null and pid == bridge.local_player_id:
@@ -672,6 +709,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# map leaves it.
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		if (event as InputEventKey).physical_keycode == KEY_ESCAPE:
+			if zone_editor != null and zone_editor.is_open():
+				zone_editor.close()
+				return
 			open_menu()
 			return
 		if event.is_action_pressed(&"g2g_help"):
@@ -680,6 +720,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if player == null:
 		return
+
+	# The zone editor takes its own keys and the left button while it is open; mouse look
+	# and movement carry on, because aiming IS how a corner is placed.
+	if zone_editor != null and zone_editor.is_open():
+		if event is InputEventKey and zone_editor.handle_key(event as InputEventKey):
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and zone_editor.handle_click(event as InputEventMouseButton):
+			get_viewport().set_input_as_handled()
+			return
 
 	if event is InputEventMouseMotion:
 		if not mouse_drives_view():
@@ -730,13 +780,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	# the server went on simulating the player on its own map, and every tick's
 	# correction put them back in a place their screen no longer had. A client's map
 	# is the server's to announce; `!rtv` is how a player asks for another.
+	#
+	# It used to change to the rotation's next map; it is the map LIST now, every map the
+	# game has, and online it is the server's list, which the server only sends to a
+	# player holding the changemap flag (it says no to anybody else, with !rtv).
 	elif event.is_action_pressed(&"g2g_map_next"):
-		if _offline:
-			var next := game.maps.rotation.choose(1)
-			if next != null:
-				game.change_map(next.id)
-		else:
-			hud.notice("The server chooses the map. !rtv asks for a vote.")
+		open_map_list()
+	elif event.is_action_pressed(&"g2g_zones"):
+		if zone_editor != null:
+			zone_editor.toggle()
 	elif event.is_action_pressed(&"g2g_checkpoint_save"):
 		if not _offline:
 			bridge.ask_checkpoint(0)
@@ -791,6 +843,12 @@ func _build_overlays() -> void:
 	menu.leave_requested.connect(_leave)
 	_overlay_layer.add_child(menu)
 
+	map_menu = G2GMapMenu.new()
+	map_menu.name = "MapMenu"
+	map_menu.closed.connect(_on_overlay_closed)
+	map_menu.chosen.connect(_on_map_chosen)
+	_overlay_layer.add_child(map_menu)
+
 	help = G2GHelp.new()
 	help.name = "Help"
 	help.online = not _offline
@@ -812,7 +870,33 @@ func _build_overlays() -> void:
 
 
 func overlay_open() -> bool:
-	return (menu != null and menu.is_open()) or (help != null and help.is_open())
+	return (menu != null and menu.is_open()) or (help != null and help.is_open()) \
+		or (map_menu != null and map_menu.is_open())
+
+
+## M: the map list. Offline it is this game's catalogue; online it is asked of the server,
+## which answers only an admin, and [method _open_map_menu] opens it when it arrives.
+func open_map_list() -> void:
+	if _offline:
+		_open_map_menu(game.map_rows(), "offline")
+	elif bridge != null:
+		bridge.ask_maps()
+
+
+func _open_map_menu(rows: Array, where: String) -> void:
+	if map_menu == null:
+		return
+	map_menu.open(rows, where)
+	_on_overlay_opened()
+
+
+func _on_map_chosen(id: StringName) -> void:
+	if _offline:
+		var changed: DotResult = await game.change_map(id)
+		if not changed.ok and hud != null:
+			hud.notice(changed.error.message)
+	elif bridge != null:
+		bridge.ask_maps(String(id))
 
 
 func open_menu(page: StringName = &"") -> void:
@@ -820,6 +904,8 @@ func open_menu(page: StringName = &"") -> void:
 		return
 	if help != null and help.is_open():
 		help.close()
+	if map_menu != null and map_menu.is_open():
+		map_menu.close()
 	menu.open(page)
 	_on_overlay_opened()
 
@@ -844,6 +930,14 @@ func _overlay_key(event: InputEvent) -> void:
 	# menu it opened; closing on it would make the menu flash and vanish.
 	if escape and Time.get_ticks_msec() - _overlay_opened_msec < 250:
 		get_viewport().set_input_as_handled()
+		return
+
+	if map_menu != null and map_menu.is_open():
+		if escape or event.is_action_pressed(&"g2g_map_next") \
+				or map_menu.key((event as InputEventKey).keycode):
+			if escape or event.is_action_pressed(&"g2g_map_next"):
+				map_menu.close()
+			get_viewport().set_input_as_handled()
 		return
 
 	if help != null and help.is_open() and (escape or event.is_action_pressed(&"g2g_help")):
@@ -981,6 +1075,9 @@ func apply_client_settings() -> void:
 
 	if _fps_label != null:
 		_fps_label.visible = st.get_bool(&"show_fps", false)
+
+	if zone_outlines != null:
+		zone_outlines.visible = st.get_bool(&"show_zones", true)
 
 	if player != null and player.camera != null:
 		player.camera.fov_desired = float(st.get_int(&"field_of_view", 90))

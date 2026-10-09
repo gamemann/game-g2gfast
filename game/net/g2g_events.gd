@@ -55,6 +55,10 @@ enum Kind {
 	## `sv_flashlight`, `sv_allow_thirdperson`, and the public command list the help screen
 	## draws. On admit and whenever one of them changes. Appended, for the reason above.
 	RULES,
+	## Every map the server has, for the M screen: `[{id, name, tier, kind, rotation,
+	## current}]` as JSON. Sent only to a player holding the changemap flag, on asking.
+	## Appended, for the reason above.
+	MAPS,
 }
 
 enum Ask {
@@ -75,6 +79,9 @@ enum Ask {
 	## One message of dot-map's map-change protocol, peer to host: progress or ready.
 	## Last, because a kind is its index on the wire.
 	MAP,
+	## The M screen: an empty id asks for the map list, an id asks to change to it. Both
+	## are refused unless the asker holds the changemap flag. Appended.
+	MAPS,
 }
 
 const NAME_BYTES := 64
@@ -491,3 +498,44 @@ static func read_rules(reader: DotNetReader) -> Dictionary:
 		"thirdperson": bool((parsed as Dictionary).get("thirdperson", true)),
 		"commands": commands,
 	}
+
+
+# --- MAPS ------------------------------------------------------------------
+
+## What the map list may occupy. 42 maps are about 4 KB; a server with three hundred
+## gets the first ones that fit rather than a list cut in half.
+const MAPS_BYTES := 32768
+
+
+static func write_maps(rows: Array) -> PackedByteArray:
+	var list := rows.duplicate()
+	var text := JSON.stringify(list)
+	while text.to_utf8_buffer().size() > MAPS_BYTES and not list.is_empty():
+		list.pop_back()
+		text = JSON.stringify(list)
+	var writer := _w()
+	writer.write_string(text, MAPS_BYTES)
+	return writer.to_bytes()
+
+
+static func read_maps(reader: DotNetReader) -> Array:
+	var text := reader.read_string(MAPS_BYTES)
+	var json := JSON.new()
+	if not reader.ok() or json.parse(text) != OK or not (json.data is Array):
+		return []
+	var out: Array = []
+	for row: Variant in json.data:
+		if row is Dictionary and (row as Dictionary).has("id"):
+			out.append(row)
+	return out
+
+
+## A map id asked for over the wire. Bounded by what an id is.
+static func write_map_id(id: String) -> PackedByteArray:
+	var writer := _w()
+	writer.write_string(id, NAME_BYTES)
+	return writer.to_bytes()
+
+
+static func read_map_id(reader: DotNetReader) -> String:
+	return reader.read_string(NAME_BYTES)

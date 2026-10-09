@@ -4,6 +4,7 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GMap := preload("../game/g2g_map.gd")
 const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
+const G2GMapRotationFile := preload("../game/g2g_map_rotation_file.gd")
 const G2GMapSurvey := preload("../game/g2g_map_survey.gd")
 const G2GMovement := preload("../game/g2g_movement.gd")
 const G2GUnits := preload("../game/g2g_units.gd")
@@ -26,17 +27,17 @@ const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 ## Checks that do not depend on how many maps are on disk. `_test_zones_have_floor`
 ## adds one per hand-written map and `_test_maps_are_surveyed` six, which is a number
 ## this file deliberately does not write down -- see [method _test_zones_have_floor].
-const EXPECTED_FIXED_CHECKS := 30
+const EXPECTED_FIXED_CHECKS := 43
 
 ## Checks each hand-written map adds: one for its zones' floor, six for its survey.
 const CHECKS_PER_MAP := 7
 
-const CHECKS := 51
+const CHECKS := 64
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 6
+const SECTIONS := 7
 
 ## Hand-written maps whose survey finds a tilted slab a player can STAND on, and how
 ## many. Asserted both ways, like `headless_imported`'s `ARRIVES_IN_PIT`: a map not
@@ -71,6 +72,7 @@ func _run() -> void:
 	_test_discovery()
 	_test_derivations()
 	await _test_rescan()
+	_test_rotation_file()
 	await _test_client_config()
 	await _test_zones_have_floor()
 	_test_maps_are_surveyed()
@@ -231,6 +233,65 @@ func _test_rescan() -> void:
 	# it leaves the rotation offering exactly the maps that are no longer there.
 	_check(game.maps.rotation != null and game.maps.rotation.catalogue == game.maps.catalogue,
 		"and the rotation still points at the catalogue it was given")
+	_done()
+
+
+## `cfg/map_rotation.yml`: the maps a server rotates, in five spellings, and what it does
+## to the catalogue -- the unlisted ones stay installed, out of rotation, and on the map list.
+func _test_rotation_file() -> void:
+	_section("rotation file")
+	var yml := G2GMapRotationFile.parse_yaml("# a comment\nmode: sequential\nmaps:\n  - bhop_g2g_intro\n  - 'surf_g2g_intro'  # trailing\ncooldown: 2\n")
+	_check(yml.ok and yml.value["maps"] == PackedStringArray(["bhop_g2g_intro", "surf_g2g_intro"])
+		and str(yml.value["settings"].get("mode")) == "sequential" and str(yml.value["settings"].get("cooldown")) == "2",
+		"a YAML rotation reads its list and the settings beside it", str(yml.value if yml.ok else yml.error.message))
+	var flow := G2GMapRotationFile.parse_yaml("maps: [a_one, \"b_two\"]\n")
+	_check(flow.ok and flow.value["maps"] == PackedStringArray(["a_one", "b_two"]), "a flow list too")
+	var bare := G2GMapRotationFile.parse_yaml("- one\n- two\n- one\n")
+	_check(bare.ok and bare.value["maps"] == PackedStringArray(["one", "two"]), "and a bare list, without repeats")
+	var obj := G2GMapRotationFile.parse_json("{\"maps\": [\"Surf_Mesa\", \"bhop_eazy\"], \"mode\": \"random\"}")
+	_check(obj.ok and obj.value["maps"] == PackedStringArray(["surf_mesa", "bhop_eazy"]), "a JSON object, ids lower-cased")
+	var arr := G2GMapRotationFile.parse_json("[\"x\", \"y\"]")
+	_check(arr.ok and arr.value["maps"].size() == 2, "a JSON array")
+	var txt := G2GMapRotationFile.parse_lines("surf_mesa\n// a comment\n# another\nbhop_eazy ; trailing\n\n")
+	_check(txt.ok and txt.value["maps"] == PackedStringArray(["surf_mesa", "bhop_eazy"]), "a mapcycle .txt")
+	var ini := G2GMapRotationFile.parse_lines("[rotation]\nmap = surf_mesa\nbhop_eazy = 1\n")
+	_check(ini.ok and ini.value["maps"] == PackedStringArray(["surf_mesa", "bhop_eazy"]), "an .ini, both ways round")
+	var bad := G2GMapRotationFile.parse_yaml("maps:\n  - one\nthis is not yaml\n")
+	_check(not bad.ok and bad.error.message.contains("line 3"), "a line it cannot read is refused, by number")
+
+	DirAccess.make_dir_recursive_absolute("user://rotation_test")
+	var f := FileAccess.open("user://rotation_test/map_rotation.txt", FileAccess.WRITE)
+	f.store_string("bhop_g2g_intro\n")
+	f.close()
+	_check(G2GMapRotationFile.find("user://rotation_test/map_rotation") == "user://rotation_test/map_rotation.txt",
+		"a path without an extension finds whichever spelling is there")
+
+	# Applied to a game: listed in, unlisted out, nothing removed.
+	var all_before := game.maps.catalogue.size()
+	game.rotation_ids = PackedStringArray(["bhop_g2g_intro"])
+	game.apply_rotation()
+	var pool := game.maps.rotation.pool()
+	_check(pool.size() == 1 and pool[0].id == &"bhop_g2g_intro" and game.maps.catalogue.size() == all_before,
+		"a rotation file leaves the others installed and out of the pool", "%d in the pool" % pool.size())
+	var rows := game.map_rows()
+	var out_count := 0
+	for row: Dictionary in rows:
+		if not bool(row["rotation"]):
+			out_count += 1
+	_check(rows.size() == all_before and out_count == all_before - 1,
+		"and the map list shows every map, the unlisted ones marked", "%d rows, %d out" % [rows.size(), out_count])
+
+	# No file: everything rotates except a combat map.
+	var arena := DotMapDef.new()
+	arena.id = &"surf_combat_test"
+	arena.kind = DotMapDef.KIND_ARENA
+	game.maps.catalogue.add(arena)
+	game.rotation_ids = PackedStringArray()
+	game.apply_rotation()
+	_check(not game.in_rotation(&"surf_combat_test") and game.in_rotation(&"bhop_g2g_intro"),
+		"with no file, every map rotates but a combat one")
+	game.maps.catalogue.remove(&"surf_combat_test")
+	_check(game.config.offline_map_seconds == 0.0, "and a game played alone has no time limit by default")
 	_done()
 
 

@@ -36,7 +36,8 @@ The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` a
 | **R** | Back to the start |
 | **C** / **V** | Save a practice checkpoint / go back to it |
 | **Y** / **U** | Chat / team chat |
-| **M** | Next map (offline only; on a server, type `!rtv` to start a vote) |
+| **M** | The map list: every map, 1–7 or a click to change to it, 8 and 9 to turn the page. Offline, or on a server if you have the changemap flag; anybody else types `!rtv` |
+| **Z** | The zone editor (offline, or an admin): see [Zones](#zones) |
 | **H** | Help: every key and every chat command on the server |
 | **Esc** | The menu: settings, key bindings, help. Click the game or **Resume** to take the mouse back |
 | **`** | The console. `settings` lists every setting |
@@ -91,7 +92,24 @@ sv_map_sync_timeout 30       // how long a map change waits for slow clients
 sv_deathmatch 0              // players can shoot each other
 sv_hunters 0                 // monsters walk the course
 sv_props 0                   // players can place practice blocks
+sv_map_rotation_file cfg/map_rotation   // which installed maps rotate; see below
 ```
+
+### Which maps rotate
+Put the maps you want played in `cfg/map_rotation.yml`. A map you leave out stays installed: `g2g_map <id>` still loads it and **M** lists it, marked "not in rotation". It just never comes round on its own, and the vote and nominations don't offer it.
+
+```yaml
+mode: random          # or sequential
+cooldown: 2           # maps that must pass before one comes back
+maps:
+  - bhop_eazy
+  - bhop_evolve
+  - surf_mesa
+```
+
+`.yaml`, `.json` (`{"maps": [...]}` or a plain list), and the old one-map-per-line `.txt`, `.cfg` or `.ini` work too. With no file every map rotates, except the combat surf maps (below). `g2g_maps_reload` re-reads it.
+
+Played offline, by yourself, a map has no time limit. `--g2g-offline-map-seconds 1800` gives it one.
 
 Console commands:
 
@@ -155,8 +173,29 @@ The imported maps land in `maps/imported/`, which is a link to the g2gfast-maps 
 
 Collision comes from the map's brushes, not from what you can see, so invisible player clips and surf ramp clips work the way the mapper meant. Surfaces are coloured by their angle: one you can stand on, one you slide on, and a wall each look different.
 
+What the map's own volumes do comes across too: a teleport sends you where the map aims it and your run goes on, boosters push, water is swum in (hold jump to come up), ladders are climbed, conveyors carry you, and a bunny-hop block sends you back if you stand on it. Blocks are timed for each player on their own, so nobody can sink a block under the player behind them. [`docs/brush-entities.md`](docs/brush-entities.md) goes through every brush entity and what happens to it.
+
+**Combat maps.** Some surf maps are built to fight on, not to time (`surf_10x_reloaded_fixed`, `surf_110b_austinpowers` and eight more). Their zones file says `"kind": "arena"`: they stay installed and loadable, **M** marks them "combat", and they are left out of the rotation and the vote unless `cfg/map_rotation.yml` lists them. They belong to game-arena's deathmatch.
+
 ### Zones
-Most surf and bunny-hop maps name their own start and end zones, stages and bonuses, and the importer reads those. For a map that doesn't, write the zones in `maps/zones/<id>.json` (see `maps/zones/README.md`), or draw them in the game from the console:
+Most surf and bunny-hop maps name their own start and end zones, stages and bonuses, and the importer reads those. For a map that doesn't, write the zones in `maps/zones/<id>.json` (see `maps/zones/README.md`), or draw them in the game.
+
+Every start, stage and finish is drawn as a glowing box: green start, red finish, amber stages, cyan and magenta for a bonus. **Esc → General → Zones** turns them off.
+
+**Z** opens the zone editor. Aim at the floor: a marker follows your crosshair, snapped to the 16-unit grid.
+
+| Key | |
+| --- | --- |
+| **1**–**6** | Start, end, stage, checkpoint, stop, pit |
+| **T** | Main track, bonus 1, bonus 2, ... |
+| **[** / **]** | The stage or checkpoint number |
+| **PgUp** / **PgDn**, or the wheel | The height, 16 units at a time (128 by default) |
+| **E** or click | Put a corner. The box follows your aim until the second one |
+| **Backspace** | Take the last zone back |
+| **Enter** | Save |
+| **Z** or **Esc** | Close |
+
+Offline it saves to `user://zones/<map>.json`, which the game loads in place of the map's own zones next time. On a server it sends the server's own zone commands for you, which need the changemap flag, and the server saves them the same way. The console still works:
 
 ```
 g2g_zone start          // start drawing a start zone
@@ -183,6 +222,7 @@ g2g_zone_save           // write them to disk
 | `headless_presentation` | What a client draws and plays |
 | `headless_stack` | The whole stack of addons together |
 | `headless_imported` | Every imported map loads and has its zones |
+| `headless_mechanics` | Every imported map's teleports, sinking blocks, pushes and water do what they should, with a player on them |
 | `dedicated` | A real server: boots, loads the game, runs its commands |
 
 [`CLAUDE.md`](CLAUDE.md) has the design decisions and the reasoning behind them.
