@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 16
-const CHECKS := 181
+const CHECKS := 183
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -406,6 +406,25 @@ func _test_commands() -> void:
 	_run_command("g2g_zone_mark")
 	_check(game.timers.zones.zones.size() == before + 1, "the sm_zones workflow draws a stage")
 	_check(_said(_run_command("g2g_zone_undo"), "removed"), "and undoes it")
+
+	# What the client's zone editor (Z) sends when it is online: the same commands, with
+	# the corners it aimed at in units and the height it showed, and no padding.
+	before = game.timers.zones.zones.size()
+	_run_command("g2g_zone stage 0 5")
+	_run_command("g2g_zone_mark 100 64 -456 0")
+	_run_command("g2g_zone_mark 356 64 -200 128")
+	var drawn: DotTimerZone = game.timers.zones.zones.back() if game.timers.zones.zones.size() == before + 1 else null
+	var lo := G2GUnits.vector_to_units(drawn.from).round() if drawn != null else Vector3.ZERO
+	var hi := G2GUnits.vector_to_units(drawn.to).round() if drawn != null else Vector3.ZERO
+	_check(drawn != null and lo == Vector3(100, 64, -456) and hi == Vector3(356, 192, -200) and int(drawn.number) == 5,
+		"the zone editor's aimed corners draw exactly that box, at its height", "%s..%s" % [lo, hi])
+	var _undone := _run_command("g2g_zone_undo")
+	var unreachable := PackedStringArray()
+	for name in ["g2g_zone", "g2g_zone_mark", "g2g_zone_undo", "g2g_zone_save"]:
+		var c: DotConCommand = server.console.find_command(name)
+		if c == null or not c.allows_chat(server.console.chat_commands_are_open()):
+			unreachable.append(name)
+	_check(unreachable.is_empty(), "and every command the editor sends is reachable from chat", ", ".join(unreachable))
 	var zone_cmd: DotConCommand = server.console.find_command("g2g_zone")
 	_check(zone_cmd != null and zone_cmd.permission == DotAdminFlags.CHANGEMAP, "zone drawing needs changemap")
 	_done()
