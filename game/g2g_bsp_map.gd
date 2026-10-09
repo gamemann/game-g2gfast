@@ -434,6 +434,11 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 	# map looked like: one grey mass with the ride invisible in it. It gets the same
 	# prototype set the hand-built maps draw in instead, chosen by what the surface is
 	# FOR, which the importer worked out from its slope.
+	# [b]Water draws as water.[/b] The source game's water materials are never in a map, so
+	# a pool was the opaque grid: a floor the player sank through. See g2g_bsp_water.gdshader.
+	if is_water_material(str(s.get("material", ""))):
+		return _water_material(s, lightmap)
+
 	var role := _role(str(s.get("role", "FLOOR")))
 
 	# [b]The map's own colour, when the importer found it.[/b] vrad left each texture's
@@ -494,6 +499,33 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 		G2GTextures.INSTALLED_SQUARES_PER_TILE if installed != null
 		else G2GTextures.SQUARES_PER_TILE))
 	mat.set_shader_parameter("ambient", prototype_ambient)
+	return mat
+
+
+## Whether a material name is water: its file name (the last path segment) says `water`
+## -- `nature/water_canals03`, `liquids/militiawater`, `dev/dev_waterbeneath2`,
+## `nature/sewer_water001` -- and it is not a waterfall, which is a wall of falling texture
+## a player does not swim in. About 190 surfaces across the 51 held maps.
+static func is_water_material(material: String) -> bool:
+	var last := material.to_lower().get_file()
+	return last.contains("water") and not last.contains("waterfall")
+
+
+## Water in the map's own colour where the importer measured one that is not grey (most
+## stock water measures as a dark teal; an untextured one reads a neutral grey, which as
+## water looks like dishwater), else the shader's teal.
+func _water_material(s: Dictionary, lightmap: Texture2D) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load(G2GPaths.rebase("res://game/g2g_bsp_water.gdshader"))
+	mat.set_shader_parameter("lightmap_tex", lightmap)
+	mat.set_shader_parameter("light_boost", light_boost)
+	mat.set_shader_parameter("ambient", ambient)
+	var colour: Variant = s.get("colour", null)
+	if colour is Array and (colour as Array).size() >= 3:
+		var c := Color(float(colour[0]), float(colour[1]), float(colour[2]))
+		if c.s > 0.25 and c.v > 0.04:
+			mat.set_shader_parameter("tint", Color(c.r, c.g, c.b, 1.0).lightened(0.15))
+	mat.set_meta(&"water", true)
 	return mat
 
 

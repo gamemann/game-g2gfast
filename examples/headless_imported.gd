@@ -145,7 +145,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 45
+const CHECKS_PER_MAP := 46
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -509,6 +509,25 @@ func _test_lighting() -> void:
 	_check(drawn >= drawn_floor,
 		"and a stock texture it did not carry has its Kenney stand-in",
 		"%.1f%% drawn textured, %.0f%% expected" % [drawn * 100.0, drawn_floor * 100.0])
+	# [b]Water that shipped no texture is drawn as water[/b], see g2g_bsp_water.gdshader:
+	# every such surface in the manifest has the water material on the mesh, and nothing
+	# else does. Armed by skipping the water branch in G2GBspMap._material_for.
+	var water_wanted := 0
+	for entry: Dictionary in node.manifest.get("surfaces", []):
+		if bool(entry.get("prop", false)) or (entry.get("texture", null) is String and not str(entry["texture"]).is_empty()):
+			continue
+		if G2GBspMap.is_water_material(str(entry.get("material", ""))):
+			water_wanted += 1
+	var water_drawn := 0
+	for drawn_node: Node in node.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := drawn_node as MeshInstance3D
+		for i in range(mesh_instance.get_surface_override_material_count()):
+			var m := mesh_instance.get_surface_override_material(i)
+			if m != null and m.has_meta(&"water"):
+				water_drawn += 1
+	_check(water_drawn == water_wanted,
+		"and its untextured water is drawn as water",
+		"%d water materials on the mesh, %d water surfaces in the manifest" % [water_drawn, water_wanted])
 	_check(slashed.is_empty() and share >= floor_share,
 		"and the textures its pakfile carried are drawn",
 		"%.0f%% of triangles in their own texture, %.0f%% expected; names with a leading '/': %s"
