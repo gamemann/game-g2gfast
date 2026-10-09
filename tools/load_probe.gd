@@ -81,6 +81,9 @@ func _measure(map_id: StringName, players: int) -> void:
 	nc.enable_lag_compensation = false
 	nc.enable_prediction = true
 	nc.world_extent = 512.0
+	# LOAD_STAGGER=1: snapshots spread over the ticks between them (DotNetConfig.stagger_snapshots),
+	# so a row can be compared both ways.
+	nc.stagger_snapshots = OS.get_environment("LOAD_STAGGER") == "1"
 	net.config = nc
 	side.add_child(net)
 	net.setup()
@@ -144,8 +147,14 @@ func _measure(map_id: StringName, players: int) -> void:
 					behaviour._net_simulate(tick, step)
 		bridge.ensure_game_ticked(tick)
 		var mid := Time.get_ticks_usec()
+		var period := net.config.ticks_per_snapshot()
+		if net.config.stagger_snapshots and period > 1:
+			# What DotNetManager.server_tick does when staggered: some peers every tick.
+			net.history.record(identities, tick)
+			net._send_snapshots(tick, identities, posmod(tick, period), period)
 		net._ticks_since_snapshot += 1
-		if net._ticks_since_snapshot >= net.config.ticks_per_snapshot():
+		if not (net.config.stagger_snapshots and period > 1) \
+				and net._ticks_since_snapshot >= net.config.ticks_per_snapshot():
 			net._ticks_since_snapshot = 0
 			var h0 := Time.get_ticks_usec()
 			net.history.record(identities, tick)
