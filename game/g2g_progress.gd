@@ -59,6 +59,9 @@ var _movement_baseline: Dictionary = {}
 ## player id -> where they were at the last sample, for the distance counter.
 var _last_position: Dictionary = {}
 
+## player id -> metres travelled and not yet filed. See [method _sample_distance].
+var _distance_owed: Dictionary = {}
+
 ## player id -> seconds of playtime not yet filed as a whole second.
 var _playtime: Dictionary = {}
 
@@ -182,6 +185,11 @@ func leave(player_id: StringName) -> void:
 	_flush_movement(player_id)
 	_flush_playtime(player_id, true)
 
+	var owed := float(_distance_owed.get(player_id, 0.0))
+	if owed > 0.0:
+		record(player_id, G2GStats.DISTANCE, owed)
+	_distance_owed.erase(player_id)
+
 	stats.end(player_id)
 	link.forget(String(player_id))
 
@@ -259,8 +267,12 @@ func _sample_movement(player_id: StringName, player: G2GPlayer) -> void:
 
 	# BEST, not a delta: `record` merges through the stat's own kind, so filing the
 	# running maximum leaves the highest one. In units, because everything a player
-	# reads in this game is.
-	if counters.max_speed > 0.0:
+	# reads in this game is. [b]Only when it beats what was last filed[/b]: filing the same
+	# best every tick was a dot-stats record per player per tick -- with distance, a
+	# millisecond of a 32-player server's tick (`tools/load_probe`) -- for a figure that
+	# changes a few times a run.
+	if counters.max_speed > float(held.get("top", 0.0)):
+		held["top"] = counters.max_speed
 		record(player_id, G2GStats.TOP_SPEED, G2GUnits.to_units(counters.max_speed))
 
 	_movement_baseline[player_id] = held
@@ -305,8 +317,14 @@ func _sample_distance(player_id: StringName, player: G2GPlayer) -> void:
 
 	# Half a metre in one tick at 128 Hz is 64 m/s, which is well past anything the
 	# movement can produce and well short of a map's width.
+	# [b]Owed, and filed a metre at a time[/b] (and the rest on leaving): a record per player
+	# per tick was most of what this layer cost a full server. The total is the same.
 	if moved > 0.0 and moved < 0.5:
-		record(player_id, G2GStats.DISTANCE, moved)
+		var owed := float(_distance_owed.get(player_id, 0.0)) + moved
+		if owed >= 1.0:
+			record(player_id, G2GStats.DISTANCE, owed)
+			owed = 0.0
+		_distance_owed[player_id] = owed
 
 
 func _flush_movement(player_id: StringName) -> void:
