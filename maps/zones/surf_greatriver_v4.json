@@ -1,0 +1,13 @@
+{
+ "id": "surf_greatriver_v4",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "BeNnY",
+ "attribution": {
+  "author": "BeNnY",
+  "source": "https://gamebanana.com/mods/122202 (Key Authors: BeNnY; submitter benny1012002)",
+  "archive": "surf_greatriver_v4.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 27 placed weapons and 57 func_buttons (weapon and trap buttons); teleports aim at team spawns, 'noob', 'above' and the top -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

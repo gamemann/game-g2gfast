@@ -1,0 +1,14 @@
+{
+ "id": "surf_buck_wild",
+ "display_name": "surf: buck-wild",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "buck nasty",
+ "attribution": {
+  "author": "buck nasty",
+  "source": "https://gamebanana.com/mods/121787 (Key Authors: buck nasty; submitter BuckNasty)",
+  "archive": "surf_buck-wild.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 125 placed weapons, team spawns, jail1 and a 'bye_bye_room'; teleports return players to the top, the middle or their spawn. gb-maps-1 batch of 2026-10-09. Not published."
+}

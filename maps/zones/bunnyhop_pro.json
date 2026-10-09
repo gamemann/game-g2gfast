@@ -1,0 +1,11 @@
+{
+ "id": "bunnyhop_pro",
+ "author": "win32",
+ "attribution": {
+  "author": "win32",
+  "source": "https://gamebanana.com/mods/126426 (Key Authors: win32; submitter Win32)",
+  "archive": "bunnyhop_pro.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, no start or finish, on purpose (gb-maps-1, 2026-10-09): a walled practice yard of parallel block lanes of different spacing, looked at from the spawn and from above. Nothing in the file marks a route: two teleports only, one at the far end of the yard (-1408 3567) back to the near end and one raised by the spawn (-1467 -1149, z 354) to the far end, and no triggers, buttons or doors. A finish line guessed from the yard would time a route the map does not have. The map's own info_players are the spawn. Not published."
+}

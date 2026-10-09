@@ -32,18 +32,18 @@ GameBanana's search API (`Util/Search/Results`) ranks by relevance, not populari
 | 16 | [124461](https://gamebanana.com/mods/124461) | bhop_arcane_v1 | Bunny Hop | 65,615 | 14 | variant held (bhop_arcane_v2, page 124462) |
 | 17 | [122463](https://gamebanana.com/mods/122463) | surf_lore | Surf Style | 60,715 | 38 | imported 2026-10-09 (`surf_lore`) |
 | 18 | [124524](https://gamebanana.com/mods/124524) | bhop_badges | Bunny Hop | 60,554 | 23 | held (`bhop_badges`) |
-| 19 | [122158](https://gamebanana.com/mods/122158) | surf_greatriver | Surf Style | 57,739 | 19 | not yet |
-| 20 | [123222](https://gamebanana.com/mods/123222) | surf_vegetables | Surf Style | 56,526 | 17 | not yet |
-| 21 | [121698](https://gamebanana.com/mods/121698) | surf_bathroom_final | Surf Style | 54,769 | 26 | not yet |
-| 22 | [121606](https://gamebanana.com/mods/121606) | surf_akai_final | Surf Style | 52,637 | 18 | not yet |
-| 23 | [121787](https://gamebanana.com/mods/121787) | surf_buck-wild | Surf Style | 52,359 | 18 | not yet |
+| 19 | [122158](https://gamebanana.com/mods/122158) | surf_greatriver | Surf Style | 57,739 | 19 | imported 2026-10-09, not a course (`surf_greatriver`; VBSP 19, found bsp_read's v19 leaf bug) |
+| 20 | [123222](https://gamebanana.com/mods/123222) | surf_vegetables | Surf Style | 56,526 | 17 | imported 2026-10-09, a course: 9 gates, round jails dropped (`surf_vegetables`) |
+| 21 | [121698](https://gamebanana.com/mods/121698) | surf_bathroom_final | Surf Style | 54,769 | 26 | imported 2026-10-09, not a course (`surf_bathroom_final`) |
+| 22 | [121606](https://gamebanana.com/mods/121606) | surf_akai_final | Surf Style | 52,637 | 18 | imported 2026-10-09, not a course (`surf_akai_final`) |
+| 23 | [121787](https://gamebanana.com/mods/121787) | surf_buck-wild | Surf Style | 52,359 | 18 | imported 2026-10-09, not a course (`surf_buck_wild`) |
 | 24 | [121976](https://gamebanana.com/mods/121976) | surf_eclipse | Surf Style | 50,855 | 33 | imported 2026-10-09 (`surf_eclipse`) |
-| 25 | [122075](https://gamebanana.com/mods/122075) | surf_forbidden_ways_2nd | Surf Style | 49,100 | 29 | not yet |
-| 26 | [122202](https://gamebanana.com/mods/122202) | surf_greatriver_v4 | Surf Style | 49,026 | 14 | not yet |
+| 25 | [122075](https://gamebanana.com/mods/122075) | surf_forbidden_ways_2nd | Surf Style | 49,100 | 29 | imported 2026-10-09, not a course (`surf_forbidden_ways_2nd`) |
+| 26 | [122202](https://gamebanana.com/mods/122202) | surf_greatriver_v4 | Surf Style | 49,026 | 14 | imported 2026-10-09, not a course (`surf_greatriver_v4`) |
 | 27 | [122673](https://gamebanana.com/mods/122673) | surf_omnibus | Surf Style | 48,312 | 32 | imported 2026-10-09 (`surf_omnibus`) |
-| 28 | [124915](https://gamebanana.com/mods/124915) | bhop_eazy_v2 | Bunny Hop | 46,821 | 13 | not yet |
-| 29 | [122824](https://gamebanana.com/mods/122824) | surf_rebel_resistance_final2 | Surf Style | 46,263 | 12 | not yet |
-| 30 | [126426](https://gamebanana.com/mods/126426) | bunnyhop_pro | Bunny Hop | 46,183 | 6 | not yet |
+| 28 | [124915](https://gamebanana.com/mods/124915) | bhop_eazy_v2 | Bunny Hop | 46,821 | 13 | imported 2026-10-09, a course: 5 colour sections (`bhop_eazy_v2`) |
+| 29 | [122824](https://gamebanana.com/mods/122824) | surf_rebel_resistance_final2 | Surf Style | 46,263 | 12 | imported 2026-10-09 as final3, the page's file; not a course (`surf_rebel_resistance_final3`) |
+| 30 | [126426](https://gamebanana.com/mods/126426) | bunnyhop_pro | Bunny Hop | 46,183 | 6 | imported 2026-10-09, a practice yard with no finish (`bunnyhop_pro`) |
 | 31 | [124913](https://gamebanana.com/mods/124913) | bhop_eazy | Bunny Hop | 45,860 | 11 | held, not a course (`bhop_eazy`) |
 | 32 | [124977](https://gamebanana.com/mods/124977) | bhop_exodus | Bunny Hop | 45,366 | 26 | imported 2026-10-09 (`bhop_exodus`) |
 | 33 | [122985](https://gamebanana.com/mods/122985) | surf_skyworld | Surf Style | 44,124 | 19 | not yet |

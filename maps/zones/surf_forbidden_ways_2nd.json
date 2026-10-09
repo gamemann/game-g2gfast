@@ -1,0 +1,13 @@
+{
+ "id": "surf_forbidden_ways_2nd",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "krusty",
+ "attribution": {
+  "author": "krusty",
+  "source": "https://gamebanana.com/mods/122075 (Key Authors: krusty; submitter .Krusty)",
+  "archive": "surf_forbidden_ways_2nd.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 118 placed weapons and four jails (jail1..4, sidejail) that most teleports aim at; the 2nd of surf_forbidden_ways_reloaded's family, which is also combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

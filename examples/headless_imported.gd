@@ -61,7 +61,8 @@ const ReplayFollow := preload("../tools/replay_follow.gd")
 const NOT_COURSES := ["buses_from_hell_fixed", "bhop_lego2", "surf_grave_reloaded",
 	"surf_10x_final", "surf_10x_reloaded_fixed", "surf_forbidden_ways_reloaded", "surf_mai_remix",
 	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits",
-	"surf_legends", "kz_bhop_yonkoma"]
+	"surf_legends", "kz_bhop_yonkoma", "surf_akai_final", "surf_bathroom_final", "surf_buck_wild",
+	"surf_forbidden_ways_2nd", "surf_greatriver", "surf_greatriver_v4", "surf_rebel_resistance_final3", "bunnyhop_pro"]
 
 ## The imported maps with no pit, which is a different question from having no finish.
 ##

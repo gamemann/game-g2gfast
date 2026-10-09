@@ -1,0 +1,13 @@
+{
+ "id": "surf_bathroom_final",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "smooth",
+ "attribution": {
+  "author": "smooth",
+  "source": "https://gamebanana.com/mods/121698 (Key Authors: smooth; submitter SmOoth123)",
+  "archive": "surf_bathroom_final.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). A bathroom-scale combat surf: 32 placed weapons, and every teleport aims at a team's spawn (tele_dest_t1/ct1/ct2) or the top -- no line to time. gb-maps-1 batch of 2026-10-09. Not published."
+}

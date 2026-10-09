@@ -1,0 +1,191 @@
+{
+ "id": "surf_vegetables",
+ "author": "JacktheStripper, Jamz, Silverlol, Rapsodia, Coley, Skittles, Shahzam, Komaokc, Lody Blakody, Kb.Uni.Namer, Electric, Robsonfire, Machine, Hellraisedsurfer, G-Flow",
+ "attribution": {
+  "author": "JacktheStripper, Jamz, Silverlol, Rapsodia, Coley, Skittles, Shahzam, Komaokc, Lody Blakody, Kb.Uni.Namer, Electric, Robsonfire, Machine, Hellraisedsurfer, G-Flow",
+  "source": "https://gamebanana.com/mods/123222 (Key Authors: JacktheStripper, Jamz, Silverlol, Rapsodia, Coley, Skittles, Shahzam, Komaokc, Lody Blakody, Kb.Uni.Namer, Electric, Robsonfire, Machine, Hellraisedsurfer, G-Flow; submitter JackTheStripper)",
+  "archive": "surf_vegetables.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "A staged race surf map, read from its teleport graph (gb-maps-1, 2026-10-09): a gate is a teleport aimed at a section from inside a different one, a pit one aimed at its own section's start. Spawn room (x -3800 y -5890) -> cucumber -> mushrooms -> leek -> pumpkin -> tsquash -> jalapeno -> cabbage -> pea -> radishes -> carrot -> jailwin, the win room, which is the finish. stage_cabbage_fail is cabbage's own pit return and stage_radishes2 the second half of radishes' pits; neither is a gate. It runs a round: ten jails (jail1..10, jailspawn) are start-disabled teleports named jailtele that the map turns on when the round ends, and jumpjail/bonus_jump_tele/Radishes_bonus_tele likewise; round_teleports drops them, or every section would be a pit to jail. The bonus (stage_bonus, reached from leek's side door and from the win room) is not a timed track yet. Not published.",
+ "round_teleports": {
+  "names": [
+   "jailtele",
+   "jumpjail",
+   "bonus_jump_tele",
+   "Radishes_bonus_tele"
+  ],
+  "note": "enabled by the map's round logic (the end of a round jails everybody still running); every one starts disabled"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -4400,
+     -6400,
+     -160
+    ],
+    [
+     -2860,
+     -5400,
+     200
+    ]
+   ],
+   "note": "the spawn room the 34 info_players stand in, up to the door into cucumber (43x160x200 at -2832 -6015)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -3800,
+    -5890,
+    -69
+   ],
+   "destination_yaw": 0,
+   "note": "the map's own spawn, facing the door"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "stage_mushrooms",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_mushrooms",
+   "note": "the arrival of cucumber's gate (288x288 at -10467 -1012)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "stage_leek",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_leek",
+   "note": "the arrival of mushrooms' gate (-8188 4309)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "stage_pumpkin",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_pumpkin",
+   "note": "the arrival of leek's gate (-5753 385)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "around": {
+    "point": "stage_tsquash",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_tsquash",
+   "note": "the arrival of pumpkin's gate (-3683 1042)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 6,
+   "around": {
+    "point": "stage_jalapeno",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_jalapeno",
+   "note": "the arrival of tsquash's gate (-1256 -263)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 7,
+   "around": {
+    "point": "stage_cabbage",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_cabbage",
+   "note": "the arrival of jalapeno's gate (759 -3102)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 8,
+   "around": {
+    "point": "stage_pea",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_pea",
+   "note": "the arrival of cabbage's gate (3072 3160)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 9,
+   "around": {
+    "point": "stage_radishes",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_radishes",
+   "note": "the arrival of pea's gate (5655 2483)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 10,
+   "around": {
+    "point": "stage_carrot",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage_carrot",
+   "note": "the arrival of radishes' gate (8274 3458)"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "jailwin",
+   "note": "carrot's last gate (192x23x264 at 11085 1008) into the win room"
+  }
+ ]
+}

@@ -1,0 +1,114 @@
+{
+ "id": "bhop_eazy_v2",
+ "author": "31K4L",
+ "attribution": {
+  "author": "31K4L",
+  "source": "https://gamebanana.com/mods/124915 (Original Authors: 31K4L; submitter 31K4L)",
+  "archive": "bhop_eazy_v2.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "A section-chain map like bhop_eazy, in colours: blue (b2..b10), green (g2..g7), purple (p2..p4), yellow (y2..y5), red (r2..r8), each a run of lanes whose floor pits return you to the start of that lane, joined by door-sized gates (8x112x128): blue's last lane ends at (-12 1248) -> to_green, green's at (2228 1248) -> to_purple, purple's at (-12 3136) -> to_yellow, yellow's at (2228 3136) -> to_red, red's at (4468 1248) -> to_end. to_end (4768 1992, facing 270) is a hub room whose teleports go to the 'top' copy of each section (to_*_top) and the bonus -- the map's own menu, as in v1 -- so it is the finish. The bonus (to_bonus, ending at another gate into to_end at 4468 3936) and the top routes are not timed tracks yet. gb-maps-1 batch of 2026-10-09. Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -480,
+     -160,
+     50
+    ],
+    [
+     -96,
+     160,
+     200
+    ]
+   ],
+   "note": "the spawn room: all 30 info_player_* stand in it (x -448..-126, y -128..128, z 66..114)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -256,
+    0,
+    66
+   ],
+   "note": "the middle of the spawn room the info_players fill, facing +x toward blue (to_blue at 128 0 is the first block, past the room)",
+   "destination_yaw": 0
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "to_green",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "to_green",
+   "note": "the arrival of blue's gate at (-12 1248)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "to_purple",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "to_purple",
+   "note": "the arrival of green's gate at (2228 1248)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "to_yellow",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "to_yellow",
+   "note": "the arrival of purple's gate at (-12 3136)"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "around": {
+    "point": "to_red",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "destination": "to_red",
+   "note": "the arrival of yellow's gate at (2228 3136)"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "around": {
+    "point": "to_end",
+    "extents": [
+     96,
+     96,
+     64
+    ]
+   },
+   "note": "the arrival of red's gate (4468 1248): the hub room, to_end"
+  }
+ ]
+}

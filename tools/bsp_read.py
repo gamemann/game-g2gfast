@@ -101,7 +101,7 @@ NONSOLID_BRUSH_ENTITIES = frozenset("""
 # rather than assuming.
 FMT_NODE = "<i2i6h2Hh2x"        # planenum, children[2], mins[3], maxs[3], face range, area
 FMT_LEAF = "<ihh6h4Hh2x"        # contents, cluster, area/flags, mins/maxs, face and brush ranges
-FMT_LEAF_V19 = "<ihh6h4Hh24x"   # the same, with the lightcube v20 moved to its own lump
+FMT_LEAF_V19 = "<ihh6h4Hh24x2x" # the same plus the 24-byte light cube v20 moved to its own lump, and the 2-byte pad: 56
 FMT_BRUSH = "<3i"               # firstside, numsides, contents
 FMT_BRUSHSIDE = "<H3h"          # planenum, texinfo, dispinfo, bevel
 
@@ -165,9 +165,14 @@ class Bsp:
         # v20 leafs are 32 bytes, v19's are 56. Dividing exactly by the wrong one is
         # the failure this file has already paid for once with dmodel_t: every field
         # before the overrun is right, so the first record parses and every record
-        # after it is garbage. Pick the size the lump actually divides by.
+        # after it is garbage. [b]Chosen by the file's version, not by which size the lump
+        # divides by[/b] (2026-10-09): a v19 lump whose leaf count is a multiple of four
+        # divides by 32 too, and surf_10x_final's did -- read as v20, every leaf after the
+        # first was garbage and so were the brushes reached through them. And the v19
+        # format was 54 bytes, two short of the record, which is how a v19 lump that did
+        # NOT divide by 32 (surf_greatriver's) failed to import at all.
         raw = len(self._lump(LUMP_LEAFS))
-        fmt = FMT_LEAF if raw % struct.calcsize(FMT_LEAF) == 0 else FMT_LEAF_V19
+        fmt = FMT_LEAF_V19 if self.version <= 19 else FMT_LEAF
         if raw % struct.calcsize(fmt):
             raise ValueError("leaf lump of %d bytes is neither v19 nor v20 shaped" % raw)
         self.leafs = self._array(LUMP_LEAFS, fmt)
