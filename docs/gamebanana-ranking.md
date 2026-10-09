@@ -26,7 +26,7 @@ GameBanana's search API (`Util/Search/Results`) ranks by relevance, not populari
 | 10 | [122953](https://gamebanana.com/mods/122953) | surf_ski_2 | Surf Style | 77,612 | 2 | imported 2026-10-05, not a course (`surf_ski_2`) |
 | 11 | [121714](https://gamebanana.com/mods/121714) | surf_beginner | Surf Style | 76,150 | 12 | imported 2026-10-05 (`surf_beginner`) |
 | 12 | [121530](https://gamebanana.com/mods/121530) | surf_110b_austinpowers | Surf Style | 74,690 | 15 | imported 2026-10-05, not a course (`surf_110b_austinpowers`) |
-| 13 | [122470](https://gamebanana.com/mods/122470) | surf_lt_omnific | Surf Style | 70,473 | 38 | downloaded, pending (see below) |
+| 13 | [122470](https://gamebanana.com/mods/122470) | surf_lt_omnific | Surf Style | 70,473 | 38 | imported 2026-10-09 (`surf_lt_omnific`) |
 | 14 | [122424](https://gamebanana.com/mods/122424) | surf_legends | Surf Style | 69,947 | 15 | imported 2026-10-09, not a course (`surf_legends`) |
 | 15 | [122542](https://gamebanana.com/mods/122542) | Surf_Mesa | Surf Style | 66,169 | 11 | held (`surf_mesa`) |
 | 16 | [124461](https://gamebanana.com/mods/124461) | bhop_arcane_v1 | Bunny Hop | 65,615 | 14 | variant held (bhop_arcane_v2, page 124462) |
@@ -123,5 +123,5 @@ In `inspirations/g2gfast/pending/` with their archives in `inspirations/g2gfast/
 
 ## The batch imported 2026-10-09
 
-Seven courses from both lists and the last pending combat map: `bhop_japan`, `bhop_exodus`, `kz_bhop_badg3s`, `surf_omnibus`, `surf_lore` and `surf_eclipse` are timed from their own spawns and finish teleports or triggers; `kz_bhop_yonkoma` is an adventure climb map with a spawn and no finish (its logic is buttons and timed doors, and nothing in it marks the end); `surf_legends` is combat surf, credit only. Every one is a VBSP 20 file. Two importer changes came out of it: repeated output keys are kept (the trap delays on bhop_japan, bhop_interloper and bhop_arcane_v2 sat in a trigger's second `OnTrigger`), and `round_teleports` drops a race map's start-disabled jail and level-select teleports by name. `surf_lt_omnific` is still pending: its sections are joined by name-gated teleports like surf_kitsune's, and its graph has not been read.
+Seven courses from both lists and the last pending combat map: `bhop_japan`, `bhop_exodus`, `kz_bhop_badg3s`, `surf_omnibus`, `surf_lore` and `surf_eclipse` are timed from their own spawns and finish teleports or triggers; `kz_bhop_yonkoma` is an adventure climb map with a spawn and no finish (its logic is buttons and timed doors, and nothing in it marks the end); `surf_legends` is combat surf, credit only. Every one is a VBSP 20 file. Two importer changes came out of it: repeated output keys are kept (the trap delays on bhop_japan, bhop_interloper and bhop_arcane_v2 sat in a trigger's second `OnTrigger`), and `round_teleports` drops a race map's start-disabled jail and level-select teleports by name. `surf_lt_omnific` followed the same day: eighteen sections by three mappers in an interleaved order read from its landmark teleports, timed from the first section's start to the ending room, with no stage lines yet.
 

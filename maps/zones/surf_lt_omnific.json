@@ -1,0 +1,53 @@
+{
+ "id": "surf_lt_omnific",
+ "author": "nyro (lead), qr, checkem",
+ "attribution": {
+  "author": "nyro (lead), qr, checkem",
+  "source": "https://gamebanana.com/mods/122470 (Authors: nyro (lead mapper), qr, checkem; testers and thanks listed there, including cfoust (Propper) and Chris528 (dev texture pack); submitter nyronic)",
+  "archive": "surf_lt_omnific_2.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, a start and a finish read from the map's own teleport graph; the spawn is moved from the hub to the first section's start (see its START) (gb-maps-1). Eighteen sections by three mappers, interleaved: nyro1, checkem1, qr1, checkem2, nyro2, qr2, checkem3, qr3, nyro3, qr4, checkem4, nyro4, qr5, checkem5, nyro5, nyro6, checkem6, qr6. Each section's end is a pair of door-sized landmark teleports (end_X -> start_Y, a north and a south lane) and each start has the pair back; doorways makes them doors, so a run carries through. The finish is the ending room, where both lanes of qr6's exit land (omnific_ending). The hub's door to checkem_t1 and the two bonus doors are kept as the doors they are. No stage lines yet: a section is entered in one of two lanes and its checkpoint (X_tN) lies between them, so a box round the checkpoint is not crossed by every run. The side checkpoints (X_tN_L/R, N/E/S/W) are pits behind name filters the map sets on a side's floor; they stay unconditional, since each side's pit is under that side. The secret trail's exits start disabled and are dropped. Not published.",
+ "doorways": {
+  "max_horizontal": 512
+ },
+ "round_teleports": {
+  "names": [
+   "secret_trail_*"
+  ],
+  "note": "the secret trail's exits, each enabled by reaching the trail; this game runs none of that"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": "nyro_t1",
+    "extents": [
+     256,
+     256,
+     320
+    ]
+   },
+   "note": "round nyro_t1, the start of the first section: the hub's door to it lands here. The players' own spawn is a ring over an octagonal funnel in the hub, which drops them through a hole this game's motor does not carry them out of (a player rests in the funnel's crease 750 units down), so the run starts at the first section rather than in the hub; reaching 320 down, because the destination is 256 over the floor"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "nyro_t1"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "around": {
+    "point": "omnific_ending",
+    "extents": [
+     256,
+     256,
+     160
+    ]
+   },
+   "note": "the ending room both of qr6's exit lanes land in"
+  }
+ ]
+}
