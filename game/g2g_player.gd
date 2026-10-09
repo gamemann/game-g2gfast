@@ -277,6 +277,10 @@ func teleport(to: Vector3, yaw: float = INF, keep_run: bool = false) -> void:
 	_teleported = true
 	controller.state.position = to
 	controller.state.velocity = Vector3.ZERO
+	# A push the player was in is not one they are in now: without this, leaving it by a
+	# teleport (a booster into a stage gate) adds its speed at the far end, and a block
+	# being timed carries over to wherever the player lands.
+	rider.reset()
 
 	if is_finite(yaw):
 		controller.state.yaw = yaw
@@ -342,7 +346,11 @@ func _on_simulated(_tick: int, state: DotFpsState) -> void:
 	if mechanics != null and replay == null:
 		var step := 1.0 / float(maxi(controller.tick_rate, 1))
 		var event := mechanics.simulate(rider, controller.motor, state, step)
-		if not swim.volumes.is_empty():
+		# A ladder wins over water, as in the engine these maps are from (its ladder move is
+		# asked before its water move): surf_life_of_duck's climb-out pit is four ladder
+		# walls over water, and with water asked last a climber was put back to swimming
+		# every tick.
+		if not swim.volumes.is_empty() and state.mode != ladder.mode_id:
 			swim.update(controller.motor, state)
 		if not ladder.volumes.is_empty():
 			ladder.update(controller.motor, state)

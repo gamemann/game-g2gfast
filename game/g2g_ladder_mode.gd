@@ -99,15 +99,18 @@ func _simulate(state: DotFpsState, command: DotFpsCommand, delta: float, motor: 
 	var perp := Vector3.UP.cross(away).normalized()
 	var up_face := away.cross(perp)
 	var v := lateral - up_face * into
-	if state.is_grounded() and into > 0.0:
-		v += away * climb_speed    # on the floor and stepping back: leave the ladder
 	state.velocity = v.limit_length(climb_speed * 1.5)
 	motor.move_and_slide(state, delta)
 
-	# Down onto the floor at the foot: back to walking.
-	motor.categorise_ground(state)
-	if state.is_grounded() and v.y <= 0.0:
-		motor.set_mode(state, DotFpsState.Mode.GROUND)
+	# Down onto the floor at the foot: back to walking. Asked only while going down, and
+	# the mode put back if there is no floor: the motor's ground check writes AIR for
+	# anybody rising who was not on the ground, which is every climber, and dropped
+	# them off the ladder on every tick of a climb (they bounced up it at a quarter of
+	# the climb speed instead).
+	if v.y <= 0.0:
+		motor.categorise_ground(state)
+		if not state.is_grounded():
+			state.mode = mode_id
 
 
 ## Horizontal unit vector from the ladder's face out toward the player.

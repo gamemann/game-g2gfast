@@ -77,7 +77,8 @@ func _run() -> void:
 		await _test_blocks()
 		await _test_pushes()
 		await _test_water()
-		sections += 5
+		await _test_ladders()
+		sections += 6
 		game.queue_free()
 		game = null
 		await get_tree().process_frame
@@ -399,6 +400,62 @@ func _test_pushes() -> void:
 	_planned += 1
 	_check(moved == tried, "a player inside a push is pushed along it (%d of %d placed)" % [moved, tried],
 		", ".join(lame))
+	_done()
+
+
+## A player at the foot of a ladder, facing it and holding forward, climbs it.
+##
+## [b]Written after the review found ladders did not climb at all[/b] (2026-10-08): the
+## motor's ground check writes AIR for anybody rising who was not grounded, which is every
+## climber, so the mode dropped them every tick and they bounced up at a quarter of the
+## climb speed. Level view, half a second: the climb speed is 200 u/s, so 60 units is a
+## climb and a bounce is not.
+func _test_ladders() -> void:
+	_section("ladders")
+	var m := game.mechanics
+	if m == null or m.ladders.is_empty():
+		_planned += 1
+		_check(true, "ladders", "no ladders on this map")
+		_done()
+		return
+	var bot := _bot()
+	var tried := 0
+	var climbed := 0
+	var slow := PackedStringArray()
+	for box: AABB in _sample(m.ladders, 4):
+		if box.size.y < G2GUnits.to_metres(128.0):
+			continue
+		var away := Vector3(1, 0, 0) if box.size.x < box.size.z else Vector3(0, 0, 1)
+		var half := box.size.x / 2.0 if away.x != 0.0 else box.size.z / 2.0
+		var picked := false
+		for side in [1.0, -1.0]:
+			var out: Vector3 = away * side
+			var foot := Vector3(box.get_center().x, box.position.y + G2GUnits.to_metres(2.0), box.get_center().z) \
+				+ out * (half + G2GUnits.to_metres(17.0))
+			if bot.controller.motor.would_overlap(bot.controller.state, foot) or _in_pit(foot):
+				continue
+			bot.teleport(foot, rad_to_deg(atan2(out.x, out.z)), true)
+			picked = true
+			break
+		if not picked:
+			continue
+		tried += 1
+		var command := DotFpsCommand.new()
+		command.move = Vector2(0.0, 1.0)
+		command.yaw = bot.controller.state.yaw
+		var y0 := bot.global_position.y
+		for _i in range(64):
+			bot.controller.apply_command(command)
+			await get_tree().physics_frame
+		var rose := G2GUnits.to_units(bot.global_position.y - y0)
+		if rose > 85.0:
+			climbed += 1
+		else:
+			slow.append("%s rose %.0f" % [_u(box.position), rose])
+		bot.controller.apply_command(DotFpsCommand.new())
+	_planned += 1
+	_check(climbed == tried, "a player holding forward at a ladder's foot climbs it (%d of %d)" % [climbed, tried],
+		", ".join(slow))
 	_done()
 
 

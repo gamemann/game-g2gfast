@@ -813,8 +813,14 @@ func apply_rotation() -> void:
 		order.append(StringName(id))
 	maps.rotation.order = order
 	for map: DotMapDef in maps.catalogue.maps:
+		# What the catalogue said before any rotation file touched it, kept the first time:
+		# an operator's `"enabled": false` in `catalogue_path` is never undone by a file
+		# that lists the map, or by there being no file at all.
+		if not map.meta.has("catalogue_enabled"):
+			map.meta["catalogue_enabled"] = map.enabled
 		var listed := rotation_ids.has(String(map.id)) if not rotation_ids.is_empty() \
 			else map.kind != DotMapDef.KIND_ARENA
+		listed = listed and bool(map.meta["catalogue_enabled"])
 		map.enabled = listed
 		map.meta["in_rotation"] = listed
 
@@ -1434,8 +1440,11 @@ func _on_map_changed(map: DotMapDef, loaded: Node) -> void:
 	# Zones somebody drew in-game (Z offline, `g2g_zone_save` on a server) win over the
 	# map's own. They were saved to this path from the day the console could draw a zone
 	# and read from nowhere, so a saved zone set lasted until the next map change.
+	# The authority's only: a client mirrors the server's zones, and a file it drew
+	# offline for the same map would put its outlines, its stage count and its HUD on a
+	# set the server is not timing.
 	var drawn := user_zones_path(map.id)
-	if FileAccess.file_exists(drawn):
+	if authoritative and FileAccess.file_exists(drawn):
 		var loaded_zones := DotTimerZoneSet.load_json(drawn)
 		if loaded_zones.ok:
 			zones = loaded_zones.value
