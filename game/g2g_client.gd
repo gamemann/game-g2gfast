@@ -606,8 +606,6 @@ func _process(delta: float) -> void:
 	for id in (game.players if game != null else {}):
 		(game.players[id] as G2GPlayer).present(delta)
 
-	_drive_spectator_camera()
-
 	if game != null:
 		_present_others()
 	_watch_pointer()
@@ -652,6 +650,14 @@ func _process(delta: float) -> void:
 			# a surf ramp is a lost run. Applied here rather than written by the shake so
 			# there is one thing that moves a camera.
 			camera.position = presentation.camera_shake()
+
+	# [b]Last, after everything that writes the camera.[/b] It sat above the shake, which
+	# sets the active camera's local position every frame — so a spectator's camera was
+	# turned to face the watched player's view and put straight back at their own eyes,
+	# and spectating showed nothing but a slightly wrong angle. Every check passed,
+	# because they asked the spectator manager where the camera should be, not where the
+	# camera was. `headless_client` asks the camera.
+	_drive_spectator_camera()
 
 
 ## Where a spectator looks.
@@ -1280,10 +1286,24 @@ func _hidden(body: G2GPlayer) -> bool:
 
 
 func _present_others() -> void:
+	var inside := _watched_from_inside()
 	for id in game.players:
 		var body := game.players[id] as G2GPlayer
 		if body != null and body != player:
-			body.visible = not _hidden(body)
+			body.visible = not _hidden(body) and body.player_id != inside
+
+
+## The player whose eyes this client's camera is at: watched in first person, or nobody.
+## Their body is not drawn, for the reason the local player's own head is culled — the
+## camera would be inside it, and the screen one flat colour.
+func _watched_from_inside() -> StringName:
+	if game == null or game.spectate == null or player == null \
+			or not game.spectate.is_spectating(player.player_id):
+		return &""
+	var view := game.spectate.manager.view(String(player.player_id))
+	if view.mode != DotSpectatorView.Mode.FIRST_PERSON:
+		return &""
+	return StringName(view.target)
 
 
 # --- Settings that land on the client ------------------------------------------------

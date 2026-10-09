@@ -700,7 +700,9 @@ func _process(delta: float) -> void:
 		parts.append(time_left)
 
 	parts.append("autobhop %s" % ("on" if game.config.auto_bhop else "off"))
-	parts.append(player.camera.describe()["mode"] if player.camera != null else "")
+	# In words: the enum's own name ("FIRST_PERSON") is a debug string on a player's screen.
+	if player.camera != null:
+		parts.append("third person" if player.camera.is_third_person() else "first person")
 
 	if player.timer != null and player.timer.run.used_checkpoints:
 		parts.append("PRACTICE")

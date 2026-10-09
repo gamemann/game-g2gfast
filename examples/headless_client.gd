@@ -19,8 +19,8 @@ const G2GUi := preload("../game/ui/g2g_ui.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 16
-const SECTIONS := 6
+const CHECKS := 19
+const SECTIONS := 7
 
 var _passed := 0
 var _failed := 0
@@ -67,6 +67,7 @@ func _run() -> void:
 	_test_r_once_and_twice()
 	_test_p_cycles_the_theme()
 	await _test_the_layout_editor_is_an_overlay()
+	await _test_the_camera_is_the_watched_players()
 
 	print("")
 	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
@@ -184,6 +185,34 @@ func _test_the_layout_editor_is_an_overlay() -> void:
 	await get_tree().process_frame
 	_check(not _client.overlay_open() and not _client.player.sampler.suspended,
 		"and closing it gives the keys back")
+	_done()
+
+
+## Where the camera IS, not where the spectator manager says it should be. The two
+## disagreed for as long as spectating existed: the shake line wrote the camera's position
+## after the spectator camera did, every frame.
+func _test_the_camera_is_the_watched_players() -> void:
+	_section("A spectator sees through the watched player's eyes")
+	var bea = _client.game.add_player(&"u8", "Bea", false)
+	_client.game.spawn_player(&"u8")
+	bea.teleport(_client.player.global_position + Vector3(0.0, 0.0, -3.0), 0.0)
+	for _i in range(10):
+		await get_tree().physics_frame
+	var watching := _client.game.spectate.watch(_client.player.player_id, &"u8")
+	for _i in range(6):
+		await get_tree().process_frame
+	var camera: Camera3D = _client.player.camera.active()
+	var eye: Vector3 = bea.eye_position()
+	_check(watching.ok and camera.global_position.distance_to(eye) < 0.05,
+		"the drawn camera is at the watched player's eyes",
+		"%s against %s" % [camera.global_position, eye])
+	_check(not bea.visible, "and their body is not drawn, because the camera is inside it")
+	_client.game.spectate.stop(_client.player.player_id)
+	for _i in range(4):
+		await get_tree().process_frame
+	_check(bea.visible and camera.global_position.distance_to(bea.eye_position()) > 1.0,
+		"stopping puts the camera back in this player's own head, and Bea back on screen")
+	_client.game.remove_player(&"u8")
 	_done()
 
 
