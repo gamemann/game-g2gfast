@@ -1,0 +1,51 @@
+{
+ "id": "bhop_japan",
+ "author": "Tony Montana",
+ "attribution": {
+  "author": "Tony Montana",
+  "source": "https://gamebanana.com/mods/125304 (Key Authors: Tony Montana (creator); Original Authors: Aoki3 (textures), TopHATTwaffle (real world textures), models from another game; special thanks Badgeslol, Nyastle, epic (testing); submitter tmontana)",
+  "archive": "bhop_japan.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own `spawn` destination and end trigger (gb-maps-1). The route is 31 checkpoints, tele_dest_1..31, every pit aimed back at the last one. The end: a trigger_multiple at the top of the last climb plays the map's ending track, fades the screen and moves the player to the end room at tele_dest_35 3.5 s later; that trigger is the finish line. Its 32 teleports behind filter_activator are anti-standing blocks (a 0.09 s AddOutput targetname activator on touching a block), so they are sinking blocks here, not pits. Not published.",
+ "conditional_teleports": {
+  "filters": [
+   "filter_activator"
+  ],
+  "note": "the anti-standing blocks: each block's trigger_multiple names the toucher 'activator' 0.09 s after touching and 'default' 0.01 s later, so only a player who stands still is sent back"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": "spawn",
+    "extents": [
+     192,
+     192,
+     160
+    ]
+   },
+   "note": "around the map's own `spawn` destination, where it starts a run: players spawn in a dark box (the 66 info_player_counterterrorist) and drop onto a trigger_teleport aimed at `spawn`, the lit start of the course beside the first checkpoint (tele_dest_1). The box is only a way in, so the run starts here"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "spawn"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "near": {
+    "class": "trigger_multiple",
+    "point": [
+     5632,
+     -8168,
+     929.58
+    ],
+    "within": 256
+   },
+   "note": "the trigger that plays the ending track, fades the screen and sends the player to the end room (tele_dest_35) 3.5 s later"
+  }
+ ]
+}

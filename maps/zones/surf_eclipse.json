@@ -1,0 +1,49 @@
+{
+ "id": "surf_eclipse",
+ "author": "Paper-Cut",
+ "attribution": {
+  "author": "Paper-Cut",
+  "source": "https://gamebanana.com/mods/121976 (Key Authors: Paper-Cut; submitter Paper-Cut)",
+  "archive": "surf_eclipse.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own spawn, stage teleports and end doors (gb-maps-1). A race surf map in three stages, each ending in teleports to the next stage's start (stage2, stage3). Stage 3 ends in two doors side by side: one to the winners' platform with an AWP, which jails everybody else a second later, and one back to the top with a shotgun. The winner's door is the finish here; a track may have one finish, and the shotgun door beside it is the loser's way out. The teleports that start disabled are dropped (round_teleports): the stage 1 time limit (stage1_tojail, enabled 120 s after the spawn), the jail-everybody relay's teleports and the jail's exit. Not published.",
+ "round_teleports": {
+  "names": [
+   "stage1_tojail",
+   "all_*",
+   "jail_teleout"
+  ],
+  "note": "each starts disabled; a timer, the winner's door and the jail door enable them"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     -11761,
+     9877,
+     11966
+    ],
+    "extents": [
+     600,
+     560,
+     240
+    ]
+   },
+   "note": "the spawn, around the 65 info_player_* (x -12229..-11294, y 9430..10324, z 11816..12115)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "stage1"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "jail_winnerplat_teledest",
+   "note": "the winner's door at the end of stage 3"
+  }
+ ]
+}

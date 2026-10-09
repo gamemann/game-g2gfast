@@ -1,0 +1,57 @@
+{
+ "id": "bhop_exodus",
+ "author": "Aoki",
+ "attribution": {
+  "author": "Aoki",
+  "source": "https://gamebanana.com/mods/124977 (Key Authors: Aoki (mapping); Original Authors: various (music), karatek\u00e4fer (skybox); submitter Aoki)",
+  "archive": "bhop_exodus.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own spawns and end teleport (gb-maps-1). Fifteen levels, each announced by a trigger_once (aoki_lv2..aoki_lv15) that fades in its sign; they are not stage lines here yet, because a sign trigger is where a level's name appears, not necessarily a line every route crosses. The finish: gotoendddddddd, the one teleport into the end room (enddddddddddd), whose floor trigger sets off the map's ending and sends the player back to the start. Its 95 teleports behind filter_activator are anti-standing blocks (sinking blocks here, not pits), and the 14 start-disabled aoki_lv* teleports are the hub's level-select pads, dropped. Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     1072,
+     -467,
+     8
+    ],
+    "extents": [
+     320,
+     256,
+     320
+    ]
+   },
+   "note": "the spawn room, around the 24 info_player_terrorist (x 909..1235, y -563..-371, z 7..8); reaching 320 down, because the spawns float about 270 over the floor they land on"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    1072,
+    -467,
+    24
+   ]
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "enddddddddddd",
+   "note": "gotoendddddddd, the one trigger into the end room"
+  }
+ ],
+ "conditional_teleports": {
+  "filters": [
+   "filter_activator"
+  ],
+  "note": "the anti-standing blocks: 95 teleports that fire only for a player a block's trigger has named 'activator' after a short delay, so only a player who stands still is sent back; imported as sinking blocks"
+ },
+ "round_teleports": {
+  "names": [
+   "aoki_lv*"
+  ],
+  "note": "the level-select pads in the spawn hub, each enabled by the trigger_once that fades in its level's sign; unconditional they let a new player step straight into level 15"
+ }
+}

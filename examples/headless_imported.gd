@@ -60,7 +60,8 @@ const ReplayFollow := preload("../tools/replay_follow.gd")
 ## allowed to stop asking the question.
 const NOT_COURSES := ["buses_from_hell_fixed", "bhop_lego2", "surf_grave_reloaded",
 	"surf_10x_final", "surf_10x_reloaded_fixed", "surf_forbidden_ways_reloaded", "surf_mai_remix",
-	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits"]
+	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits",
+	"surf_legends", "kz_bhop_yonkoma"]
 
 ## The imported maps with no pit, which is a different question from having no finish.
 ##

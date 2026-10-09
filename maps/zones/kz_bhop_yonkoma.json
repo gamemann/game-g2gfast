@@ -1,0 +1,18 @@
+{
+ "id": "kz_bhop_yonkoma",
+ "author": "Aoki",
+ "attribution": {
+  "author": "Aoki",
+  "source": "https://gamebanana.com/mods/126499 (Key Authors: Aoki (map), Minami (yonkoma), various (sound, models); submitter Aoki)",
+  "archive": "kz_bhop_yonkoma.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit and a spawn, and no start or finish, on purpose (gb-maps-1): an adventure climb map whose progress is buttons, levers, timed doors and a minecart (16 buttons, 13 func_wall_toggle, 12 logic_timer), with 79 joke-named destinations and no labelled start or finish. Its players spawn over an intro room and drop 800 units into it; the button there (finbut1) triggers `mapstartodesu`, which opens the room and 25 s later enables the teleport to `map0stato`, the start of the map proper. This game runs none of that, so the spawn here is `map0stato` itself. Nothing in the file marks where the map ends, and a finish line guessed from the logic is a board measuring a route the map does not have. Loads, draws and collides; zones want drawing in-game with the zone editor. Not published.",
+ "zones": [
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": "map0stato"
+  }
+ ]
+}

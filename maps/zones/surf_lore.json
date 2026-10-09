@@ -1,0 +1,55 @@
+{
+ "id": "surf_lore",
+ "author": "target practice",
+ "attribution": {
+  "author": "target practice",
+  "source": "https://gamebanana.com/mods/122463 (Key Authors: target practice; submitter Target_Practice)",
+  "archive": "surf_lore.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own spawn room and end teleport (gb-maps-1). A race surf map: six levels and two bonuses, each level's pits aimed at its own checkpoint, and the finish is the teleport into `theend`. A second, secret finish (the teleport into `secretfinish`) is not timed. Every teleport that starts disabled is dropped (round_teleports): the level-select pads (level*, enabled for one second by the button beside each), the round's `someone_won_tele*` and `timesup*` jails, the secret jail, and `noobactivator`, a skip the map opens 42 s after a player first touches the floor beside the spawn. This game runs none of that logic, and imported as pits each one sent a runner somewhere the route does not go. Not published.",
+ "round_teleports": {
+  "names": [
+   "level*",
+   "someone_won_tele*",
+   "timesup*",
+   "secretjail*",
+   "noobactivator"
+  ],
+  "note": "each starts disabled and is enabled by a button, the round's end or a timer"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     4769,
+     -482,
+     -569
+    ],
+    "extents": [
+     320,
+     256,
+     200
+    ]
+   },
+   "note": "the spawn room, around the 48 info_player_* (x 4549..4989, y -591..-374, z -569)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    4769,
+    -482,
+    -553
+   ]
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "theend",
+   "note": "the one teleport into the end room"
+  }
+ ]
+}

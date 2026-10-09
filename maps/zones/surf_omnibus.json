@@ -1,0 +1,48 @@
+{
+ "id": "surf_omnibus",
+ "author": "SKAR",
+ "attribution": {
+  "author": "SKAR",
+  "source": "https://gamebanana.com/mods/122673 (Key Authors: SKAR; Contributors: G-Flow (skybox); submitter Skar)",
+  "archive": "surf_omnibus.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own spawn room and end trigger (gb-maps-1). A race surf map: eleven sections, each section's pits aimed at its own Nspawn, entered from the spawn room through the teleport to 1enter. The finish is the map's own trigger_once `endtrigger`, which the importer reads as a finish by its name; in the source game it ends the round by enabling a `youlose` teleport to the jail over every section, and a logic_timer later enables the `timesup` ones. Those start disabled and are dropped here (round_teleports), with the jail's own internal teleports: this game runs no rounds, and imported as pits they sent every runner to jail on entering a section. The button-enabled `hiddenteleport` in the secret room is kept as the pit it imports as. Not published.",
+ "round_teleports": {
+  "names": [
+   "youlose*",
+   "timesup*",
+   "boxjail*",
+   "jailbottomteleporter"
+  ],
+  "note": "enabled by endtrigger (youlose*), the prisonTimer logic_timer (timesup*) and the jail's own logic; every one starts disabled and aims at boxjail, boxprison or a jail room"
+ },
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     -9082,
+     69,
+     176
+    ],
+    "extents": [
+     256,
+     320,
+     200
+    ]
+   },
+   "note": "the spawn room, around the 32 info_player_* (x -9187..-8976, y -155..293, z 176)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -9082,
+    69,
+    192
+   ]
+  }
+ ]
+}

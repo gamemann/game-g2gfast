@@ -1,0 +1,46 @@
+{
+ "id": "kz_bhop_badg3s",
+ "author": "Badgeslol",
+ "attribution": {
+  "author": "Badgeslol",
+  "source": "https://gamebanana.com/mods/126445 (Key Authors: Badgeslol; special thanks .yuka, tmontana, Ghost1246511 (beta), Burnfingers (skybox), TopHATTwaffle, sparx (textures), Fibbs (light texture), 4lienetic (music); submitter Badgeslol)",
+  "archive": "kz_bhop_badg3s.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit, and a start and finish read from the map's own spawns and end-room teleport (gb-maps-1). 65 numbered checkpoints (destinations 1..65, each section's pits aimed at its own) and a long-jump practice room (lj1..lj40) off the route. The finish is the teleport into `endtimerroom`. Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "around": {
+    "point": [
+     -2368,
+     448,
+     3544
+    ],
+    "extents": [
+     256,
+     256,
+     200
+    ]
+   },
+   "note": "the spawn, around the 10 info_player_counterterrorist (x -2400..-2336, y 384..512, z 3544)"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -2368,
+    448,
+    3560
+   ]
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "endtimerroom",
+   "all": true,
+   "note": "the teleport(s) into the end-timer room"
+  }
+ ]
+}

@@ -29,6 +29,7 @@ this repository already has: geometry made in code.
 
 import argparse
 import collections
+import fnmatch
 import io
 import json
 import math
@@ -2473,6 +2474,45 @@ def dead_teleports(z):
     return dropped + noclient
 
 
+def round_teleports(z, rule):
+    """Drop the teleports a round's logic switches on, by name.
+
+    [b]A race surf map runs a round, and this game does not.[/b] The maps of that kind
+    end a round when somebody reaches the end: a `trigger_once` there enables a
+    `youlose<n>` teleport over every section and a `timesup<n>` a while later, each one
+    aimed at a jail, and until then every one of them is `StartDisabled`. This importer
+    runs none of a map's outputs, so a teleport that starts disabled was imported as the
+    pit it is only after somebody has won: a floor-to-ceiling volume over each section
+    that sent a runner to the jail the moment they entered it.
+
+    Not every start-disabled teleport is that. Some are how a map opens its next section
+    (a `level<n>` teleport a button enables), and some of the held maps were zoned
+    against today's behaviour, so this is opted into per map, by name, exactly like
+    [method conditional_teleports]. `fnmatch` patterns (`youlose*`), matched against the
+    teleport's targetname, and only a teleport that starts disabled is ever dropped. A
+    pattern that drops nothing stops the import: a stale list is how a jail comes back.
+    """
+    pats = [str(n).strip().lower() for n in rule.get("names", [])]
+    used = collections.Counter()
+    dropped = 0
+    for i, e in list(z.entities("trigger_teleport")):
+        if str(e.get("StartDisabled", "0")).strip() != "1":
+            continue
+        name = e.get("targetname", "").strip().lower()
+        for pat in pats:
+            if name and fnmatch.fnmatchcase(name, pat):
+                z.claimed.add(i)
+                used[pat] += 1
+                dropped += 1
+                break
+    stale = [n for n in pats if not used[n]]
+    if stale:
+        raise ValueError("round_teleports names no start-disabled teleport: %s" % ", ".join(stale))
+    z.notes.append("%d round teleports dropped (%s)"
+                   % (dropped, ", ".join("%s x%d" % kv for kv in sorted(used.items()))))
+    return dropped
+
+
 def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None):
     """Spawns, and every volume a timer cares about.
 
@@ -2502,6 +2542,8 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
     dead_teleports(z)
     if "conditional_teleports" in doc:
         conditional_teleports(z, doc["conditional_teleports"])
+    if "round_teleports" in doc:
+        round_teleports(z, doc["round_teleports"])
     if "doorways" in doc:
         doorway_teleports(z, doc["doorways"])
     implied_zones(z)

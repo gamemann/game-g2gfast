@@ -38,6 +38,13 @@ const SAMPLE := 12
 ## reason. Filled from this suite's own first run.
 const DESTINATIONS_THAT_FALL := {}
 
+## The maps whose anti-standing trap names the player in a trigger's SECOND output of
+## the same event (`OnTrigger` rename to `default`, then to `activator`), with the fewest
+## trap blocks each must import. The entity parser kept only the first value of a repeated
+## key until 2026-10-09, so the delay was never read and these imported no blocks at all:
+## standing still cost nothing. Armed by putting `setdefault` back in parse_entities.
+const TRAP_BLOCK_FLOORS := {&"bhop_japan": 200, &"bhop_interloper": 400, &"bhop_arcane_v2": 300}
+
 var game: G2GGame = null
 var _map_id: StringName = &""
 var _passed := 0
@@ -281,6 +288,16 @@ func _test_pit_keeps_the_run() -> void:
 func _test_blocks() -> void:
 	_section("blocks")
 	var m := game.mechanics
+	if TRAP_BLOCK_FLOORS.has(_map_id):
+		_planned += 1
+		var traps := 0
+		if m != null:
+			for b: Dictionary in m.blocks:
+				if bool(b.get("touch", false)):
+					traps += 1
+		_check(traps >= int(TRAP_BLOCK_FLOORS[_map_id]),
+			"its anti-standing traps import as blocks, from the trigger's second output",
+			"%d trap blocks, %d expected at least" % [traps, TRAP_BLOCK_FLOORS[_map_id]])
 	if m == null or m.blocks.is_empty():
 		_planned += 1
 		_check(true, "blocks", "no sinking blocks on this map")

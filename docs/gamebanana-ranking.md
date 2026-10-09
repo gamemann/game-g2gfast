@@ -27,25 +27,25 @@ GameBanana's search API (`Util/Search/Results`) ranks by relevance, not populari
 | 11 | [121714](https://gamebanana.com/mods/121714) | surf_beginner | Surf Style | 76,150 | 12 | imported 2026-10-05 (`surf_beginner`) |
 | 12 | [121530](https://gamebanana.com/mods/121530) | surf_110b_austinpowers | Surf Style | 74,690 | 15 | imported 2026-10-05, not a course (`surf_110b_austinpowers`) |
 | 13 | [122470](https://gamebanana.com/mods/122470) | surf_lt_omnific | Surf Style | 70,473 | 38 | downloaded, pending (see below) |
-| 14 | [122424](https://gamebanana.com/mods/122424) | surf_legends | Surf Style | 69,947 | 15 | downloaded, pending (see below) |
+| 14 | [122424](https://gamebanana.com/mods/122424) | surf_legends | Surf Style | 69,947 | 15 | imported 2026-10-09, not a course (`surf_legends`) |
 | 15 | [122542](https://gamebanana.com/mods/122542) | Surf_Mesa | Surf Style | 66,169 | 11 | held (`surf_mesa`) |
 | 16 | [124461](https://gamebanana.com/mods/124461) | bhop_arcane_v1 | Bunny Hop | 65,615 | 14 | variant held (bhop_arcane_v2, page 124462) |
-| 17 | [122463](https://gamebanana.com/mods/122463) | surf_lore | Surf Style | 60,715 | 38 | not yet |
+| 17 | [122463](https://gamebanana.com/mods/122463) | surf_lore | Surf Style | 60,715 | 38 | imported 2026-10-09 (`surf_lore`) |
 | 18 | [124524](https://gamebanana.com/mods/124524) | bhop_badges | Bunny Hop | 60,554 | 23 | held (`bhop_badges`) |
 | 19 | [122158](https://gamebanana.com/mods/122158) | surf_greatriver | Surf Style | 57,739 | 19 | not yet |
 | 20 | [123222](https://gamebanana.com/mods/123222) | surf_vegetables | Surf Style | 56,526 | 17 | not yet |
 | 21 | [121698](https://gamebanana.com/mods/121698) | surf_bathroom_final | Surf Style | 54,769 | 26 | not yet |
 | 22 | [121606](https://gamebanana.com/mods/121606) | surf_akai_final | Surf Style | 52,637 | 18 | not yet |
 | 23 | [121787](https://gamebanana.com/mods/121787) | surf_buck-wild | Surf Style | 52,359 | 18 | not yet |
-| 24 | [121976](https://gamebanana.com/mods/121976) | surf_eclipse | Surf Style | 50,855 | 33 | not yet |
+| 24 | [121976](https://gamebanana.com/mods/121976) | surf_eclipse | Surf Style | 50,855 | 33 | imported 2026-10-09 (`surf_eclipse`) |
 | 25 | [122075](https://gamebanana.com/mods/122075) | surf_forbidden_ways_2nd | Surf Style | 49,100 | 29 | not yet |
 | 26 | [122202](https://gamebanana.com/mods/122202) | surf_greatriver_v4 | Surf Style | 49,026 | 14 | not yet |
-| 27 | [122673](https://gamebanana.com/mods/122673) | surf_omnibus | Surf Style | 48,312 | 32 | not yet |
+| 27 | [122673](https://gamebanana.com/mods/122673) | surf_omnibus | Surf Style | 48,312 | 32 | imported 2026-10-09 (`surf_omnibus`) |
 | 28 | [124915](https://gamebanana.com/mods/124915) | bhop_eazy_v2 | Bunny Hop | 46,821 | 13 | not yet |
 | 29 | [122824](https://gamebanana.com/mods/122824) | surf_rebel_resistance_final2 | Surf Style | 46,263 | 12 | not yet |
 | 30 | [126426](https://gamebanana.com/mods/126426) | bunnyhop_pro | Bunny Hop | 46,183 | 6 | not yet |
 | 31 | [124913](https://gamebanana.com/mods/124913) | bhop_eazy | Bunny Hop | 45,860 | 11 | held, not a course (`bhop_eazy`) |
-| 32 | [124977](https://gamebanana.com/mods/124977) | bhop_exodus | Bunny Hop | 45,366 | 26 | not yet |
+| 32 | [124977](https://gamebanana.com/mods/124977) | bhop_exodus | Bunny Hop | 45,366 | 26 | imported 2026-10-09 (`bhop_exodus`) |
 | 33 | [122985](https://gamebanana.com/mods/122985) | surf_skyworld | Surf Style | 44,124 | 19 | not yet |
 | 34 | [123141](https://gamebanana.com/mods/123141) | surf_thriller | Surf Style | 43,971 | 3 | not yet |
 | 35 | [126077](https://gamebanana.com/mods/126077) | bhop_sQee | Bunny Hop | 42,138 | 18 | not yet |
@@ -58,10 +58,10 @@ GameBanana's search API (`Util/Search/Results`) ranks by relevance, not populari
 | 42 | [121540](https://gamebanana.com/mods/121540) | surf_29_12_06 | Surf Style | 37,029 | 22 | not yet |
 | 43 | [123134](https://gamebanana.com/mods/123134) | surf_the_gloaming | Surf Style | 36,153 | 32 | not yet |
 | 44 | [121962](https://gamebanana.com/mods/121962) | surf_dust2_2008_final | Surf Style | 35,615 | 7 | not yet |
-| 45 | [126499](https://gamebanana.com/mods/126499) | kz_bhop_yonkoma | Bunny Hop | 35,327 | 35 | not yet |
+| 45 | [126499](https://gamebanana.com/mods/126499) | kz_bhop_yonkoma | Bunny Hop | 35,327 | 35 | imported 2026-10-09, no finish (`kz_bhop_yonkoma`) |
 | 46 | [137687](https://gamebanana.com/mods/137687) | surf_japan_ptad | Combat Surf | 34,426 | 18 | not yet |
-| 47 | [126445](https://gamebanana.com/mods/126445) | kz_bhop_badg3s | Bunny Hop | 33,149 | 41 | not yet |
-| 48 | [125304](https://gamebanana.com/mods/125304) | bhop_japan | Bunny Hop | 32,661 | 37 | not yet |
+| 47 | [126445](https://gamebanana.com/mods/126445) | kz_bhop_badg3s | Bunny Hop | 33,149 | 41 | imported 2026-10-09 (`kz_bhop_badg3s`) |
+| 48 | [125304](https://gamebanana.com/mods/125304) | bhop_japan | Bunny Hop | 32,661 | 37 | imported 2026-10-09 (`bhop_japan`) |
 | 49 | [123298](https://gamebanana.com/mods/123298) | surf_year3000 | Surf Style | 32,628 | 8 | held (`surf_year3000`) |
 | 50 | [122497](https://gamebanana.com/mods/122497) | surf_machine_remix_final | Surf Style | 32,250 | 12 | not yet |
 
@@ -120,3 +120,8 @@ In `inspirations/g2gfast/pending/` with their archives in `inspirations/g2gfast/
 
 - `surf_lt_omnific` ([122470](https://gamebanana.com/mods/122470), nyro, qr and checkem): a skill course in three authors' sections, each of t1..t6, and like `surf_kitsune` it steers progression with `AddOutput targetname` and filters rather than labels. Needs its teleport graph read the way kitsune's was.
 - `surf_legends` ([122424](https://gamebanana.com/mods/122424), SintaxError): combat surf (jails, weapon spawner buttons). Credit-only import, like the rest of this batch.
+
+## The batch imported 2026-10-09
+
+Seven courses from both lists and the last pending combat map: `bhop_japan`, `bhop_exodus`, `kz_bhop_badg3s`, `surf_omnibus`, `surf_lore` and `surf_eclipse` are timed from their own spawns and finish teleports or triggers; `kz_bhop_yonkoma` is an adventure climb map with a spawn and no finish (its logic is buttons and timed doors, and nothing in it marks the end); `surf_legends` is combat surf, credit only. Every one is a VBSP 20 file. Two importer changes came out of it: repeated output keys are kept (the trap delays on bhop_japan, bhop_interloper and bhop_arcane_v2 sat in a trigger's second `OnTrigger`), and `round_teleports` drops a race map's start-disabled jail and level-select teleports by name. `surf_lt_omnific` is still pending: its sections are joined by name-gated teleports like surf_kitsune's, and its graph has not been read.
+

@@ -404,11 +404,24 @@ def to_godot(p):
 
 
 def parse_entities(text):
+    """The entity lump as one dict per entity.
+
+    [b]An output key repeats, and every repeat is kept.[/b] A trigger that does two
+    things on touch carries two `OnTrigger` keys -- bhop_japan's anti-standing blocks
+    rename the toucher `default` and then `activator`, in that order -- and a dict that
+    kept only the first lost the second: the delay `trap_blocks` reads was never seen,
+    and 32 traps imported as nothing. Repeats of an `On*` key are joined with newlines,
+    which every reader of outputs already scans with a regex that stops at whitespace.
+    Any other key keeps its first value, as before.
+    """
     out = []
     for blk in re.findall(r"\{([^{}]*)\}", text):
         kv = {}
         for k, v in re.findall(r'"([^"]*)"\s*"([^"]*)"', blk):
-            kv.setdefault(k, v)
+            if k in kv and k.startswith("On"):
+                kv[k] += "\n" + v
+            else:
+                kv.setdefault(k, v)
         if kv:
             out.append(kv)
     return out

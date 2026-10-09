@@ -1,0 +1,13 @@
+{
+ "id": "surf_legends",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "SintaxError",
+ "attribution": {
+  "author": "SintaxError",
+  "source": "https://gamebanana.com/mods/122424 (Key Authors: SintaxError; submitter SintaxError)",
+  "archive": "surf_legends.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). Team spawns split by team filters, 27 func_buttons and 10 env_entity_makers for weapons, 64 placed rifles, and 57 trigger_teleports of which nearly all aim at jaildest1..4, jailtop1..3 or a team spawn -- jails and a loop, not a route. gb-maps-1. Not published."
+}

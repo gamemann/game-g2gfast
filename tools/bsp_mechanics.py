@@ -438,7 +438,8 @@ def trap_blocks(bsp, traps, origin_of, destinations):
     A trap whose name the map never assigns with a delay is left dropped.
     """
     delay_of = {}
-    rx = re.compile(r"targetname[\s:]+([^,\s]+)\s*,\s*([0-9.]+)", re.IGNORECASE)
+    # Comma or ESC between an output's fields: newer compilers write the second.
+    rx = re.compile(r"targetname[\s:]+([^,\s\x1b]+)\s*[,\x1b]\s*([0-9.]+)", re.IGNORECASE)
     for e in bsp.entities:
         for k, v in e.items():
             if not k.startswith("On"):
