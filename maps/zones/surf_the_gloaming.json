@@ -1,0 +1,13 @@
+{
+ "id": "surf_the_gloaming",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "Roosta, Teeth",
+ "attribution": {
+  "author": "Roosta, Teeth",
+  "source": "https://gamebanana.com/mods/123134 (Key Authors: Roosta, Teeth; submitter Lightning.)",
+  "archive": "surf_the_gloaming.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 38 placed weapons, jails (jail1, jail2, jailt), a control room and a scout round -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

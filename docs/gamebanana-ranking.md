@@ -46,24 +46,24 @@ GameBanana's search API (`Util/Search/Results`) ranks by relevance, not populari
 | 30 | [126426](https://gamebanana.com/mods/126426) | bunnyhop_pro | Bunny Hop | 46,183 | 6 | imported 2026-10-09, a practice yard with no finish (`bunnyhop_pro`) |
 | 31 | [124913](https://gamebanana.com/mods/124913) | bhop_eazy | Bunny Hop | 45,860 | 11 | held, not a course (`bhop_eazy`) |
 | 32 | [124977](https://gamebanana.com/mods/124977) | bhop_exodus | Bunny Hop | 45,366 | 26 | imported 2026-10-09 (`bhop_exodus`) |
-| 33 | [122985](https://gamebanana.com/mods/122985) | surf_skyworld | Surf Style | 44,124 | 19 | not yet |
-| 34 | [123141](https://gamebanana.com/mods/123141) | surf_thriller | Surf Style | 43,971 | 3 | not yet |
-| 35 | [126077](https://gamebanana.com/mods/126077) | bhop_sQee | Bunny Hop | 42,138 | 18 | not yet |
-| 36 | [122478](https://gamebanana.com/mods/122478) | surf_machine2 | Surf Style | 41,944 | 15 | not yet |
-| 37 | [122520](https://gamebanana.com/mods/122520) | surf_matrix_v8 | Surf Style | 40,365 | 8 | not yet |
-| 38 | [137677](https://gamebanana.com/mods/137677) | surf_adverse | Combat Surf | 39,329 | 35 | not yet |
-| 39 | [122860](https://gamebanana.com/mods/122860) | surf_rookie | Surf Style | 38,817 | 4 | not yet |
-| 40 | [121629](https://gamebanana.com/mods/121629) | Surf_Animals | Surf Style | 38,552 | 19 | not yet |
-| 41 | [122956](https://gamebanana.com/mods/122956) | Surf_ski_2_source | Surf Style | 37,536 | 3 | not yet |
-| 42 | [121540](https://gamebanana.com/mods/121540) | surf_29_12_06 | Surf Style | 37,029 | 22 | not yet |
-| 43 | [123134](https://gamebanana.com/mods/123134) | surf_the_gloaming | Surf Style | 36,153 | 32 | not yet |
-| 44 | [121962](https://gamebanana.com/mods/121962) | surf_dust2_2008_final | Surf Style | 35,615 | 7 | not yet |
+| 33 | [122985](https://gamebanana.com/mods/122985) | surf_skyworld | Surf Style | 44,124 | 19 | imported 2026-10-09, not a course (`surf_skyworld`) |
+| 34 | [123141](https://gamebanana.com/mods/123141) | surf_thriller | Surf Style | 43,971 | 3 | imported 2026-10-09, not a course (`surf_thriller`) |
+| 35 | [126077](https://gamebanana.com/mods/126077) | bhop_sQee | Bunny Hop | 42,138 | 18 | imported 2026-10-09, a course: 10 levels (`bhop_sqee`) |
+| 36 | [122478](https://gamebanana.com/mods/122478) | surf_machine2 | Surf Style | 41,944 | 15 | imported 2026-10-09, not a course (`surf_machine2`) |
+| 37 | [122520](https://gamebanana.com/mods/122520) | surf_matrix_v8 | Surf Style | 40,365 | 8 | imported 2026-10-09, not a course (`surf_matrix_v8`) |
+| 38 | [137677](https://gamebanana.com/mods/137677) | surf_adverse | Combat Surf | 39,329 | 35 | imported 2026-10-09, not a course (`surf_adverse`) |
+| 39 | [122860](https://gamebanana.com/mods/122860) | surf_rookie | Surf Style | 38,817 | 4 | imported 2026-10-09, a course: 18 stages (`surf_rookie`) |
+| 40 | [121629](https://gamebanana.com/mods/121629) | Surf_Animals | Surf Style | 38,552 | 19 | imported 2026-10-09, credit only: a race-then-fight map driven by outputs (`surf_animals`) |
+| 41 | [122956](https://gamebanana.com/mods/122956) | Surf_ski_2_source | Surf Style | 37,536 | 3 | imported 2026-10-09, not a course; a different file from surf_ski_2 (`surf_ski_2_source`) |
+| 42 | [121540](https://gamebanana.com/mods/121540) | surf_29_12_06 | Surf Style | 37,029 | 22 | imported 2026-10-09, not a course (`surf_29_12_06`) |
+| 43 | [123134](https://gamebanana.com/mods/123134) | surf_the_gloaming | Surf Style | 36,153 | 32 | imported 2026-10-09, not a course (`surf_the_gloaming`) |
+| 44 | [121962](https://gamebanana.com/mods/121962) | surf_dust2_2008_final | Surf Style | 35,615 | 7 | imported 2026-10-09, not a course (`surf_dust2_2008_final`) |
 | 45 | [126499](https://gamebanana.com/mods/126499) | kz_bhop_yonkoma | Bunny Hop | 35,327 | 35 | imported 2026-10-09, no finish (`kz_bhop_yonkoma`) |
-| 46 | [137687](https://gamebanana.com/mods/137687) | surf_japan_ptad | Combat Surf | 34,426 | 18 | not yet |
+| 46 | [137687](https://gamebanana.com/mods/137687) | surf_japan_ptad | Combat Surf | 34,426 | 18 | imported 2026-10-09, not a course (`surf_japan_ptad`) |
 | 47 | [126445](https://gamebanana.com/mods/126445) | kz_bhop_badg3s | Bunny Hop | 33,149 | 41 | imported 2026-10-09 (`kz_bhop_badg3s`) |
 | 48 | [125304](https://gamebanana.com/mods/125304) | bhop_japan | Bunny Hop | 32,661 | 37 | imported 2026-10-09 (`bhop_japan`) |
 | 49 | [123298](https://gamebanana.com/mods/123298) | surf_year3000 | Surf Style | 32,628 | 8 | held (`surf_year3000`) |
-| 50 | [122497](https://gamebanana.com/mods/122497) | surf_machine_remix_final | Surf Style | 32,250 | 12 | not yet |
+| 50 | [122497](https://gamebanana.com/mods/122497) | surf_machine_remix_final | Surf Style | 32,250 | 12 | imported 2026-10-09, not a course (`surf_machine_remix_final`) |
 
 ## Most liked, outside that list
 

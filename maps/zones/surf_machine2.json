@@ -1,0 +1,13 @@
+{
+ "id": "surf_machine2",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "Z-machine",
+ "attribution": {
+  "author": "Z-machine",
+  "source": "https://gamebanana.com/mods/122478 (Key Authors: Z-machine; submitter Z-machine)",
+  "archive": "surf_machine2.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 89 placed weapons, 16 func_buttons, team spawn teleports and a jail_i every fall goes to -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

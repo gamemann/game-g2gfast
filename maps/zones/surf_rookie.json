@@ -1,0 +1,302 @@
+{
+ "id": "surf_rookie",
+ "author": "Kiiru, Sacred91, Zeedz, Retarded brother",
+ "attribution": {
+  "author": "Kiiru, Sacred91, Zeedz, Retarded brother",
+  "source": "https://gamebanana.com/mods/122860 (Creator: Kiiru, Sacred91, Zeedz, Retarded brother; submitter Kiiru)",
+  "archive": "surf_rookie.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Eighteen numbered stages read from the teleport graph (gb-maps-1, 2026-10-09): each section ends in a door-sized gate (16x384x208) aimed at the next section's stageN destination, and its pits return to its own. The spawn room's door (384x8x192 at -4736 13396 15136) is the way into stage1; stage18's last gate (-1672 13184 2920) aims at `end`, a room beside the spawn, which is the finish. By kiiru, who also made surf_beginner2. Not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -5240,
+     11880,
+     14880
+    ],
+    [
+     -4230,
+     13390,
+     15200
+    ]
+   ],
+   "note": "the spawn room the 84 info_players stand in (x -5120..-4352, y 11968..12352, z 14976, standing on the floor at 14912), to its door into stage1"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -4736,
+    12160,
+    14976
+   ],
+   "destination_yaw": 90,
+   "note": "the middle of the spawn room, facing its door into stage1, as the info_players face"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "stage2",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage2",
+   "note": "the arrival of stage1's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "stage3",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage3",
+   "note": "the arrival of stage2's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "stage4",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage4",
+   "note": "the arrival of stage3's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "around": {
+    "point": "stage5",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage5",
+   "note": "the arrival of stage4's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 6,
+   "around": {
+    "point": "stage6",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage6",
+   "note": "the arrival of stage5's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 7,
+   "around": {
+    "point": "stage7",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage7",
+   "note": "the arrival of stage6's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 8,
+   "around": {
+    "point": "stage8",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage8",
+   "note": "the arrival of stage7's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 9,
+   "around": {
+    "point": "stage9",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage9",
+   "note": "the arrival of stage8's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 10,
+   "around": {
+    "point": "stage10",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage10",
+   "note": "the arrival of stage9's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 11,
+   "around": {
+    "point": "stage11",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage11",
+   "note": "the arrival of stage10's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 12,
+   "around": {
+    "point": "stage12",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage12",
+   "note": "the arrival of stage11's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 13,
+   "around": {
+    "point": "stage13",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage13",
+   "note": "the arrival of stage12's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 14,
+   "around": {
+    "point": "stage14",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage14",
+   "note": "the arrival of stage13's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 15,
+   "around": {
+    "point": "stage15",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage15",
+   "note": "the arrival of stage14's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 16,
+   "around": {
+    "point": "stage16",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage16",
+   "note": "the arrival of stage15's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 17,
+   "around": {
+    "point": "stage17",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage17",
+   "note": "the arrival of stage16's gate"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 18,
+   "around": {
+    "point": "stage18",
+    "extents": [
+     160,
+     160,
+     96
+    ]
+   },
+   "destination": "stage18",
+   "note": "the arrival of stage17's gate"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "teleport_to": "end",
+   "note": "stage18's last gate (16x384x208 at -1672 13184 2920) into the end room"
+  }
+ ]
+}

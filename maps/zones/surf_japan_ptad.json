@@ -1,0 +1,13 @@
+{
+ "id": "surf_japan_ptad",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "ptad, monkeydie",
+ "attribution": {
+  "author": "ptad, monkeydie",
+  "source": "https://gamebanana.com/mods/137687 (Key Authors: ptad, monkeydie; submitter ptad)",
+  "archive": "surf_japan_ptad.zip",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 90 placed weapons, 18 func_buttons, a catacomb and castle with trapdoor and fire traps, and team spawn teleports -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

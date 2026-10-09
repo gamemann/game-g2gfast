@@ -1,0 +1,13 @@
+{
+ "id": "surf_thriller",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "buck nasty",
+ "attribution": {
+  "author": "buck nasty",
+  "source": "https://gamebanana.com/mods/123141 (Key Authors: buck nasty; submitter BuckNasty)",
+  "archive": "surf_thriller.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 37 placed weapons, four jails and prisons, team spawn teleports -- combat (by the author of surf_buck-wild). gb-maps-1 batch of 2026-10-09. Not published."
+}

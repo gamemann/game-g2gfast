@@ -1,0 +1,13 @@
+{
+ "id": "surf_adverse",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "target practice, Archangel",
+ "attribution": {
+  "author": "target practice, Archangel",
+  "source": "https://gamebanana.com/mods/137677 (Key Authors: target practice, Archangel; submitter Target_Practice)",
+  "archive": "surf_adverse.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 78 placed weapons, AK/M4 spawner activators, team bases and a jail most falls go to -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

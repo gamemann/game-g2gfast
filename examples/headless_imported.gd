@@ -62,7 +62,9 @@ const NOT_COURSES := ["buses_from_hell_fixed", "bhop_lego2", "surf_grave_reloade
 	"surf_10x_final", "surf_10x_reloaded_fixed", "surf_forbidden_ways_reloaded", "surf_mai_remix",
 	"surf_greatriver_xdre4m", "surf_ski_2", "surf_110b_austinpowers", "surf_xiv_v2a", "surf_fruits",
 	"surf_legends", "kz_bhop_yonkoma", "surf_akai_final", "surf_bathroom_final", "surf_buck_wild",
-	"surf_forbidden_ways_2nd", "surf_greatriver", "surf_greatriver_v4", "surf_rebel_resistance_final3", "bunnyhop_pro"]
+	"surf_forbidden_ways_2nd", "surf_greatriver", "surf_greatriver_v4", "surf_rebel_resistance_final3", "bunnyhop_pro",
+	"surf_29_12_06", "surf_dust2_2008_final", "surf_machine2", "surf_machine_remix_final", "surf_matrix_v8",
+	"surf_ski_2_source", "surf_skyworld", "surf_the_gloaming", "surf_thriller", "surf_adverse", "surf_japan_ptad", "surf_animals"]
 
 ## The imported maps with no pit, which is a different question from having no finish.
 ##
@@ -102,6 +104,14 @@ const SPAWNS_IN_A_PUSH := ["surf_quilavar"]
 ## [constant NOT_COURSES]: a map in here whose arrival stops landing in a pit fails, so
 ## the list cannot outlive its reason.
 const ARRIVES_IN_PIT := {}
+
+## Arrivals the map drops a player from on purpose, by label: the line starts with a fall
+## the player steers out of. surf_rookie's stage 2 puts you over a tube, with its own pit
+## 340 units straight under the arrival returning you to the same arrival; a player who
+## does not steer onto the tube's ramp falls through and is put back at the top. A bot
+## standing still falls 8.2 m in the window this check waits, so for these the bound is
+## 20 m -- a drop the map means, never a fall out of the world (2026-10-09, gb-maps-1).
+const FALLING_ARRIVALS := {"surf_rookie": ["stage 2"]}
 
 ## Imported bonuses with no pit of their own, by track, which `route_problems()` reports.
 ##
@@ -934,7 +944,9 @@ func _test_stands_where_it_sends_you() -> void:
 		for _i in range(90):
 			await get_tree().physics_frame
 		var drop := at.y - bot.global_position.y
-		_check(drop < 8.0, "%s is somewhere a player can stand" % spot[0],
+		var falls: Array = FALLING_ARRIVALS.get(String(_map_id), [])
+		_check(drop < (20.0 if falls.has(spot[0]) else 8.0),
+			"%s is somewhere a player can stand%s" % [spot[0], " (or a drop the map means, FALLING_ARRIVALS)" if falls.has(spot[0]) else ""],
 			"fell %.1f m from %s" % [drop, str(at / G2GUnits.METRES_PER_UNIT)])
 
 	for n in splits:

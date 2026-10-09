@@ -1,0 +1,13 @@
+{
+ "id": "surf_matrix_v8",
+ "kind": "arena",
+ "kind_why": "A combat surf map: built to fight on rather than to time (see notes). 'arena' keeps it out of g2gfast's rotation, vote and nominations -- it stays installed, loadable with `map`, and listed on M as combat -- and marks it for game-arena's deathmatch.",
+ "author": "Flippi273",
+ "attribution": {
+  "author": "Flippi273",
+  "source": "https://gamebanana.com/mods/122520 (Key Authors: Flippi273; submitter Flippi273)",
+  "archive": "surf_matrix_v8.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 124 placed weapons, four jails and a 'glass box' most teleports aim at -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+}

@@ -1,0 +1,193 @@
+{
+ "id": "bhop_sqee",
+ "author": "sQee, QuiSt, KorYouZ, lólmarcel, dawn, Ray-on.NoOb, nairda",
+ "attribution": {
+  "author": "sQee, QuiSt, KorYouZ, lólmarcel, dawn, Ray-on.NoOb, nairda",
+  "source": "https://gamebanana.com/mods/126077 (Key Authors: sQee, QuiSt, KorYouZ, lólmarcel, dawn, Ray-on.NoOb, nairda; submitter sQee)",
+  "archive": "bhop_sqee.rar",
+  "recorded": "2026-10-09"
+ },
+ "notes": "Ten levels read from the teleport graph (gb-maps-1, 2026-10-09): tpN.M is level N's checkpoint M, every level's last door (a 7x168x264 gate) aims at the next level's tpN.1, and level 10's last door (-2604 4000 -13820) aims at `fin`, a hub whose own doors lead to every level's start -- the map's level select. The two bonuses also end at fin, so the finish is level 10's door itself, not every teleport into the hub. The lobby (24 spawns, long-jump pads lj1..3) has the door into level 1 at (1180 236 -60). Bonuses (bonus1, bonus2) are not timed tracks yet. 105 MB; not published.",
+ "zones": [
+  {
+   "kind": "START",
+   "track": 0,
+   "box": [
+    [
+     -1100,
+     -560,
+     -200
+    ],
+    [
+     1170,
+     560,
+     100
+    ]
+   ],
+   "note": "the lobby the 24 info_players stand in (x -1028..-776, y -472..472, z -132), to its door into level 1 at x 1176"
+  },
+  {
+   "kind": "SPAWN",
+   "track": 0,
+   "destination": [
+    -900,
+    0,
+    -132
+   ],
+   "destination_yaw": 0,
+   "note": "the middle of the spawn rows, facing the door into level 1 as the info_players do"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 2,
+   "around": {
+    "point": "tp2.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp2.1",
+   "note": "level 2's start: where level 1's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 3,
+   "around": {
+    "point": "tp3.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp3.1",
+   "note": "level 3's start: where level 2's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 4,
+   "around": {
+    "point": "tp4.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp4.1",
+   "note": "level 4's start: where level 3's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 5,
+   "around": {
+    "point": "tp5.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp5.1",
+   "note": "level 5's start: where level 4's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 6,
+   "around": {
+    "point": "tp6.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp6.1",
+   "note": "level 6's start: where level 5's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 7,
+   "around": {
+    "point": "tp7.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp7.1",
+   "note": "level 7's start: where level 6's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 8,
+   "around": {
+    "point": "tp8.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp8.1",
+   "note": "level 8's start: where level 7's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 9,
+   "around": {
+    "point": "tp9.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp9.1",
+   "note": "level 9's start: where level 8's last door puts you"
+  },
+  {
+   "kind": "STAGE",
+   "track": 0,
+   "number": 10,
+   "around": {
+    "point": "tp10.1",
+    "extents": [
+     128,
+     128,
+     96
+    ]
+   },
+   "destination": "tp10.1",
+   "note": "level 10's start: where level 9's last door puts you"
+  },
+  {
+   "kind": "END",
+   "track": 0,
+   "box": [
+    [
+     -2612,
+     3912,
+     -13956
+    ],
+    [
+     -2596,
+     4088,
+     -13684
+    ]
+   ],
+   "note": "level 10's last door into the fin hub (7x168x264 at -2604 4000 -13820); the hub's other two doors in are the bonuses' ends"
+  }
+ ]
+}
