@@ -232,6 +232,46 @@ def vmt_blend(src):
     return base or None
 
 
+SKY_SUFFIXES = ("rt", "bk", "lf", "ft", "up", "dn")
+
+
+def packed_sky_faces(bsp, pak, tex_dir, notes):
+    """The map's own 2D sky, when its pakfile carries all six faces: {suffix: png} or {}.
+
+    [b]A packed sky was drawn as one flat colour.[/b] Thirty-six of the seventy-five held
+    maps ship `materials/skybox/<skyname><rt|bk|lf|ft|up|dn>`, and the game drew each as
+    G2GLighting's procedural sky, coloured from a table of stock sky NAMES -- surf_beginner2's
+    `sky47` is a sunset, and it rendered as a clear blue noon (against the WR run's own
+    footage, 2026-10-09). The six faces are decoded here and drawn by g2g_sky.gdshader in
+    the engine's own face layout. All six or nothing: a sky with a missing face is a hole
+    in the horizon, which is worse than a colour. An HDR sky the decoder cannot read
+    (`militia_hdr`) falls back to the colour, with a note.
+    """
+    world = next((e for e in bsp.entities if e.get("classname") == "worldspawn"), {})
+    sky = str(world.get("skyname", "")).strip().lower()
+    if not sky:
+        return {}
+    out = {}
+    for suffix in SKY_SUFFIXES:
+        vmt = pak.get("materials/skybox/%s%s.vmt" % (sky, suffix))
+        base = vmt_basetexture(vmt)[0] if vmt is not None else ""
+        raw = pak.get("materials/%s.vtf" % base) if base else None
+        if raw is None:
+            raw = pak.get("materials/skybox/%s%s.vtf" % (sky, suffix))
+        if raw is None:
+            return {}
+        try:
+            w, h, px = vtf.decode(raw)
+        except ValueError as e:
+            notes.append("sky %s%s does not decode (%s); the sky stays a colour" % (sky, suffix, e))
+            return {}
+        os.makedirs(tex_dir, exist_ok=True)
+        name = "sky_%s.png" % suffix
+        vtf.write_png(os.path.join(tex_dir, name), w, h, px, opaque=True)
+        out[suffix] = name
+    return out
+
+
 def extract_textures(pak, materials, tex_dir, blends=None):
     """Decode every referenced texture the map carried with it.
 
@@ -3149,6 +3189,7 @@ def main(argv=None):
                        | set(prop_mats.values()))
     blends = {}
     tex = extract_textures(pak, materials, os.path.join(d, "textures"), blends)
+    packed_sky = packed_sky_faces(bsp, pak, os.path.join(d, "textures"), notes)
     textured = {m for m, (png, _) in tex.items() if png}
 
     cos_limit = math.cos(math.radians(a.max_slope))
@@ -3195,7 +3236,7 @@ def main(argv=None):
         "tier": int(doc.get("tier", a.tier)),
         "bounds": {"min": list(to_godot(lo)), "max": list(to_godot(hi))},
         "lightmap": {"file": os.path.basename(lm_path), "width": lm_w, "height": lm_h},
-        "lighting": lighting_of(bsp),
+        "lighting": dict(lighting_of(bsp), **({"sky_faces": packed_sky} if packed_sky else {})),
         "surfaces": surfaces,
         "collision": collision,
         # Two counts from two code paths, so a suite can tell "this map has no brush

@@ -206,6 +206,7 @@ func _construct() -> void:
 	# carries its own sun angle, sun colour, ambient colour, fog range and sky name, and
 	# not one of them had ever been read. See [G2GLighting].
 	G2GLighting.apply(self, manifest.get("lighting", {}))
+	_apply_packed_sky(manifest.get("lighting", {}), dir)
 	DotLog.info(CHANNEL, "imported map built", {
 		"map": str(manifest.get("id", "?")),
 		"surfaces": written,
@@ -555,6 +556,33 @@ func _role(name: String) -> G2GTextures.Role:
 ## map comes back null — in the browser client, which is the one target that cannot be
 ## debugged by looking at it. Godot says so in a warning nobody reads. `load()` takes
 ## the imported resource and is correct in both.
+## The map's own six-face sky, over the procedural one [G2GLighting] built, when the
+## importer found one in its pakfile (`lighting.sky_faces`; tools/bsp_import.py
+## packed_sky_faces). Thirty-one held maps carry one, and every one was drawn as a single
+## colour picked from a table of sky names: surf_beginner2's sunset as a blue noon.
+func _apply_packed_sky(lighting: Dictionary, dir: String) -> void:
+	var faces: Variant = lighting.get("sky_faces", null)
+	if not (faces is Dictionary) or (faces as Dictionary).size() < 6:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = load(G2GPaths.rebase("res://game/g2g_sky.gdshader"))
+	for suffix: String in ["rt", "lf", "bk", "ft", "up", "dn"]:
+		var tex := _load_texture(dir.path_join("textures").path_join(str((faces as Dictionary).get(suffix, ""))))
+		if tex == null:
+			DotLog.warn(CHANNEL, "a packed sky face did not load; the sky stays a colour", {"face": suffix})
+			return
+		mat.set_shader_parameter("face_" + suffix, tex)
+	for child in get_children():
+		var world := child as WorldEnvironment
+		if world == null or world.environment == null:
+			continue
+		var env := world.environment
+		if env.sky == null:
+			env.sky = Sky.new()
+		env.sky.sky_material = mat
+		env.background_mode = Environment.BG_SKY
+
+
 func _load_texture(path: String) -> Texture2D:
 	if path.is_empty():
 		return null

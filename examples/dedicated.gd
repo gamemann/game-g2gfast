@@ -393,12 +393,12 @@ func _test_stagger_cvar() -> void:
 	_section("sv_stagger_snapshots")
 	var module := server.modules.get_module("g2gfast")
 	var net: DotNetManager = module.get("net") if module != null else null
-	_check(net != null and not net.config.stagger_snapshots, "snapshots are not staggered by default")
-	_run_command("sv_stagger_snapshots 1")
-	_check(net != null and net.config.stagger_snapshots and game.config.stagger_snapshots,
-		"sv_stagger_snapshots 1 reaches the running netcode, not only the config")
+	_check(net != null and net.config.stagger_snapshots, "snapshots are staggered by default (since 2026-10-09)")
 	_run_command("sv_stagger_snapshots 0")
-	_check(net != null and not net.config.stagger_snapshots, "and 0 turns it back off")
+	_check(net != null and not net.config.stagger_snapshots and not game.config.stagger_snapshots,
+		"sv_stagger_snapshots 0 reaches the running netcode, not only the config")
+	_run_command("sv_stagger_snapshots 1")
+	_check(net != null and net.config.stagger_snapshots, "and 1 turns it back on")
 	_done()
 
 

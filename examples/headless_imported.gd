@@ -164,7 +164,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 48
+const CHECKS_PER_MAP := 49
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -600,6 +600,26 @@ func _test_lighting() -> void:
 	_check(minf(top.r, minf(top.g, top.b)) < 0.99,
 		"and its sky is not a blank white dome", "sky top %s, sky name '%s'"
 			% [top, node.manifest.get("lighting", {}).get("sky_name", "")])
+
+	# [b]A sky the map packed is the sky drawn.[/b] 36 of the held maps carry their own six
+	# faces (`lighting.sky_faces`), and every one was drawn as a colour from a table of sky
+	# names. Passes on a map with none by asking nothing of it. Armed by taking
+	# `_apply_packed_sky` out of G2GBspMap: it fires on every map that packs one.
+	var faces: Variant = node.manifest.get("lighting", {}).get("sky_faces", null)
+	var packed_ok := true
+	var packed_why := "no packed sky"
+	if faces is Dictionary and not (faces as Dictionary).is_empty():
+		var shader_mat: ShaderMaterial = null
+		if world != null and world.environment != null and world.environment.sky != null:
+			shader_mat = world.environment.sky.sky_material as ShaderMaterial
+		var bound := 0
+		if shader_mat != null:
+			for suffix: String in ["rt", "lf", "bk", "ft", "up", "dn"]:
+				if shader_mat.get_shader_parameter("face_" + suffix) is Texture2D:
+					bound += 1
+		packed_ok = bound == 6 and world.environment.background_mode == Environment.BG_SKY
+		packed_why = "%d of 6 faces bound" % bound
+	_check(packed_ok, "and a sky it packed is the sky drawn", packed_why)
 
 	# [b]And a sky named black is black, horizon included.[/b] surf_kitsune names `blacksky`
 	# and sets nothing else, and was drawn under dot-lighting's pale default dome. Passes on
