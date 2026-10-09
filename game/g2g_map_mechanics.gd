@@ -38,6 +38,9 @@ const LETHAL_DAMAGE := 100.0
 ## How far a foot may be off a block's top and still be standing on it, metres.
 const STAND_TOLERANCE := 3.0 * G2GUnits.METRES_PER_UNIT
 
+## How far below the feet a volume still touches the player, metres.
+const TOUCH_BELOW := 2.0 * G2GUnits.METRES_PER_UNIT
+
 ## Ticks of push history a rider keeps. A client replays at most this many.
 const HISTORY := 256
 
@@ -110,7 +113,12 @@ func simulate(rider: Rider, motor: DotFpsMotor, state: DotFpsState, delta: float
 	var tunables := motor.tunables
 	var height := tunables.height_at(state.crouch_fraction)
 	var r := tunables.radius
-	var hull := AABB(state.position - Vector3(r, 0.0, r), Vector3(r * 2.0, height, r * 2.0))
+	# Two units under the feet as well: a trigger lying ON the floor (surf_fruits' pushes
+	# are 1-unit sheets) is touched by a player standing on it, and a box test of the hull
+	# alone only grazes it. The same two units RNGFix gives a landing player, for the same
+	# reason: a thin ground trigger must not be missable by standing exactly on its top.
+	var reach := TOUCH_BELOW
+	var hull := AABB(state.position - Vector3(r, reach, r), Vector3(r * 2.0, height + reach, r * 2.0))
 
 	_pushes(rider, motor, state, hull, delta)
 

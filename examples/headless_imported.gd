@@ -72,6 +72,14 @@ const NOT_COURSES := ["buses_from_hell_fixed", "bhop_lego2", "surf_grave_reloade
 ## maps a question they currently answer correctly, which is how an exemption quietly grows.
 const NO_PIT := ["buses_from_hell_fixed"]
 
+## Maps whose main spawn stands in a `trigger_push`, which since 2026-10-08 is run: the
+## player is carried off the pad the moment they appear, as in Source. surf_quilavar's
+## spawn is the foot of a 2000-unit updraft (1000 u/s, starting 40 units over the floor).
+## For these the "comes to rest inside the start zone" check asks instead that the push
+## moved the player UP and away, asserted both ways: a listed map whose player rests in
+## its start fails, so the entry goes when the push does.
+const SPAWNS_IN_A_PUSH := ["surf_quilavar"]
+
 ## Arrivals on these maps that DO land inside a pit on their own track, by label.
 ##
 ## [b]Known, not accepted[/b] (`[arrive-1]`). Two of the three that were here are fixed:
@@ -784,6 +792,11 @@ func _test_stands_on_it() -> void:
 	if start_zone == null:
 		_check(NOT_COURSES.has(_map_id), "and comes to rest inside the start zone",
 			"no start zone on the main track")
+	elif SPAWNS_IN_A_PUSH.has(String(_map_id)):
+		var at := bot.controller.state.position
+		_check(not start_zone.contains(at) and at.y > start.y,
+			"and is carried up off its spawn by the push it stands in (SPAWNS_IN_A_PUSH)",
+			"at %s" % [at / G2GUnits.METRES_PER_UNIT])
 	else:
 		var at := bot.controller.state.position
 		_check(start_zone.contains(at), "and comes to rest inside the start zone",

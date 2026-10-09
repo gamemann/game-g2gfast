@@ -121,9 +121,7 @@ def solid_for_players(e):
     The class list in `bsp_read` says which classes CAN be solid; a mapper turns that off
     per entity, and each of these was an invisible wall before:
 
-    - `func_brush` `Solidity` 1 is "never solid" (0 toggles, 2 always), and one that
-      starts disabled is not there at all;
-    - `func_wall_toggle` with spawnflag 1 starts invisible, which is also not solid;
+    - `func_brush` `Solidity` 1 is "never solid" (0 toggles, 2 always);
     - `func_door`/`func_door_rotating` spawnflag 8 and `func_movelinear` 8 are "passable";
     - `func_rotating` spawnflag 64 is "not solid";
     - `func_conveyor` spawnflag 2 is "not solid";
@@ -134,12 +132,12 @@ def solid_for_players(e):
     flags = _int(e, "spawnflags")
     if cls in ("func_clip_vphysics", "func_water_analog", "func_water"):
         return False
-    if cls == "func_brush":
-        if _int(e, "Solidity") == 1:
-            return False
-        if _int(e, "StartDisabled") == 1:
-            return False
-    if cls == "func_wall_toggle" and flags & 1:
+    # A func_brush that STARTS disabled, or a func_wall_toggle that starts off, stays
+    # solid: maps switch those on with logic at round start, often as the floor a player
+    # spawns on, and this game does not run that logic (bhop_lego2, surf_fruits and three
+    # more fell through their spawns when they were made non-solid). Only `Solidity 1`,
+    # "never solid", is a fact about the brush.
+    if cls == "func_brush" and _int(e, "Solidity") == 1:
         return False
     if cls in ("func_door", "func_door_rotating", "func_movelinear") and flags & 8:
         return False

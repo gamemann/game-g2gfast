@@ -2607,6 +2607,30 @@ def classify_zones(bsp, min_thickness=MIN_ZONE_THICKNESS, doc=None, solids=None)
                 return o
         return None
 
+    # A pit around a spawn, or in the drop right under one, keeps sending to the spawn.
+    # Several maps stand their spawns in (or over) a teleport that moves you on the
+    # moment you appear -- bhop_lego2's spawn room, surf_fruits', bhop_badges' pad -- and
+    # their start zones were drawn around where the player appears. Followed faithfully,
+    # the first tick takes the player out of their own start; sending to the spawn is what
+    # every pit did before 2026-10-08, and here it is still the right answer.
+    spawn_points = [zz["destination"] for zz in z.zones
+                    if zz["kind"] == "SPAWN" and zz.get("destination") is not None]
+    spawn_points += [sp["origin_src"] for sp in spawns if "origin_src" in sp]
+    held = 0
+    for zz in pits:
+        if zz.get("destination") is None:
+            continue
+        for sp in spawn_points:
+            inside_xy = all(zz["min"][a] - 16.0 <= sp[a] <= zz["max"][a] + 16.0 for a in (0, 1))
+            inside = inside_xy and zz["min"][2] - 16.0 <= sp[2] <= zz["max"][2] + 16.0
+            if inside or (inside_xy and sp[2] - 512.0 <= zz["max"][2] <= sp[2] + 96.0):
+                del zz["destination"]
+                zz.pop("destination_yaw", None)
+                held += 1
+                break
+    if held:
+        z.notes.append("%d pits around or under a spawn send to the spawn" % held)
+
     looped = chained = 0
     for zz in pits:
         at = zz.get("destination")

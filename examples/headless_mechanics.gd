@@ -367,6 +367,10 @@ func _test_pushes() -> void:
 		var at := Vector3(box.get_center().x, box.position.y + G2GUnits.to_metres(1.0), box.get_center().z)
 		if bot.controller.motor.would_overlap(bot.controller.state, at) or _in_pit(at):
 			continue    # a push box sunk into a floor or over a pit: its neighbours answer
+		var ahead := bot.controller.motor.probe(bot.controller.state, at,
+			push.normalized() * G2GUnits.to_metres(32.0))
+		if ahead != null and ahead.hit:
+			continue    # pushing into a wall a hull's width away: a push that has nowhere to go
 		bot.teleport(at, 0.0, true)
 		bot.controller.state.velocity = Vector3.ZERO
 		var before := at
@@ -384,7 +388,10 @@ func _test_pushes() -> void:
 		var along := (bot.global_position - before).dot(push.normalized()) \
 			+ bot.controller.state.velocity.dot(push.normalized()) * (1.0 / float(game.tick_rate))
 		# Eight ticks of the push, or the velocity it left: a quarter of either is a push.
-		if along > push.length() * (8.0 / float(game.tick_rate)) * 0.25 or \
+		# Or out of the volume altogether, along it: a small booster's job is done once
+		# it has put the player out of its own box.
+		var left_it := not box.grow(G2GUnits.to_metres(2.0)).has_point(bot.global_position) and along > 0.0
+		if left_it or along > push.length() * (8.0 / float(game.tick_rate)) * 0.25 or \
 				bot.controller.state.velocity.dot(push.normalized()) > push.length() * 0.25:
 			moved += 1
 		else:
@@ -440,10 +447,12 @@ func _test_water() -> void:
 		var feet := Vector3(w.get_center().x, w.end.y - G2GUnits.to_metres(70.0), w.get_center().z)
 		if bot.controller.motor.would_overlap(bot.controller.state, feet) or _in_push(feet):
 			continue    # under a floor, or in a current: surf_grave_reloaded's pools pull you down
-		placed += 1
 		bot.teleport(feet, 0.0, true)
 		await get_tree().physics_frame
 		await get_tree().physics_frame
+		if bot.global_position.distance_to(feet) > G2GUnits.to_metres(64.0):
+			continue    # something on the map took the player away (a teleport in the pool)
+		placed += 1
 		if bot.controller.state.mode != bot.swim.mode_id:
 			continue
 		tried += 1
