@@ -1,5 +1,5 @@
 {
- "_": "Kenney stand-ins for stock materials an imported map's .bsp did not carry. First match wins (String.match globs, lowercase material names). 'none' keeps the tinted prototype grid. 'units' is the world WIDTH of one tile (its height is units * 'aspect', the image's height over width) in Source units; 'mean' is the stand-in's average sRGB colour, which the tint toward the map's measured colour divides by. Chosen 2026-10-04 by looking at private reference copies of the originals; those never enter this repository. [g2g-maps-stock-1]",
+ "_": "Stand-ins (Kenney first, else CC0 from ambientCG) for stock materials an imported map's .bsp did not carry. First match wins (String.match globs, lowercase material names). 'none' keeps the tinted prototype grid. 'units' is the world WIDTH of one tile (its height is units * 'aspect', the image's height over width) in Source units; 'mean' is the stand-in's average sRGB colour, which the tint toward the map's measured colour divides by. Chosen 2026-10-04 by looking at private reference copies of the originals; those never enter this repository. [g2g-maps-stock-1]",
  "entries": [
   {
    "match": "dev/*",
@@ -27,14 +27,43 @@
    "why": "flat white in the original (cs_havana/white measured)"
   },
   {
+   "match": "metal/*floor*",
+   "texture": "cc0_metal_plates.jpg",
+   "filter": "linear",
+   "why": "a metal floor: plate (ambientCG MetalPlates006, CC0). Kenney has no metal; the family rule's second source.",
+   "mean": [
+    0.272,
+    0.286,
+    0.29
+   ],
+   "units": 128,
+   "aspect": 1.0
+  },
+  {
    "match": "metal/*",
-   "none": true,
-   "why": "Kenney's retro set has no metal"
+   "texture": "cc0_metal_brushed.jpg",
+   "filter": "linear",
+   "why": "metal walls, ceilings, trims: plain brushed metal (ambientCG Metal032, CC0)",
+   "mean": [
+    0.49,
+    0.535,
+    0.578
+   ],
+   "units": 128,
+   "aspect": 1.0
   },
   {
    "match": "concrete/*",
-   "none": true,
-   "why": "Kenney's retro set has no concrete"
+   "texture": "cc0_concrete_smooth.jpg",
+   "filter": "linear",
+   "why": "smooth light concrete (ambientCG Concrete034, CC0). surf_mesa's ramps are concretefloor039a, and its reference runs show them smooth light grey where the grid drew a dark lattice (2026-10-09)",
+   "mean": [
+    0.723,
+    0.723,
+    0.723
+   ],
+   "units": 256,
+   "aspect": 1.0
   },
   {
    "match": "lights/*",
@@ -273,6 +302,227 @@
    ],
    "units": 128,
    "aspect": 2.0
+  },
+  {
+   "match": "*metalfloor*",
+   "texture": "cc0_metal_plates.jpg",
+   "filter": "linear",
+   "mean": [
+    0.272,
+    0.286,
+    0.29
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: a metal floor. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*metal*",
+   "texture": "cc0_metal_brushed.jpg",
+   "filter": "linear",
+   "mean": [
+    0.49,
+    0.535,
+    0.578
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: metal (de_train's ceilings, cs_italy/ironmetal01, ...). Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*cement*",
+   "texture": "cc0_concrete_smooth.jpg",
+   "filter": "linear",
+   "mean": [
+    0.723,
+    0.723,
+    0.723
+   ],
+   "units": 256,
+   "aspect": 1.0,
+   "why": "name: cement. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*concrete*",
+   "texture": "cc0_concrete_smooth.jpg",
+   "filter": "linear",
+   "mean": [
+    0.723,
+    0.723,
+    0.723
+   ],
+   "units": 256,
+   "aspect": 1.0,
+   "why": "name: concrete. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*snow*",
+   "texture": "cc0_snow.jpg",
+   "filter": "linear",
+   "mean": [
+    0.873,
+    0.936,
+    0.988
+   ],
+   "units": 256,
+   "aspect": 1.0,
+   "why": "name: snow (ambientCG Snow010A, CC0; Kenney has none). Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "tile/*",
+   "texture": "floor_tiles_tan_large.png",
+   "mean": [
+    0.697,
+    0.641,
+    0.605
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: floor tiles. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*tile*",
+   "texture": "floor_tiles_tan_large.png",
+   "mean": [
+    0.697,
+    0.641,
+    0.605
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: tiles (de_train officetile, de_dust dutile, ...). Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*grass*",
+   "texture": "floor_ground_grass.png",
+   "mean": [
+    0.233,
+    0.348,
+    0.28
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: grass, including rock-and-grass terrain blends, which are floors. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*cliff*",
+   "texture": "wall_rock.png",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0,
+   "why": "name: cliff. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*cavewall*",
+   "texture": "wall_rock.png",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0,
+   "why": "name: cave wall. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*/rock*",
+   "texture": "wall_rock.png",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0,
+   "why": "name: rock (de_chateau/rockf, ...). Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*blendrock*",
+   "texture": "wall_rock.png",
+   "mean": [
+    0.255,
+    0.21,
+    0.186
+   ],
+   "units": 128,
+   "aspect": 2.0,
+   "why": "name: a rock blend. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*dirt*",
+   "texture": "floor_ground_dirt.png",
+   "mean": [
+    0.359,
+    0.289,
+    0.248
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: dirt. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*ground*",
+   "texture": "floor_ground_dirt.png",
+   "mean": [
+    0.359,
+    0.289,
+    0.248
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: ground. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*cobble*",
+   "texture": "floor_stone_pattern_small.png",
+   "mean": [
+    0.433,
+    0.443,
+    0.49
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: cobbles. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*brick*",
+   "texture": "wall_brick_stone_center.png",
+   "mean": [
+    0.488,
+    0.498,
+    0.538
+   ],
+   "units": 128,
+   "aspect": 2.0,
+   "why": "name: brick. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*wood*",
+   "texture": "floor_wood_planks.png",
+   "mean": [
+    0.349,
+    0.281,
+    0.24
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: wood. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
+  },
+  {
+   "match": "*shingles*",
+   "texture": "floor_wood_planks.png",
+   "mean": [
+    0.349,
+    0.281,
+    0.24
+   ],
+   "units": 128,
+   "aspect": 1.0,
+   "why": "name: wooden shingles. Added 2026-10-09 by name, for the maps imported since 10-04 [g2g-maps-stock-1]"
   }
  ]
 }

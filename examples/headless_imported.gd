@@ -122,11 +122,19 @@ const BONUSES_WITHOUT_PITS := {}
 ## maps whose stand-ins have been chosen and looked at (`[g2g-maps-stock-1]`). Measured
 ## 2026-10-04 with the first table; the grid share before it is in the comment.
 const STOCK_DRAWN := {
-	"bhop_aztec": 0.60,       # 0% before: sandstone courses, looked at along the route
-	"surf_beginner2": 0.73,   # 2.6% before: planks, rock, sand, looked at along the route
-	"bhop_interloper": 0.86,  # 50% before: the dirt walkways, looked at along the route
-	"buses_from_hell_fixed": 0.62,  # 0% before: the sand floor, looked at from the spawn
-	"bhop_monster_jam": 0.35, # 1.9% before: dark rock, looked at from the finish
+	"bhop_aztec": 0.66,  # 69.5% on 2026-10-09; 0% before: sandstone courses, looked at along the route
+	"surf_beginner2": 0.89,  # 94.7% on 2026-10-09; 2.6% before: planks, rock, sand, looked at along the route
+	"bhop_interloper": 0.92,  # 96.9% on 2026-10-09; 50% before: the dirt walkways, looked at along the route
+	"buses_from_hell_fixed": 0.89,  # 94.5% on 2026-10-09; 0% before: the sand floor, looked at from the spawn
+	"bhop_monster_jam": 0.73,  # 77.5% on 2026-10-09; 1.9% before: dark rock, looked at from the finish
+	"surf_year3000": 0.81,  # 86.1% on 2026-10-09; 0.8% before: CC0 concrete and metal (2026-10-09)
+	"surf_mesa": 0.94,  # 99.9% on 2026-10-09; 91.8% before: concrete walls and ramps, against the WR run
+	"surf_10x_final": 0.55,  # 58.1% on 2026-10-09; 0% before: grass, concrete, rock by name, looked at from the spawn
+	"surf_10x_reloaded_fixed": 0.72,  # 76.2% on 2026-10-09; 0%: ground as dirt, stone, looked at from the spawn
+	"surf_mai_remix": 0.56,  # 59.6% on 2026-10-09; 0%: tiles, rock, looked at from the spawn
+	"surf_grave_reloaded": 0.70,  # 73.8% on 2026-10-09; 0%: cobbles, concrete, looked at from the spawn
+	"bhop_exodus": 0.70,  # 74.7% on 2026-10-09; 10.7%: planks, concrete, looked at from the spawn
+	"surf_greatriver_xdre4m": 0.34,  # 36.2% on 2026-10-09; 0%: wood, metal, looked at from the spawn
 }
 
 ## The share of a map's triangles drawn in the texture its own pakfile carried, at least,

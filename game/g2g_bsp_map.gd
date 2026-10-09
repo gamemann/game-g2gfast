@@ -450,8 +450,9 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 	# to the role colours below.
 	var colour: Variant = s.get("colour", null)
 
-	# [b]A Kenney stand-in, when the table has one for this material.[/b] Christian's rule:
-	# the map's own texture, else Kenney, else the grid -- never the source game's. Pulled
+	# [b]A stand-in, when the table has one for this material.[/b] Christian's rule: the
+	# map's own texture, else Kenney, else free CC0 art from elsewhere, else the grid --
+	# never the source game's. Pulled
 	# toward the mapper's measured colour so the map keeps its palette, drawn with nearest
 	# filtering because it is pixel art, at a tile size the table sets. Here rather than in
 	# the importer so the packs already published get it. See G2GStockSubstitutes.
@@ -462,16 +463,23 @@ func _material_for(s: Dictionary, dir: String, lightmap: Texture2D) -> ShaderMat
 			var measured := Color(0.5, 0.5, 0.5)
 			if colour is Array and (colour as Array).size() >= 3:
 				measured = Color(float(colour[0]), float(colour[1]), float(colour[2]))
-			mat.set_shader_parameter("pixel_tex", kenney)
-			mat.set_shader_parameter("pixel_art", true)
 			mat.set_shader_parameter("has_albedo", true)
 			mat.set_shader_parameter("tint", G2GStockSubstitutes.tint_for(stand_in, measured))
 			# Prototype UVs are in 64-unit squares; a tile spans `units` across and
 			# `units * aspect` up. Half of Kenney's walls are 64x128, and drawn square
 			# their brick courses came out as thin as planks.
 			var across := float(stand_in.get("units", 128.0))
-			mat.set_shader_parameter("pixel_scale", Vector2(64.0 / across,
-				64.0 / (across * float(stand_in.get("aspect", 1.0)))))
+			if str(stand_in.get("filter", "nearest")) == "linear":
+				# A photographic CC0 stand-in (concrete, metal: Kenney has neither) wants
+				# the linear, mipmapped, anisotropic sampler; nearest makes it shimmer at
+				# speed. Square textures only, which is what albedo_tex's one scale allows.
+				mat.set_shader_parameter("albedo_tex", kenney)
+				mat.set_shader_parameter("uv_scale", 64.0 / across)
+			else:
+				mat.set_shader_parameter("pixel_tex", kenney)
+				mat.set_shader_parameter("pixel_art", true)
+				mat.set_shader_parameter("pixel_scale", Vector2(64.0 / across,
+					64.0 / (across * float(stand_in.get("aspect", 1.0)))))
 			mat.set_shader_parameter("ambient", prototype_ambient)
 			mat.set_meta(&"stand_in", str(stand_in.get("texture", "")))
 			return mat
