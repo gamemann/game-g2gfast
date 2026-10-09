@@ -1463,7 +1463,8 @@ def drawn_faces(bsp):
     brush entity's geometry relative to it. UVs stay computed from the stored position,
     because texinfo and the lightmap were computed there too.
 
-    A brush the map hides is left out: `rendermode 10` is "do not render", and a
+    A brush the map hides is left out: `rendermode 10` is "do not render", a brush in an
+    alpha render mode at `renderamt 0` is fully transparent (`invisible_by_alpha`), and a
     `func_brush` that starts disabled is not there until something turns it on.
     """
     out = [(f, (0.0, 0.0, 0.0)) for f in bsp.model_faces(0)]
@@ -1473,6 +1474,8 @@ def drawn_faces(bsp):
             continue
         if str(e.get("rendermode", "0")).strip() == "10":
             continue
+        if invisible_by_alpha(e):
+            continue
         if e.get("classname") == "func_brush" and str(e.get("StartDisabled", "0")).strip() == "1":
             continue
         index = int(model[1:]) if model[1:].isdigit() else -1
@@ -1481,6 +1484,29 @@ def drawn_faces(bsp):
         o = tuple(entity_origin(e))
         out.extend((f, o) for f in bsp.model_faces(index))
     return out
+
+
+# Render modes whose alpha is `renderamt`: Color, Texture, Glow, Solid, Additive, and the
+# additive fractional-frame and world-space glow variants. Normal (0) ignores renderamt.
+ALPHA_RENDER_MODES = {"1", "2", "3", "4", "5", "7", "8", "9"}
+
+
+def invisible_by_alpha(e):
+    """Whether a brush entity starts fully transparent: a render mode that reads its alpha
+    from `renderamt`, and `renderamt 0`.
+
+    surf_kitsune hangs nine `func_brush`es named `kitsune` -- rainbowscroll tunnels up to
+    29,000 units long -- in `rendermode 4` at `renderamt 0`: there, invisible, for an output
+    to fade in. Drawn at full strength they were a wall of rainbow behind every section,
+    the brightest thing in a map that is neon lines on black, where both reference runs
+    (CS:GO and CS2) show black. Only `rendermode 10` was treated as hidden.
+    """
+    mode = str(e.get("rendermode", "0")).strip()
+    amount = str(e.get("renderamt", "255")).strip()
+    try:
+        return mode in ALPHA_RENDER_MODES and float(amount) <= 0.0
+    except ValueError:
+        return False
 
 
 def entity_yaw(e):
@@ -1799,7 +1825,7 @@ def resolve_overrides(z, doc):
         if kind not in POINT_KINDS and box is None:
             raise ValueError("zone %r in the override resolves to no volume" % spec)
         if box is not None and dest is None and kind in ("STAGE", "SPAWN", "TELEPORT"):
-            dest, yaw = floor_of(box), float(spec.get("destination_yaw", 0.0))
+            dest, yaw = floor_of(box), float(spec.get("destination_yaw", around_yaw(z, spec)))
         z.add(kind, track, box=box, number=float(spec.get("number", 0)),
               destination=dest, yaw=yaw, comment=str(spec.get("note", "")))
 
@@ -1986,6 +2012,29 @@ def resolve_points(z, spec):
     for one in spec:
         out.extend(resolve_points(z, one))
     return out
+
+
+def around_yaw(z, spec):
+    """The way a zone built `around` named destinations should face a player it puts there.
+
+    [b]It was always 0, and on surf_kitsune that faced every stage arrival at a wall.[/b] A
+    box around `red` puts the player on the box's floor, and the yaw came from the zones
+    file or nothing -- so `!s<n>`, a stage restart and the single-R restart turned the
+    player a quarter turn from where the mapper's `info_teleport_destination` faces them:
+    on kitsune, side-on to a neon wall 3 m away instead of down the section (found against
+    two reference runs, 2026-10-09). The named points' own yaw is the mapper's statement
+    of which way is forward. Only when they agree: a box around two mirrored team points
+    (surf_year3000's `stage02_t` / `stage02_ct`) has no single forward, and keeps 0.
+    """
+    around = spec.get("around")
+    if not isinstance(around, dict):
+        return 0.0
+    names = around.get("point")
+    names = [names] if isinstance(names, str) else names
+    if not names or not all(isinstance(n, str) for n in names):
+        return 0.0
+    yaws = {round(y, 3) for n in names for _, y in z.destinations(n)}
+    return yaws.pop() if len(yaws) == 1 else 0.0
 
 
 def resolve_point(z, spec):

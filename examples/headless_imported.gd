@@ -145,7 +145,7 @@ const OWN_TEXTURES := {
 const BLENDED := ["surf_mesa", "surf_summit", "surf_greensway", "bhop_evolve", "surf_aquaflow"]
 
 ## Checks every map gets. Tracks and stages add one each on top — see [member _expected].
-const CHECKS_PER_MAP := 47
+const CHECKS_PER_MAP := 48
 
 ## Sections every map runs, entered against run to their last line. A runtime error inside
 ## a section aborts that function and nothing says so; a section that bailed out after a
@@ -867,7 +867,7 @@ func _test_stands_where_it_sends_you() -> void:
 		for track in zones.playable_tracks():
 			var spawn := zones.first_of_kind(DotTimerZone.Kind.SPAWN, track)
 			if spawn != null:
-				spots.append([DotTimerTrack.short_name_of(track) + " spawn", spawn.destination])
+				spots.append([DotTimerTrack.short_name_of(track) + " spawn", spawn.destination, spawn.destination_yaw])
 			for n in range(1, zones.stage_count(track) + 1):
 				var stage := zones.stage_zone(track, n)
 				if stage == null:
@@ -878,8 +878,42 @@ func _test_stands_where_it_sends_you() -> void:
 					if track == DotTimerTrack.MAIN:
 						splits.append(n)
 					continue
-				spots.append(["stage %d" % n, stage.destination])
+				spots.append(["stage %d" % n, stage.destination, stage.destination_yaw])
 	_expected += spots.size() + splits.size() * 2
+
+	# [b]A stage faces a player the way the map's own door into it does (2026-10-09).[/b]
+	# A stage built `around` a destination used to put the player there facing yaw 0, so on
+	# surf_kitsune every `!s<n>` and stage restart faced a wall side-on while the door into
+	# the same section faced down it: two reference runs never showed those walls, and
+	# ours showed one at every stage. Where a door (a TELEPORT on the track) lands inside a
+	# stage's own volume, the stage must agree with one of them within ten degrees. Armed by re-importing
+	# without bsp_import.py's around_yaw.
+	var facings := 0
+	var disagree: Array[String] = []
+	if zones != null:
+		for track in zones.playable_tracks():
+			for n in range(1, zones.stage_count(track) + 1):
+				var stage := zones.stage_zone(track, n)
+				if stage == null or stage.payload.has(G2GBspMap.NO_RESTART):
+					continue
+				# Agreeing with ONE door is enough: a map built for two teams mirrors its
+				# arrivals (surf_year3000's start room takes both teams' booths, facing
+				# opposite ways), and a stage can face only one of them.
+				var door_yaws: Array[float] = []
+				for door: DotTimerZone in zones.of_kind(DotTimerZone.Kind.TELEPORT, track):
+					if stage.contains(door.destination + Vector3.UP * 0.1):
+						door_yaws.append(door.destination_yaw)
+				if door_yaws.is_empty():
+					continue
+				facings += 1
+				var agrees := false
+				for y in door_yaws:
+					agrees = agrees or absf(wrapf(stage.destination_yaw - y, -180.0, 180.0)) <= 10.0
+				if not agrees:
+					disagree.append("stage %d %.0f vs doors %s" % [n, stage.destination_yaw, door_yaws])
+	_check(disagree.is_empty(),
+		"every stage faces a player the way the map's own door into it does (%d compared)" % facings,
+		", ".join(disagree))
 
 	var bot: G2GPlayer = game.players.get(&"bot")
 	if bot == null:
