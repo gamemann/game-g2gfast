@@ -361,6 +361,21 @@ func _module_load() -> DotResult:
 	)
 
 	server.client_disconnected.connect(_on_client_disconnected)
+
+	# The Tab board: dot-server sends every client holding it the names, pings and time
+	# connected; these are this game's columns for each, the style, the best time on this
+	# map and its rank, from what the game already worked out for the HUD. Asked rather
+	# than assumed: a pack runs on whatever dot-server the host has, and one from before
+	# the roster has neither property.
+	if "scoreboard_fields" in server:
+		server.set(&"scoreboard_fields", func(session: DotClientSession) -> Dictionary:
+			if game == null or not is_instance_valid(game):
+				return {}
+			return game.board_fields(G2GNetBridge._player_key(session.userid)))
+		server.set(&"scoreboard_extra", func() -> Dictionary:
+			if game == null or not is_instance_valid(game) or game.maps == null or game.maps.current == null:
+				return {}
+			return {"header": {"": "Time left %s" % game.time_left_text()}})
 	hook_post("client_spawn", _on_client_spawn)
 	hook_post("player_avatar_changed", _on_avatar_changed)
 	add_command("g2g_net", func(ctx: DotCmdContext) -> void: ctx.reply_lines(net.describe_lines()), "Netcode state", "")
@@ -828,6 +843,10 @@ func _player_named(text: String) -> StringName:
 func _module_unload() -> void:
 	if server != null and server.client_disconnected.is_connected(_on_client_disconnected):
 		server.client_disconnected.disconnect(_on_client_disconnected)
+	# The server outlives this game; a column hook left behind would be called on the next.
+	if server != null and "scoreboard_fields" in server:
+		server.set(&"scoreboard_fields", Callable())
+		server.set(&"scoreboard_extra", Callable())
 	if bridge != null and is_instance_valid(bridge):
 		for userid in _joined.keys():
 			bridge.remove_peer(bridge.peer_for_player(int(userid)))

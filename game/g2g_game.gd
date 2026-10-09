@@ -60,6 +60,9 @@ signal run_filed(player_id: StringName, run: DotTimerRun, rank: int, reason: Str
 ## sends to that player's client — a client has no store to ask.
 signal standing_changed(player_id: StringName, standing: Dictionary)
 
+## The last standing worked out per player. See [method board_fields].
+var _standings: Dictionary = {}
+
 ## Something worth saying about a finish. [param everyone] for a new record, which the
 ## whole server hears; otherwise only [param player_id].
 signal announced(player_id: StringName, text: String, everyone: bool)
@@ -1053,6 +1056,7 @@ func remove_player(id: StringName) -> void:
 	(players[id] as G2GPlayer).queue_free()
 	players.erase(id)
 	_samples.erase(id)
+	_standings.erase(id)
 	player_removed.emit(id)
 
 
@@ -1749,12 +1753,33 @@ func refresh_standing(id: StringName) -> void:
 	var total: DotResult = await store.count_on(map_id, track, style)
 	if not players.has(id):
 		return
-	standing_changed.emit(id, {
+	var standing := {
 		"pb": (best.value as DotTimerRecord).time if best.ok and best.value is DotTimerRecord else 0.0,
 		"wr": (top.value[0] as DotTimerRecord).time if top.ok and not (top.value as Array).is_empty() else 0.0,
 		"rank": int(rank.value) if rank.ok else 0,
 		"total": int(total.value) if total.ok else 0,
-	})
+	}
+	_standings[id] = standing
+	standing_changed.emit(id, standing)
+
+
+## What the Tab board says about [param id]: their style, their best on this map and
+## track, and where it places them. From the standing [method refresh_standing] last worked
+## out — which runs on every spawn, style change and filing — so a board held open twice a
+## second costs no store reads at all.
+func board_fields(id: StringName) -> Dictionary:
+	var player: G2GPlayer = players.get(id)
+	var standing: Dictionary = _standings.get(id, {})
+	var style := ""
+	if player != null and player.timer_style != null:
+		style = player.timer_style.display_name
+	return {
+		"style": style,
+		"best": float(standing.get("pb", 0.0)) if float(standing.get("pb", 0.0)) > 0.0 else -1.0,
+		"rank": int(standing.get("rank", 0)),
+		"of": int(standing.get("total", 0)),
+		"ghost": player != null and player.replay != null,
+	}
 
 
 # --- Diagnostics -----------------------------------------------------------

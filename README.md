@@ -32,7 +32,8 @@ The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` a
 | **F5** | First or third person |
 | **F** | Flashlight. Only you see it |
 | **O** | Hide every other player and the record's ghost |
-| **Tab** | Change style |
+| **Tab** (hold) | The scoreboard: everybody on the server with their style, best time and rank on this map, how long they have been on, and their ping |
+| **N** | Change style |
 | **R** | Back to the start of the stage you are in (or of the track, outside a stage). **R R** quickly: back to the main start zone, from a bonus too |
 | **C** / **V** | Save a practice checkpoint / go back to it |
 | **Y** / **U** | Chat / team chat |

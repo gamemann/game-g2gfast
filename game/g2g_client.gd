@@ -7,18 +7,14 @@ const G2GClientExtras := preload("g2g_client_extras.gd")
 const G2GConfig := preload("g2g_config.gd")
 const G2GFlashlight := preload("g2g_flashlight.gd")
 const G2GGame := preload("g2g_game.gd")
-const G2GHelp := preload("ui/g2g_help.gd")
-const G2GMapMenu := preload("ui/g2g_map_menu.gd")
 const G2GZoneEditor := preload("g2g_zone_editor.gd")
 const G2GZoneOutlines := preload("g2g_zone_outlines.gd")
 const G2GHud := preload("g2g_hud.gd")
-const G2GHudEditor := preload("ui/g2g_hud_editor.gd")
 const G2GEvents := preload("net/g2g_events.gd")
-const G2GMenu := preload("ui/g2g_menu.gd")
+const G2GMenuPages := preload("ui/g2g_menu_pages.gd")
 const G2GNetBridge := preload("net/g2g_net_bridge.gd")
 const G2GPlayer := preload("g2g_player.gd")
 const G2GPresentation := preload("g2g_presentation.gd")
-const G2GUi := preload("ui/g2g_ui.gd")
 const G2GUnits := preload("g2g_units.gd")
 
 ## A playable g2gfast: one local player, a camera, a HUD, and the keys.
@@ -27,9 +23,10 @@ const G2GUnits := preload("g2g_units.gd")
 ## server never loads this.
 ##
 ## Keys: whatever [G2GBindings] says, as the player has bound them — WASD, space (hold, if
-## the server allows auto-bhop), Ctrl to duck, Tab to cycle style, M for the next map
-## (offline), R to restart, C / V for practice checkpoints, F for the flashlight, O to hide
-## everybody else, F5 for first and third person, H for help. Escape opens the menu and
+## the server allows auto-bhop), Ctrl to duck, N to cycle style, M for the map list, Tab
+## held for the scoreboard, R to restart, C / V for practice checkpoints, F for the
+## flashlight, O to hide everybody else, F5 for first and third person, H for help. Escape
+## opens the menu and
 ## frees the mouse; a click, or Resume, takes it back — which is also how a browser player
 ## captures it in the first place, because pointer lock needs a real user gesture. See
 ## [method _grab_mouse].
@@ -63,16 +60,11 @@ var presentation: G2GPresentation = null
 ## The player's own light. Drawn here and nowhere else; see [G2GFlashlight].
 var flashlight: G2GFlashlight = null
 
-## The Escape menu and the H screen, on a layer above the HUD and the chat and below the
-## console — the console is the one thing an operator must always be able to reach.
-var menu: G2GMenu = null
-var help: G2GHelp = null
-
-## The M screen: every map, a page at a time. See [G2GMapMenu].
-var map_menu: G2GMapMenu = null
-
-## Moving the HUD's pieces about: the menu's "Move HUD elements".
-var hud_editor: G2GHudEditor = null
+## Every menu this client draws: Escape, H, the map list (M), "Move HUD elements" and the
+## Tab scoreboard, all dot-menu's, on a layer above the HUD and the chat and below the
+## console — the console is the one thing an operator must always be able to reach. What is
+## on its pages is [G2GMenuPages].
+var menu: DotMenu = null
 
 ## Every zone drawn as a glowing box. See [G2GZoneOutlines].
 var zone_outlines: G2GZoneOutlines = null
@@ -97,16 +89,10 @@ var _sampler: DotFpsSampler = null
 ## Whether the cursor is waiting for a click before it can be captured. Web only.
 var _awaiting_click := false
 
-var _overlay_layer: CanvasLayer = null
-var _fps_label: Label = null
-var _fps_next: float = 0.0
+## When this client started, for an offline board's time connected.
+var _started_msec: int = Time.get_ticks_msec()
 
-## Whether the pointer has been seen locked since the last time it was let go — so a lock
-## the BROWSER takes away (Escape, alt-tab) opens the menu, and a lock that was simply never
-## granted does not. See [method _watch_pointer].
-var _lock_seen := false
-var _overlay_opened_msec := 0
-var _recapture_frames := 0
+
 
 ## Whether the preferred style has been asked for this session. Once: after that the
 ## player's own choices are the ones that count.
@@ -608,7 +594,6 @@ func _process(delta: float) -> void:
 
 	if game != null:
 		_present_others()
-	_watch_pointer()
 	# Every frame rather than on change: a style change hands the player new tunables, and
 	# two assignments a frame are cheaper than tracking which object the sampler holds.
 	_apply_look()
@@ -618,10 +603,6 @@ func _process(delta: float) -> void:
 		# The first-person camera is the eye in both views: in third person it still sits at
 		# the eye and pitches with the view, it simply is not the one drawing.
 		flashlight.present(delta, player.camera.first.global_transform)
-
-	if _fps_label != null and _fps_label.visible and Time.get_ticks_msec() / 1000.0 >= _fps_next:
-		_fps_next = Time.get_ticks_msec() / 1000.0 + 0.25
-		_fps_label.text = "%d fps" % Engine.get_frames_per_second()
 
 	if presentation != null:
 		var camera: Camera3D = player.camera.active() \
@@ -721,10 +702,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	# close it or a key that must NOT fall through to the run — R behind a menu is a restart
 	# nobody asked for.
 	if overlay_open():
-		_overlay_key(event)
 		return
 
-	# [b]The console first.[/b] This client reads bare letters -- F5, Tab, R, C, V, M --
+	# [b]The console first.[/b] This client reads bare letters -- F5, N, R, C, V, M --
 	# so without this, typing at the console reloads the map, opens the scoreboard and
 	# changes style at the same time. It is the line every game that ships a console
 	# forgets, and this project already lost a whole keyboard once to a guard in the
@@ -744,18 +724,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.notice("")
 			return
 
-	# Escape, and help, work with no player too: the menu is how somebody stuck on a loading
-	# map leaves it.
+	# Escape closes the zone editor. Every other Escape, H, P and Tab is the menu's own
+	# (it sits under this node, so it hears them first), which is how they work with no
+	# player too: the menu is how somebody stuck on a loading map leaves it.
 	if event is InputEventKey and event.is_pressed() and not event.is_echo():
 		if (event as InputEventKey).physical_keycode == KEY_ESCAPE:
 			if zone_editor != null and zone_editor.is_open():
 				zone_editor.close()
 				return
-			open_menu()
-			return
-		if event.is_action_pressed(&"g2g_help"):
-			open_help()
-			return
 
 	if player == null:
 		return
@@ -822,8 +798,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		menu_choose_style(styles[_style_index].id)
 	elif event.is_action_pressed(&"g2g_restart"):
 		_restart_key()
-	elif event.is_action_pressed(&"g2g_theme_next"):
-		cycle_theme()
 	# [b]Offline only.[/b] Online this changed THIS client's world and nobody else's:
 	# the server went on simulating the player on its own map, and every tick's
 	# correction put them back in a place their screen no longer had. A client's map
@@ -851,8 +825,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			var cp := game.timers.checkpoints_for(&"local").load_current()
 			if cp == null:
-				hud.notice("No checkpoints. %s saves one." % G2GBindings.shown(
-					G2GBindings.row_for_action(&"g2g_checkpoint_save")))
+				hud.notice("No checkpoints. %s saves one." % presentation.bindings.key_for(&"g2g_checkpoint_save"))
 			else:
 				player.teleport(cp.position, cp.yaw)
 				player.controller.state.velocity = cp.velocity
@@ -886,40 +859,23 @@ func _restart_key(now_msec: int = -1) -> int:
 
 # --- Themes and the HUD's layout -------------------------------------------------------
 
-## The next theme, round the end. P by default; the menu's General page picks one by name.
-func cycle_theme() -> void:
-	if presentation == null or presentation.settings == null:
-		return
-	var next := G2GUi.next_theme(StringName(str(presentation.settings.get_value(&"ui_theme"))))
-	var _set := presentation.settings.set_value(&"ui_theme", next)
+## The theme the menu just changed to, onto the HUD and the zone editor. The menus restyle
+## themselves (dot-menu rebuilds them rather than recolouring, for the reason its CLAUDE.md
+## gives); this is the half that is this game's.
+func apply_theme(palette: DotMenuPalette) -> void:
 	if hud != null:
-		hud.notice("Theme: %s" % str(G2GUi.theme_named(next)["name"]))
-
-
-## Puts [param id] on every screen this client draws. The menus are rebuilt — see
-## [method G2GMenu.restyle] for why rebuilt rather than recoloured — and only when the
-## palette actually changed, because a settings change of any other kind lands here too.
-func apply_theme(id: StringName) -> void:
-	if not G2GUi.use(id):
-		return
-	for screen in [menu, help, map_menu, hud_editor]:
-		if screen != null:
-			screen.restyle()
-	if hud != null:
-		hud.apply_theme()
+		hud.apply_theme(palette)
+	if zone_editor != null and menu != null:
+		zone_editor.kit = menu.kit
 
 
 ## The layout editor, from the menu's "Move HUD elements".
 func open_hud_editor() -> void:
-	if hud_editor == null or hud == null:
+	if menu == null or hud == null:
 		return
-	if menu != null and menu.is_open():
-		menu.close()
-	# Here rather than when the editor is built: offline the HUD is made a few lines
-	# later, and online it is a JOIN away.
-	hud_editor.hud = hud
-	hud_editor.open()
-	_on_overlay_opened()
+	# Here rather than when the menu is built: offline the HUD is made a few lines later,
+	# and online it is a JOIN away.
+	menu.open_layout_editor(hud, HUD_PIECES)
 
 
 ## The HUD's layout settings as one dictionary, the shape [method G2GHud.apply_layout]
@@ -989,56 +945,60 @@ func menu_edit_layout() -> void:
 
 # --- Menus ---------------------------------------------------------------------
 
-## The layer the menu, the help screen and the frame-rate counter are drawn on.
+## The pieces of the HUD a player can move, and what the editor calls them.
+const HUD_PIECES := {
+	&"timer": "Timer",
+	&"keys": "Keys",
+	&"status": "Status line",
+	&"spectators": "Spectators",
+}
+
+
+## The menus: dot-menu's, with this game's pages, keys and scoreboard. See [G2GMenuPages].
 func _build_overlays() -> void:
-	_overlay_layer = CanvasLayer.new()
-	_overlay_layer.name = "OverlayLayer"
-	_overlay_layer.layer = 110
-	add_child(_overlay_layer)
-
-	_fps_label = G2GUi.label("", G2GUi.SIZE_SMALL, G2GUi.MUTED, true)
-	_fps_label.name = "Fps"
-	_fps_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_fps_label.offset_left = -110.0
-	_fps_label.offset_right = -14.0
-	_fps_label.offset_top = 10.0
-	_fps_label.offset_bottom = 30.0
-	_fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_fps_label.add_theme_constant_override(&"outline_size", 4)
-	_fps_label.add_theme_color_override(&"font_outline_color", Color(0, 0, 0, 0.7))
-	_fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_fps_label.visible = false
-	_overlay_layer.add_child(_fps_label)
-
-	menu = G2GMenu.new()
+	menu = DotMenu.new()
 	menu.name = "Menu"
 	menu.settings = presentation.settings if presentation != null else null
-	menu.host = self
-	menu.closed.connect(_on_overlay_closed)
-	menu.help_requested.connect(open_help)
-	menu.leave_requested.connect(_leave)
-	_overlay_layer.add_child(menu)
+	menu.bindings = presentation.bindings if presentation != null else G2GBindings.make()
+	var config := DotMenuConfig.new()
+	config.brand_mark = "g2g"
+	config.brand_name = "fast"
+	config.leave_text = "Quit game"
+	var _layered := config.load_layered()
+	menu.config = config
+	menu.help_action = &"g2g_help"
+	menu.theme_action = &"g2g_theme_next"
+	menu.picker_action = &"g2g_map_next"
+	menu.scoreboard_action = &"g2g_scoreboard"
+	# The console has the keyboard while it is open, and so does the zone editor's Escape.
+	menu.busy = func() -> bool:
+		return (presentation != null and presentation.swallows_input()) \
+			or (zone_editor != null and zone_editor.is_open())
+	add_child(menu)
+	var _set := menu.setup()
+	G2GMenuPages.install(menu, self)
 
-	map_menu = G2GMapMenu.new()
-	map_menu.name = "MapMenu"
-	map_menu.closed.connect(_on_overlay_closed)
-	map_menu.chosen.connect(_on_map_chosen)
-	_overlay_layer.add_child(map_menu)
-
-	hud_editor = G2GHudEditor.new()
-	hud_editor.name = "HudEditor"
-	hud_editor.closed.connect(_on_overlay_closed)
-	hud_editor.saved.connect(func(text: String) -> void:
+	menu.overlays_changed.connect(func(_open: bool) -> void: _refresh_suspended())
+	menu.click_to_play.connect(func() -> void:
+		_awaiting_click = true
+		_say_click_to_play())
+	menu.action_requested.connect(func(id: StringName) -> void:
+		if id == &"leave":
+			_leave())
+	menu.picked.connect(_on_map_chosen)
+	menu.layout_editor.saved.connect(func(text: String) -> void:
 		if presentation != null and presentation.settings != null:
 			var _saved := presentation.settings.set_value(&"hud_positions", text)
 	)
-	_overlay_layer.add_child(hud_editor)
-
-	help = G2GHelp.new()
-	help.name = "Help"
-	help.online = not _offline
-	help.closed.connect(_on_overlay_closed)
-	_overlay_layer.add_child(help)
+	menu.theme_changed.connect(func(palette: DotMenuPalette) -> void:
+		apply_theme(palette)
+		if hud != null:
+			hud.notice("Theme: %s" % palette.display_name)
+	)
+	_wire_scoreboard()
+	if zone_editor != null:
+		zone_editor.kit = menu.kit
+	_refresh_menu_words()
 
 	flashlight = G2GFlashlight.new()
 	flashlight.name = "Flashlight"
@@ -1054,10 +1014,67 @@ func _build_overlays() -> void:
 		)
 
 
+## The Tab board. A timer server's board is not kills and deaths: it is each runner's style,
+## their best time here and where it places them, beside how long they have been on and their
+## ping. Online those come from the server (dot-server's roster, with this game's columns
+## added by [G2GModule]); offline, from the local game, which works them out the same way.
+##
+## [b]A server from before the roster sends nothing[/b], and a board waiting on a feed that
+## never comes is an empty box; with a link that has no roster the board draws what this
+## client knows instead, which is every player and none of their pings.
+func _wire_scoreboard() -> void:
+	var board := menu.scoreboard
+	board.title_text = "g2gfast"
+	board.columns = [
+		{"key": &"name", "title": "Runner", "width": 3.0},
+		{"key": &"style", "title": "Style", "width": 1.4},
+		{"key": &"best", "title": "Best", "width": 1.3, "align": HORIZONTAL_ALIGNMENT_RIGHT,
+			"format": func(v: Variant, _row: Dictionary) -> String:
+				return DotTimerRun.format_time(float(v)) if v != null and float(v) > 0.0 else "—"},
+		{"key": &"rank", "title": "Rank", "align": HORIZONTAL_ALIGNMENT_RIGHT,
+			"format": func(v: Variant, row: Dictionary) -> String:
+				if v == null or int(v) <= 0:
+					return "—"
+				return "%d / %d" % [int(v), int(row.get("of", 0))] if int(row.get("of", 0)) > 0 else str(int(v))},
+		{"key": &"seconds", "title": "Time", "kind": DotMenuScoreboard.KIND_DURATION},
+		{"key": &"ping", "title": "Ping", "kind": DotMenuScoreboard.KIND_PING},
+	]
+	# Fastest first; nobody with a time after everybody with one.
+	board.sort_with = func(a: Dictionary, b: Dictionary) -> bool:
+		var ta := float(a.get("best", -1.0))
+		var tb := float(b.get("best", -1.0))
+		if (ta > 0.0) != (tb > 0.0):
+			return ta > 0.0
+		if ta > 0.0 and not is_equal_approx(ta, tb):
+			return ta < tb
+		return str(a.get("name", "")).naturalnocasecmp_to(str(b.get("name", ""))) < 0
+	board.decorate = func(row: Dictionary) -> void:
+		if bool(row.get("ghost", false)):
+			row["name"] = "%s  (the record)" % str(row.get("name", ""))
+	if not _offline and link != null and link.has_signal(&"scoreboard_received"):
+		board.feed_from(link)
+	else:
+		board.source = board_snapshot
+
+
+## The board from this client's own world: offline, and against a server with no roster.
+## Public so a suite can read it.
+func board_snapshot() -> Dictionary:
+	var rows: Array = []
+	var here := int((Time.get_ticks_msec() - _started_msec) / 1000)
+	if game != null:
+		for id: StringName in game.players:
+			var who: G2GPlayer = game.players[id]
+			var row := game.board_fields(id) if game.authoritative else {}
+			row.merge({"id": String(id), "name": who.display_name, "seconds": here if who == player else -1,
+				"ping": -1, "you": who == player, "bot": who.replay != null}, true)
+			rows.append(row)
+	var map_name := game.maps.current.name_or_id() if game != null and game.maps != null and game.maps.current != null else ""
+	return {"server": {"name": "g2gfast", "game": "offline" if _offline else "", "map": map_name}, "players": rows}
+
+
 func overlay_open() -> bool:
-	return (menu != null and menu.is_open()) or (help != null and help.is_open()) \
-		or (map_menu != null and map_menu.is_open()) \
-		or (hud_editor != null and hud_editor.is_open())
+	return menu != null and menu.any_open()
 
 
 ## M: the map list. Offline it is this game's catalogue; online it is asked of the server,
@@ -1070,10 +1087,33 @@ func open_map_list() -> void:
 
 
 func _open_map_menu(rows: Array, where: String) -> void:
-	if map_menu == null:
+	if menu == null:
 		return
-	map_menu.open(rows, where)
-	_on_overlay_opened()
+	# Every map, not the rotation: an operator keeps maps installed that the rotation does
+	# not play, and "which maps does this box have" is a different question from "which
+	# come round on their own". A combat map is one for the deathmatch layer.
+	var items: Array = []
+	var out_of := 0
+	for m: Dictionary in rows:
+		var tags: Array = []
+		var current := bool(m.get("current", false))
+		var rotating := bool(m.get("rotation", true))
+		if current:
+			tags.append("playing")
+		if str(m.get("kind", "")) == "arena":
+			tags.append("combat")
+		if not rotating:
+			tags.append("not in rotation")
+			out_of += 1
+		if int(m.get("tier", 0)) > 0:
+			tags.append("tier %d" % int(m["tier"]))
+		items.append({"id": m.get("id", ""), "name": m.get("name", m.get("id", "?")), "tags": tags,
+			"current": current, "warn": not rotating})
+	menu.picker.noun = "maps"
+	menu.picker.instructions = "1–7 or click to change to it. 8 and 9 turn the page. 0, %s or Esc closes." % \
+		menu.bindings.key_for(&"g2g_map_next")
+	menu.picker.footer_extra = func(_all: Array) -> String: return "%d not in rotation" % out_of
+	menu.open_picker(items, "Change map — %s" % where)
 
 
 func _on_map_chosen(id: StringName) -> void:
@@ -1088,56 +1128,23 @@ func _on_map_chosen(id: StringName) -> void:
 func open_menu(page: StringName = &"") -> void:
 	if menu == null:
 		return
-	if help != null and help.is_open():
-		help.close()
-	if map_menu != null and map_menu.is_open():
-		map_menu.close()
+	_refresh_menu_words()
 	menu.open(page)
-	_on_overlay_opened()
 
 
-## Opens the H screen, over the menu if the menu is open — closing it goes back there.
+## Opens help, over the menu if the menu is open — closing it goes back there.
 func open_help() -> void:
-	if help == null:
+	if menu == null:
 		return
-	help.commands = rules.get("commands", [])
-	help.online = not _offline
-	help.open()
-	_on_overlay_opened()
+	menu.open_help(rules.get("commands", []), not _offline)
 
 
-func _overlay_key(event: InputEvent) -> void:
-	if not (event is InputEventKey) or not event.is_pressed() or event.is_echo():
+## Where the player is, and what Leave says, for the menu's sidebar.
+func _refresh_menu_words() -> void:
+	if menu == null or menu.screen == null:
 		return
-
-	var escape := (event as InputEventKey).physical_keycode == KEY_ESCAPE
-
-	# The same Escape that took the pointer away in a browser can arrive a moment after the
-	# menu it opened; closing on it would make the menu flash and vanish.
-	if escape and Time.get_ticks_msec() - _overlay_opened_msec < 250:
-		get_viewport().set_input_as_handled()
-		return
-
-	if hud_editor != null and hud_editor.is_open():
-		if escape:
-			hud_editor.close()
-			get_viewport().set_input_as_handled()
-		return
-
-	if map_menu != null and map_menu.is_open():
-		if escape or event.is_action_pressed(&"g2g_map_next") \
-				or map_menu.key((event as InputEventKey).keycode):
-			if escape or event.is_action_pressed(&"g2g_map_next"):
-				map_menu.close()
-			get_viewport().set_input_as_handled()
-		return
-
-	if help != null and help.is_open() and (escape or event.is_action_pressed(&"g2g_help")):
-		help.close()
-		get_viewport().set_input_as_handled()
-	elif menu != null and menu.is_open() and escape:
-		menu.close()
-		get_viewport().set_input_as_handled()
+	menu.screen.subtitle = menu_where()
+	menu.screen.set_action_text(&"leave", menu_leave_label())
 
 
 # --- Spectating -------------------------------------------------------------------
@@ -1180,28 +1187,6 @@ func cycle_spectate(forward: bool) -> void:
 	bridge.ask_spectate(G2GEvents.SPECTATE_NEXT if forward else G2GEvents.SPECTATE_PREVIOUS)
 
 
-func _on_overlay_opened() -> void:
-	_overlay_opened_msec = Time.get_ticks_msec()
-	_lock_seen = false
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_refresh_suspended()
-
-
-## The last overlay closed: give the mouse back to the view.
-##
-## On the desktop that is immediate. In a browser it works when the close was a click —
-## Resume — and is refused when it was a key, because Escape grants no user activation; so
-## a few frames later, if the pointer is still free, the client goes back to "Click to play"
-## rather than leaving a player wondering why the view does not turn.
-func _on_overlay_closed() -> void:
-	if overlay_open():
-		return
-	_refresh_suspended()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	if DotPlatform.is_web():
-		_recapture_frames = 12
-
-
 func _leave() -> void:
 	if not _offline and link != null and link.has_method("disconnect_from_server"):
 		link.call("disconnect_from_server", "Left the server")
@@ -1224,29 +1209,6 @@ func _refresh_suspended() -> void:
 	for sampler in [_sampler, player.sampler if player != null else null]:
 		if sampler != null:
 			(sampler as DotFpsSampler).suspended = busy
-
-
-## Opens the menu when the browser takes the pointer away by itself — Escape, or the
-## window losing focus — and says "Click to play" when a recapture was refused.
-##
-## [b]Watched rather than told[/b]: when a browser exits pointer lock on Escape, the page
-## may never see the key at all. What it can see is that the pointer it had is gone.
-func _watch_pointer() -> void:
-	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-
-	if _recapture_frames > 0:
-		_recapture_frames -= 1
-		if _recapture_frames == 0 and not captured and not overlay_open():
-			_awaiting_click = true
-			_say_click_to_play()
-
-	if captured:
-		_lock_seen = true
-		return
-
-	if _lock_seen and not overlay_open() and not (presentation != null and presentation.swallows_input()):
-		_lock_seen = false
-		open_menu()
 
 
 # --- Flashlight and the others ----------------------------------------------------
@@ -1316,15 +1278,10 @@ func apply_client_settings() -> void:
 		return
 	var st := presentation.settings
 
-	apply_theme(StringName(st.get_string(&"ui_theme", "midnight")))
-
 	if hud != null:
 		hud.apply_visibility(st.get_bool(&"show_speed", true), st.get_bool(&"show_splits", true),
 			st.get_bool(&"show_keys", true), st.get_bool(&"show_crosshair", true))
 		hud.apply_layout(_hud_layout(st))
-
-	if _fps_label != null:
-		_fps_label.visible = st.get_bool(&"show_fps", false)
 
 	if zone_outlines != null:
 		zone_outlines.visible = st.get_bool(&"show_zones", true)
@@ -1359,8 +1316,8 @@ func _on_rules(new_rules: Dictionary) -> void:
 		if light_was_allowed and not flashlight.allowed and hud != null:
 			hud.notice("The server turned flashlights off.")
 
-	if help != null:
-		help.commands = rules.get("commands", [])
+	if menu != null:
+		menu.help.commands = rules.get("commands", [])
 
 	_apply_rules_to_player()
 

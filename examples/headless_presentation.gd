@@ -13,12 +13,8 @@ const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GBindings := preload("../game/g2g_bindings.gd")
 const G2GFlashlight := preload("../game/g2g_flashlight.gd")
-const G2GMenu := preload("../game/ui/g2g_menu.gd")
-const G2GHelp := preload("../game/ui/g2g_help.gd")
-const G2GSwitch := preload("../game/ui/g2g_switch.gd")
-const G2GKeyButton := preload("../game/ui/g2g_key_button.gd")
-const G2GHudEditor := preload("../game/ui/g2g_hud_editor.gd")
-const G2GUi := preload("../game/ui/g2g_ui.gd")
+const G2GMenuPages := preload("../game/ui/g2g_menu_pages.gd")
+const G2GClient := preload("../game/g2g_client.gd")
 
 ## Settings, audio, effects, the console and the practice session.
 ##
@@ -32,7 +28,7 @@ const G2GUi := preload("../game/ui/g2g_ui.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 171
+const CHECKS := 181
 
 var _passed := 0
 var _failed := 0
@@ -75,6 +71,7 @@ func _run() -> void:
 	await _test_the_menu_is_a_view_of_the_settings()
 	await _test_help_lists_what_it_is_told()
 	await _test_a_theme_is_every_screen()
+	await _test_the_board_is_a_timer_servers()
 	await _test_the_timer_is_the_players_layout()
 
 	print("")
@@ -1138,7 +1135,7 @@ func _test_every_key_is_the_players() -> void:
 
 	var clash := ""
 	for row in G2GBindings.ROWS:
-		var other := G2GBindings.row_using(str(row["default"]), row["setting"], p.settings)
+		var other := p.bindings.row_using(str(row["default"]), row["setting"], p.settings)
 		if not other.is_empty():
 			clash = "%s and %s" % [row["label"], other["label"]]
 	_check(clash == "", "no two defaults share a key", clash)
@@ -1160,6 +1157,16 @@ func _test_every_key_is_the_players() -> void:
 		if str(row["default"]) == "Escape":
 			escape = true
 	_check(not escape, "and nothing is on Escape, which is the menu and the browser's own")
+	_check(DotInputBinding.describe_action(&"g2g_scoreboard") == "Tab"
+		and DotInputBinding.describe_action(&"g2g_style_next") == "N",
+		"Tab holds the scoreboard, as in every game here, and the next style is N")
+
+	# A document from before stores "Tab" for the next style, because a document stores
+	# defaults too; keeping it would put two actions on one key.
+	var step: Callable = G2GPresentation.migrations()[2]
+	_check(not (step.call({"bind_style_next": "Tab"}) as Dictionary).has("bind_style_next")
+		and str((step.call({"bind_style_next": "G"}) as Dictionary)["bind_style_next"]) == "G",
+		"a stored Tab for the next style is dropped, and a key somebody chose is kept")
 
 	p.settings.reset_value(&"bind_flashlight")
 	_done()
@@ -1230,11 +1237,14 @@ func _test_settings_reach_the_engine() -> void:
 	_done()
 
 
-## A host with the methods the menu asks. Nothing in it decides anything.
+## A client with the methods the menu's pages ask. Nothing in it decides anything.
 class FakeHost:
 	extends Node
 	var style: StringName = &"normal"
 	var light := false
+	var third := false
+	var preset: StringName = &""
+	var edited := 0
 
 	func menu_styles() -> Array:
 		return [{"id": &"normal", "name": "Normal"}, {"id": &"sideways", "name": "Sideways"}]
@@ -1254,6 +1264,24 @@ class FakeHost:
 	func menu_set_flashlight(on: bool) -> void:
 		light = on
 
+	func menu_third_person_allowed() -> bool:
+		return false
+
+	func menu_third_person_on() -> bool:
+		return third
+
+	func menu_set_third_person(on: bool) -> void:
+		third = on
+
+	func menu_layout_presets() -> Array:
+		return [[&"minimal", "Minimal"]]
+
+	func menu_apply_layout_preset(id: StringName) -> void:
+		preset = id
+
+	func menu_edit_layout() -> void:
+		edited += 1
+
 	func menu_where() -> String:
 		return "surf_test  ·  offline"
 
@@ -1261,9 +1289,30 @@ class FakeHost:
 		return "Quit game"
 
 
-func _switches(root: Node) -> Array:
-	return root.find_children("*", "Button", true, false).filter(
-		func(n: Node) -> bool: return n.get_script() == G2GSwitch and n.is_inside_tree() and not n.is_queued_for_deletion())
+## The real menu as the client builds it: dot-menu's, with this game's keys and pages.
+func _menu_for(p: G2GPresentation, host: Node) -> DotMenu:
+	var menu := DotMenu.new()
+	menu.settings = p.settings
+	menu.bindings = p.bindings
+	menu.config = DotMenuConfig.new()
+	menu.config.escape_grace_ms = 0
+	menu.manage_pointer = false
+	menu.help_action = &"g2g_help"
+	menu.theme_action = &"g2g_theme_next"
+	menu.scoreboard_action = &"g2g_scoreboard"
+	add_child(menu)
+	var _set := menu.setup()
+	G2GMenuPages.install(menu, host)
+	return menu
+
+
+func _live(root: Node, type: String) -> Array:
+	return root.find_children("*", type, true, false).filter(
+		func(n: Node) -> bool: return n.is_inside_tree() and not n.is_queued_for_deletion())
+
+
+func _row(menu: DotMenu, id: String) -> Node:
+	return menu.screen.find_child("Row_%s" % id, true, false)
 
 
 func _test_the_menu_is_a_view_of_the_settings() -> void:
@@ -1272,58 +1321,61 @@ func _test_the_menu_is_a_view_of_the_settings() -> void:
 	var p := _make()
 	var host := FakeHost.new()
 	add_child(host)
-	var menu := G2GMenu.new()
-	menu.settings = p.settings
-	menu.host = host
-	add_child(menu)
+	var menu := _menu_for(p, host)
 	await get_tree().process_frame
 
-	menu.open(&"general")
-	_check(menu.is_open() and menu.visible, "it opens")
-	var switches := _switches(menu)
-	_check(switches.size() == 6, "the General page has a switch per HUD setting, zones included (%d)" % switches.size())
+	var order: Array = menu.screen.visible_pages().map(func(page: DotMenuPage) -> StringName: return page.id)
+	_check(order == [&"general", &"hud", &"gameplay", &"video", &"audio", &"controls"],
+		"six pages, in this game's order", str(order))
 
-	(switches[0] as Button).button_pressed = false
+	menu.open(&"general")
+	await get_tree().process_frame
+	_check(menu.is_open() and menu.screen.visible, "it opens")
+	var switches := _live(menu.screen, "DotMenuSwitch")
+	_check(switches.size() == 6, "the General page has a switch per HUD setting, zones and the counter included (%d)" % switches.size())
+
+	(_row(menu, "show_speed") as Button).button_pressed = false
 	_check(not p.settings.get_bool(&"show_speed", true), "flipping one writes the setting it shows")
 
 	p.settings.set_value(&"show_speed", true)
 	menu.open(&"general")
 	await get_tree().process_frame
-	_check((_switches(menu)[0] as Button).button_pressed,
+	_check((_row(menu, "show_speed") as Button).button_pressed,
 		"and a change made elsewhere (the console) is what it shows next time")
 
 	menu.open(&"gameplay")
 	await get_tree().process_frame
-	var picks := menu.find_children("*", "OptionButton", true, false).filter(
-		func(n: Node) -> bool: return not n.is_queued_for_deletion())
-	_check(not picks.is_empty() and (picks[0] as OptionButton).item_count == 2,
-		"the style list is the host's, not one the menu keeps")
-	if not picks.is_empty():
-		(picks[0] as OptionButton).select(1)
-		(picks[0] as OptionButton).item_selected.emit(1)
+	var pick := _row(menu, "style").find_children("*", "OptionButton", true, false)
+	var styles: OptionButton = pick[0] if not pick.is_empty() else _row(menu, "style") as OptionButton
+	_check(styles != null and styles.item_count == 2, "the style list is the host's, not one the menu keeps")
+	if styles != null:
+		styles.select(1)
+		styles.item_selected.emit(1)
 	_check(host.style == &"sideways", "and choosing one asks the host for it")
+	_check((_row(menu, "third_person") as Button).disabled,
+		"a server that keeps everybody in first person greys the switch out, and says why")
+	(_row(menu, "flashlight") as Button).button_pressed = true
+	_check(host.light, "the flashlight is the host's, never a stored setting")
 
 	menu.open(&"controls")
 	await get_tree().process_frame
-	var keys := menu.find_children("*", "Button", true, false).filter(
-		func(n: Node) -> bool: return n.get_script() == G2GKeyButton and not n.is_queued_for_deletion())
+	var keys := _live(menu.screen, "DotMenuKeyButton")
 	_check(keys.size() == G2GBindings.ROWS.size(), "the Controls page has a key per action (%d)" % keys.size())
 
 	# Flashlight onto R: R was Restart, so Restart gets F rather than nothing.
-	menu._rebind(G2GBindings.row_for_action(&"g2g_flashlight"), "R")
+	var _r := p.bindings.rebind(p.bindings.row_for_action(&"g2g_flashlight"), "R", p.settings)
 	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "R"
 		and DotInputBinding.describe_action(&"g2g_restart") == "F",
 		"binding a key that is taken swaps the two, so nothing is left unbound")
-
-	menu._reset_bindings()
+	p.bindings.reset_all(p.settings)
 	_check(DotInputBinding.describe_action(&"g2g_flashlight") == "F"
 		and DotInputBinding.describe_action(&"g2g_restart") == "R",
 		"and Reset puts every key back")
 
-	var closed := [false]
-	menu.closed.connect(func() -> void: closed[0] = true)
+	var changes: Array = []
+	menu.overlays_changed.connect(func(open: bool) -> void: changes.append(open))
 	menu.close()
-	_check(not menu.visible and closed[0], "it closes, and says so, so the client can take the mouse back")
+	_check(not menu.screen.visible and changes == [false], "it closes, and says so, so the client can take the mouse back")
 
 	menu.queue_free()
 	host.queue_free()
@@ -1333,33 +1385,35 @@ func _test_the_menu_is_a_view_of_the_settings() -> void:
 func _test_help_lists_what_it_is_told() -> void:
 	_section("The help screen lists the player's keys and the server's commands")
 
-	var help := G2GHelp.new()
-	add_child(help)
+	var p := _make()
+	var host := FakeHost.new()
+	add_child(host)
+	var menu := _menu_for(p, host)
 	await get_tree().process_frame
 
 	var texts := func() -> PackedStringArray:
 		var out := PackedStringArray()
-		for n in help.find_children("*", "Label", true, false):
-			if not n.is_queued_for_deletion():
-				out.append((n as Label).text)
+		for n in _live(menu.help, "Label"):
+			out.append((n as Label).text)
 		return out
 
-	help.online = true
-	help.commands = [["spec", "Watch somebody"], ["wr", "Fastest times here"]]
-	help.open()
+	menu.help.show_browser_tips = false
+	menu.open_help([["spec", "Watch somebody"], ["wr", "Fastest times here"]], true)
+	await get_tree().process_frame
 	var shown: PackedStringArray = texts.call()
-	_check(help.visible and shown.has("!spec") and shown.has("!wr"), "online, it lists the commands the server sent")
-	_check(shown.has("Flashlight") and shown.has(G2GBindings.shown(G2GBindings.row_for_action(&"g2g_flashlight"))),
+	_check(menu.help.visible and shown.has("!spec") and shown.has("!wr"), "online, it lists the commands the server sent")
+	_check(shown.has("Flashlight") and shown.has(p.bindings.key_for(&"g2g_flashlight")) and shown.has("Scoreboard (hold)"),
 		"and every key, as it is bound now")
 	_check(not shown.has("Ctrl + W"), "the browser's tips are for a browser, and this is not one")
 
-	help.close()
-	help.online = false
-	help.open()
+	menu.help.close()
+	menu.open_help(null, false)
+	await get_tree().process_frame
 	shown = texts.call()
 	_check(not shown.has("!spec"), "offline there is no server, so no commands are offered")
 
-	help.queue_free()
+	menu.queue_free()
+	host.queue_free()
 	_done()
 
 
@@ -1367,47 +1421,85 @@ func _test_a_theme_is_every_screen() -> void:
 	_section("A theme reaches the menus and the HUD, and switches while they are open")
 
 	var s := G2GPresentation.schema()
-	_check(G2GUi.theme_ids().size() == 6 and s.find(&"ui_theme") != null
+	var themes := DotMenuThemes.stock()
+	_check(themes.size() == 6 and s.find(&"ui_theme") != null
 		and StringName(str(s.find(&"ui_theme").default_value)) == &"midnight",
 		"six themes, offered by a setting whose default is the palette the menus always had")
-	var row := G2GBindings.row_for_action(&"g2g_theme_next")
+	var row := G2GBindings.make().row_for_action(&"g2g_theme_next")
 	_check(not row.is_empty() and str(row["default"]) == "P", "and a key that cycles them, P unless rebound")
 
-	_check(G2GUi.use(&"paper") and G2GUi.is_light()
-		and G2GUi.ACCENT == (G2GUi.theme_named(&"paper")["ACCENT"] as Color),
-		"using a theme puts its palette where every screen reads it")
-	_check(not G2GUi.use(&"paper"), "using the one already in use changes nothing, so nothing rebuilds")
-	_check(G2GUi.use(&"no_such_theme") and G2GUi.current == &"midnight",
-		"an id from a newer build, or a typo in the file, is the default rather than no palette")
-
 	var p := _make()
-	var menu := G2GMenu.new()
-	menu.settings = p.settings
-	add_child(menu)
+	var host := FakeHost.new()
+	add_child(host)
+	var menu := _menu_for(p, host)
 	await get_tree().process_frame
 	menu.open(&"hud")
-
-	var _used := G2GUi.use(&"ember")
-	menu.restyle()
 	await get_tree().process_frame
-	var resume: Button = null
-	for b in menu.find_children("*", "Button", true, false):
-		if not b.is_queued_for_deletion() and (b as Button).text == "Resume":
-			resume = b
+
+	var seen: Array = []
+	menu.theme_changed.connect(func(palette: DotMenuPalette) -> void: seen.append(palette))
+	p.settings.set_value(&"ui_theme", &"ember")
+	await get_tree().process_frame
+	var resume := menu.screen.find_child("Resume", true, false) as Button
 	var fill := (resume.get_theme_stylebox(&"normal") as StyleBoxFlat).bg_color if resume != null else Color.BLACK
-	_check(fill == G2GUi.ACCENT_DEEP, "a menu open when the theme changes is rebuilt in it",
-		"%s against %s" % [fill, G2GUi.ACCENT_DEEP])
-	_check(menu.is_open() and str(menu.describe()["page"]) == "hud", "on the page it was showing, still open")
+	var ember := themes.named(&"ember")
+	_check(fill == ember.accent_deep, "a menu open when the theme changes is rebuilt in it",
+		"%s against %s" % [fill, ember.accent_deep])
+	_check(menu.is_open() and menu.screen.current_page() == &"hud", "on the page it was showing, still open")
 
 	var hud := G2GHud.new()
 	add_child(hud)
-	hud.apply_theme()
-	_check(hud.timer_hud.panel_colour == G2GUi.HUD_PLATE and hud.timer_hud.neutral_colour == G2GUi.HUD_TEXT,
+	hud.apply_theme(seen[0] if not seen.is_empty() else null)
+	_check(hud.timer_hud.panel_colour == ember.hud_plate and hud.timer_hud.neutral_colour == ember.hud_text,
 		"and the clock's plate and text are the theme's")
 
-	var _back := G2GUi.use(&"midnight")
+	p.settings.set_value(&"ui_theme", &"midnight")
 	menu.queue_free()
 	hud.queue_free()
+	host.queue_free()
+	_done()
+
+
+func _test_the_board_is_a_timer_servers() -> void:
+	_section("Tab holds a board of styles, best times and ranks")
+
+	var p := _make()
+	var host := FakeHost.new()
+	add_child(host)
+	var menu := _menu_for(p, host)
+	var client := G2GClient.new()
+	client.menu = menu
+	client.call("_wire_scoreboard")
+	await get_tree().process_frame
+
+	var board := menu.scoreboard
+	board.source = func() -> Dictionary:
+		return {"server": {"name": "g2g test", "map": "surf_test", "players": 3, "max": 24}, "you": 7,
+			"players": [
+				{"id": 5, "name": "Ada", "style": "Normal", "best": 61.234, "rank": 2, "of": 9, "seconds": 300, "ping": 40},
+				{"id": 6, "name": "Bea", "style": "Sideways", "best": 58.5, "rank": 1, "of": 9, "seconds": 1200, "ping": 90},
+				{"id": 7, "name": "Cy", "style": "Normal", "best": -1.0, "rank": 0, "seconds": 20, "ping": 15},
+			]}
+	var tab := InputEventKey.new()
+	tab.physical_keycode = KEY_TAB
+	tab.keycode = KEY_TAB
+	tab.pressed = true
+	_check(menu.handle_event(tab) and board.is_open(), "Tab held puts it up")
+	await get_tree().process_frame
+	var order: Array = board.rows().map(func(r: Dictionary) -> String: return str(r["name"]))
+	_check(order == ["Bea", "Ada", "Cy"], "fastest first, and nobody with a time after everybody with one", str(order))
+	var texts: Array = _live(board, "Label").map(func(l: Node) -> String: return (l as Label).text)
+	_check(texts.has("0:58.500") or texts.any(func(t: String) -> bool: return t.contains("58.5")),
+		"a best time is drawn as a time", str(texts))
+	_check(texts.has("1 / 9") and texts.has("—"), "a rank out of how many, and a dash for no time")
+	_check(not menu.any_open(), "and it is not a menu: the runner keeps moving")
+	tab.pressed = false
+	var _up := menu.handle_event(tab)
+	_check(not board.is_open(), "letting go puts it away")
+
+	client.free()
+	menu.queue_free()
+	host.queue_free()
 	_done()
 
 
@@ -1463,8 +1555,9 @@ func _test_the_timer_is_the_players_layout() -> void:
 	hud.set_spectating(&"")
 	_check(hud.shown_id() == hud.player_id, "and back to your own when you stop")
 
-	var editor := G2GHudEditor.new()
-	editor.hud = hud
+	var editor := DotMenuLayoutEditor.new()
+	editor.target = hud
+	editor.pieces = G2GClient.HUD_PIECES
 	add_child(editor)
 	var saved: Array[String] = ["unset"]
 	editor.saved.connect(func(text: String) -> void: saved[0] = text)
@@ -1473,24 +1566,28 @@ func _test_the_timer_is_the_players_layout() -> void:
 	_check(hud.element_rect(&"status").get_center().distance_to(Vector2(400, 500)) < 1.0
 		and saved[0].contains("status"),
 		"the editor moves a piece and saves where it went", saved[0])
+	_check(G2GHud.positions_from_text(saved[0]).has(&"status"),
+		"in the shape the HUD reads back")
 	_check(editor.piece_at(Vector2(400, 500)) == &"status", "and the piece is picked up where it is drawn")
 	editor.reset_all()
 	_check(saved[0] == "" and hud.positions.is_empty(), "Reset all is the default layout, saved as nothing")
 
 	var p := _make()
-	var menu := G2GMenu.new()
-	menu.settings = p.settings
-	add_child(menu)
+	var host := FakeHost.new()
+	add_child(host)
+	var menu := _menu_for(p, host)
 	await get_tree().process_frame
 	menu.open(&"hud")
 	await get_tree().process_frame
-	var switches := _switches(menu)
+	var switches := _live(menu.screen, "DotMenuSwitch")
 	_check(switches.size() == 8, "the HUD page has a switch per timer line and piece (%d)" % switches.size())
-	if switches.size() > 4:
-		(switches[4] as Button).button_pressed = false
+	(_row(menu, "timer_show_stats") as Button).button_pressed = false
 	_check(not p.settings.get_bool(&"timer_show_stats", true), "and flipping one writes its setting")
+	(_row(menu, "arrange") as Button).pressed.emit()
+	_check(host.edited == 1, "and Move HUD elements asks the client to open the editor")
 
 	menu.queue_free()
+	host.queue_free()
 	editor.queue_free()
 	hud.queue_free()
 	_done()

@@ -2,7 +2,6 @@ extends Node
 
 const G2GBindings := preload("g2g_bindings.gd")
 const G2GPaths := preload("g2g_paths.gd")
-const G2GUi := preload("ui/g2g_ui.gd")
 const G2GVote := preload("g2g_vote.gd")
 
 ## Settings, audio, effects and a console, on a client whose whole output is a number.
@@ -26,8 +25,9 @@ const G2GVote := preload("g2g_vote.gd")
 const CHANNEL := "g2g.presentation"
 
 ## 2: `field_of_view` is applied now, and every document written before carries the old
-## default of 110 that nothing ever read. See [method migrations].
-const SCHEMA_VERSION := 2
+## default of 110 that nothing ever read. 3: Tab is the scoreboard, and "next style" moved
+## off it. See [method migrations].
+const SCHEMA_VERSION := 3
 const SOUND_DIR := "res://audio"
 
 ## The ping an administrator's beacon makes. See [method sound_catalogue].
@@ -38,6 +38,13 @@ const FLASHLIGHT_SOUND := &"flashlight"
 static var FX_DIR := G2GPaths.rebase("res://scenes/fx")
 
 var settings: DotSettingsManager = null
+
+## Every key the client reads. See [G2GBindings].
+var bindings: DotMenuBindings = G2GBindings.make()
+
+## What pushes the stock settings at the engine, the audio and the effects. See
+## [method _build_settings].
+var applier: DotMenuApplier = null
 var audio: DotAudioManager = null
 var fx: DotFxManager = null
 var console: DotConsoleController = null
@@ -77,13 +84,15 @@ func setup() -> DotResult:
 	if not consoled.ok:
 		return consoled
 	_build_chat()
-	apply_all()
+	applier.bind_audio(audio)
+	applier.bind_fx(fx)
+	var _applied := applier.setup()
 	return DotResult.success(null)
 
 
 func apply_all() -> void:
-	for key in settings.schema.keys():
-		_on_setting_changed(key, settings.get_value(key), &"applied")
+	if applier != null:
+		applier.apply_all()
 
 
 # --- Settings ---------------------------------------------------------------
@@ -92,28 +101,15 @@ static func schema() -> DotSettingsSchema:
 	var s := DotSettingsSchema.new()
 	s.version = SCHEMA_VERSION
 
-	s.add(DotSettingsDef.number(&"master_volume", 0.8, 0.0, 1.0, &"audio"))
-	s.add(DotSettingsDef.number(&"sfx_volume", 1.0, 0.0, 1.0, &"audio"))
-	# The UI bus is where the timer's four sounds and the vote's cues play, so this is the
-	# "how loud is my split" slider rather than a menu-click volume.
-	s.add(DotSettingsDef.number(&"ui_volume", 0.8, 0.0, 1.0, &"audio"))
-	s.add(DotSettingsDef.number(&"voice_volume", 1.0, 0.0, 1.0, &"audio"))
+	# [b]The audio, the window, the frame rate, the sensitivity and the theme are dot-menu's
+	# stock settings[/b] (2026-10-09), declared at the end with the keys and scopes they were
+	# stored under here, so nobody's choice moved. What is declared first below wins, which is
+	# how this game keeps its own defaults where the genre wants different ones: no camera
+	# shake, no flashes, and the field of view as fov_desired.
+	#
+	# `raw_input` is gone: it was declared here and applied by nothing, and the engine has no
+	# portable switch for it to apply. A stored value is kept in the document's unknown half.
 
-	# ACCOUNT scope, and here it matters more than anywhere else in the family: a runner's
-	# sensitivity is muscle memory built over months, and a player who has to find it again
-	# on a new server has lost the run they came for.
-	s.add(DotSettingsDef.number(&"sensitivity", 2.5, 0.05, 20.0, &"controls").with_scope(
-		DotSettingsDef.Scope.ACCOUNT
-	))
-	s.add(DotSettingsDef.boolean(&"raw_input", true, &"controls").with_scope(
-		DotSettingsDef.Scope.ACCOUNT
-	))
-	s.add(DotSettingsDef.boolean(&"invert_mouse", false, &"controls").with_scope(
-		DotSettingsDef.Scope.ACCOUNT
-	))
-
-	# One binding per key the client reads. DEVICE scope: see G2GBindings.
-	G2GBindings.add_to_schema(s)
 
 	# The style is remembered per person, not per machine. Somebody who runs sideways
 	# runs sideways everywhere.
@@ -174,10 +170,6 @@ static func schema() -> DotSettingsSchema:
 	s.add(DotSettingsDef.text(&"hud_positions", "", &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
 		.with_description("Where each dragged HUD element sits. Empty is the default layout."))
 
-	# The look of the menus and the HUD. ACCOUNT, like the layout: it is the player's.
-	s.add(DotSettingsDef.choice(&"ui_theme", &"midnight", G2GUi.theme_ids(), &"hud").with_scope(
-		DotSettingsDef.Scope.ACCOUNT
-	).with_description("The colours of the menus and the HUD."))
 	# Every start, stage and finish drawn as a glowing box. On by default: a line a runner
 	# cannot see is a line they find by failing. See G2GZoneOutlines.
 	s.add(DotSettingsDef.boolean(&"show_zones", true, &"running").with_scope(
@@ -217,21 +209,6 @@ static func schema() -> DotSettingsSchema:
 	s.add(DotSettingsDef.integer(&"field_of_view", 90, 75, 120, &"video").with_scope(
 		DotSettingsDef.Scope.SERVER_CLAMPED
 	).with_description("Horizontal field of view at 4:3, as fov_desired."))
-	s.add(DotSettingsDef.integer(&"fx_quality", 3, 0, 3, &"video"))
-
-	# [b]Unlimited by default, and V-Sync off with it[/b], because a capped frame rate is a
-	# later input on a game whose input is the whole point. Both DEVICE: a laptop and a
-	# desktop want different answers.
-	s.add(DotSettingsDef.integer(&"fps_max", 0, 0, 1000, &"video")
-		.with_description("Most frames a second. 0 is unlimited."))
-	s.add(DotSettingsDef.boolean(&"vsync", false, &"video"))
-	s.add(DotSettingsDef.choice(
-		&"window_mode", &"windowed",
-		[&"windowed", &"borderless", &"fullscreen"] as Array[StringName], &"video"
-	))
-	s.add(DotSettingsDef.number(&"render_scale", 1.0, 0.5, 1.0, &"video")
-		.with_description("Resolution of the 3D world, as a fraction of the window's."))
-	s.add(DotSettingsDef.boolean(&"show_fps", false, &"video"))
 
 	# [b]Off, which is both this genre's convention and the only default that costs a
 	# runner nothing.[/b] A body drawn at the eye is 40 cm of avatar between the player
@@ -260,7 +237,13 @@ static func schema() -> DotSettingsSchema:
 		))
 	s.add(DotSettingsDef.boolean(&"allow_flashes", false, &"accessibility")
 		.with_description("Off by default here, for the same reason as the shake."))
-	return s
+
+	# One binding per key the client reads, DEVICE scope, after the chat block above so the
+	# two chat keys keep the ACCOUNT declarations they had first. See G2GBindings.
+	G2GBindings.make().add_to_schema(s)
+
+	# Everything else a game has: volumes, the window, the frame rate, the mouse, the theme.
+	return DotMenuStock.declare(s)
 
 
 ## Pushes `show_own_body` onto the local player, whenever there is one.
@@ -289,12 +272,22 @@ func apply_own_body() -> void:
 ## on disk — the old default, read by nothing. Now that the camera reads it, keeping it
 ## would widen everybody's view from the genre's 90 to 110 overnight. Nobody can have
 ## CHOSEN 110 and seen it, because it was never applied, so dropping it loses no choice.
+##
+## [b]2 → 3 drops a `bind_style_next` of exactly "Tab".[/b] Tab is the scoreboard now, held,
+## and "next style" moved to N; a document stores defaults too, so every player who never
+## chose a key has "Tab" written down for it, and keeping that would put two actions on one
+## key. A player who chose another key keeps it.
 static func migrations() -> Dictionary:
 	return {
 		1: func(doc: Dictionary) -> Dictionary:
 			var out := doc.duplicate(true)
 			if out.has("field_of_view") and int(out["field_of_view"]) == 110:
 				out.erase("field_of_view")
+			return out,
+		2: func(doc: Dictionary) -> Dictionary:
+			var out := doc.duplicate(true)
+			if str(out.get("bind_style_next", "")) == "Tab":
+				out.erase("bind_style_next")
 			return out,
 	}
 
@@ -312,39 +305,22 @@ func _build_settings() -> DotResult:
 	var res := settings.setup()
 	if not res.ok:
 		return res.wrap("g2gfast's settings")
-	settings.changed.connect(_on_setting_changed)
+
+	# dot-menu's applier pushes the stock settings and the keys; what is this game's —
+	# the body, the chat box and its two keys — is the handler below, on the same signal.
+	applier = DotMenuApplier.new()
+	applier.name = "Applier"
+	applier.settings = settings
+	applier.bindings = bindings
+	add_child(applier)
+	applier.on_any(_on_setting_changed)
 	return DotResult.success(null)
 
 
-func _on_setting_changed(key: StringName, value: Variant, why: StringName) -> void:
+## This game's own settings. The stock ones — volumes, window, frame rate, shake, flashes,
+## effects quality, and every key — are [DotMenuApplier]'s, which calls this for every key.
+func _on_setting_changed(key: StringName, value: Variant, _why: StringName) -> void:
 	match key:
-		&"master_volume":
-			audio.mixer.master = float(value)
-			audio.mixer.apply_to_buses()
-		&"sfx_volume":
-			audio.mixer.sfx = float(value)
-			audio.mixer.apply_to_buses()
-		&"ui_volume":
-			audio.mixer.ui = float(value)
-			audio.mixer.apply_to_buses()
-		&"voice_volume":
-			audio.mixer.voice = float(value)
-			audio.mixer.apply_to_buses()
-		&"fps_max":
-			Engine.max_fps = int(value)
-		&"vsync":
-			_apply_vsync(bool(value))
-		&"window_mode":
-			_apply_window_mode(StringName(str(value)), why)
-		&"render_scale":
-			if is_inside_tree():
-				get_viewport().scaling_3d_scale = clampf(float(value), 0.5, 1.0)
-		&"shake_scale":
-			fx.config.shake_scale = float(value)
-		&"allow_flashes":
-			fx.config.allow_flashes = bool(value)
-		&"fx_quality":
-			fx.config.quality = int(value)
 		&"show_own_body":
 			apply_own_body()
 		&"chat_window":
@@ -353,58 +329,6 @@ func _on_setting_changed(key: StringName, value: Variant, why: StringName) -> vo
 			_bind_chat(chat_window.open_action if chat_window != null else &"", str(value))
 		&"chat_team_key":
 			_bind_chat(chat_window.team_action if chat_window != null else &"", str(value))
-		_:
-			var row := G2GBindings.row_for_setting(key)
-			if not row.is_empty():
-				var _bound := G2GBindings.apply_row(row, str(value))
-
-
-## V-Sync, on a window that has one. A dummy display server (every suite) has no window
-## and the call is skipped rather than left to fail.
-func _apply_vsync(on: bool) -> void:
-	if DisplayServer.get_name() == "headless":
-		return
-	DisplayServer.window_set_vsync_mode(
-		DisplayServer.VSYNC_ENABLED if on else DisplayServer.VSYNC_DISABLED
-	)
-
-
-## Windowed, borderless or fullscreen.
-##
-## [b]In a browser, only when the player just asked.[/b] A page may go fullscreen only
-## inside a user gesture, so the stored value is NOT applied at boot there — it would be
-## refused, and the refusal reads as a setting that does not work. Chosen from the menu,
-## the choice arrives inside the click that made it.
-##
-## [b]And it asks the browser for the keyboard.[/b] Ctrl+W, Ctrl+T and Ctrl+N are the
-## browser's and no page can cancel them — and Ctrl is Duck, so a runner holding duck and
-## pressing forward closes the tab. In fullscreen, Chromium-based browsers let a page lock
-## the keyboard (`navigator.keyboard.lock()`), after which those keys reach the game and
-## Escape has to be HELD to leave. Elsewhere the call does not exist and nothing happens.
-func _apply_window_mode(mode: StringName, why: StringName) -> void:
-	if DisplayServer.get_name() == "headless":
-		return
-
-	if DotPlatform.is_web():
-		if why == &"applied":
-			return
-		if mode == &"windowed":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			return
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-		var _locked: Variant = JavaScriptBridge.eval(
-			"(navigator.keyboard && navigator.keyboard.lock) ? (navigator.keyboard.lock(), true) : false",
-			true
-		)
-		return
-
-	match mode:
-		&"fullscreen":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
-		&"borderless":
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-		_:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
 
 # --- Audio ------------------------------------------------------------------

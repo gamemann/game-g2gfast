@@ -83,15 +83,11 @@ game/
   g2g_identity.gd   dot-cloud + dot-auth + dot-user + dot-platform
   g2g_client_extras.gd  the client halves of chat and voice
   g2g_browser.gd    dot-browser's client half: !servers, and what a row says
-  g2g_bindings.gd   every key the client reads, as one table. See "The menus"
+  g2g_bindings.gd   every key the client reads, as one table (dot-menu's DotMenuBindings)
   g2g_flashlight.gd the player's own light, on shaded AND unshaded surfaces
   ui/
-    g2g_ui.gd       the menus' palette, Theme and pieces. No dot-ui class newer than a shell
-    g2g_menu.gd     the Escape menu: five pages, every control a view of a setting
-    g2g_help.gd     the H screen: keys as bound, the server's commands, browser tips
-    g2g_map_menu.gd the M screen: every map, paged, 1-7/8/9/0 or the mouse
-    g2g_switch.gd, g2g_key_button.gd  a toggle switch and a key rebinder
-    g2g_hud_editor.gd  "Move HUD elements": drag the HUD's pieces, saved as hud_positions
+    g2g_menu_pages.gd  what is on the Escape menu: dot-menu's stock pages, rearranged
+                    and reworded, and this game's rows. The menu itself is dot-menu's
 npcs/               two hunters and the body they share
 props/              three practice blocks, in the genre's 32/64/128 sizes
 maps/               bhop_g2g_intro, bhop_g2g_stages, surf_g2g_intro, and their .zones.json
@@ -149,7 +145,7 @@ Removing them rather than wiring them up is what makes this game's client work
 whose `project.godot` has no input actions at all, and a game that depended on its own
 would have had no controls there.
 
-The keys are `G2GBindings.ROWS`, applied at runtime from the settings document and rebindable in the Escape menu; the movement rows ARE the sampler's `dot_fps_*` actions, so there is still no second copy. Duck is **Ctrl**, not Shift — the README said Shift for as long as the dead block did, and neither was ever true.
+The keys are `G2GBindings.ROWS` (a `DotMenuBindings` through `G2GBindings.make()`), applied at runtime from the settings document and rebindable in the Escape menu; the movement rows ARE the sampler's `dot_fps_*` actions, so there is still no second copy. Duck is **Ctrl**, not Shift — the README said Shift for as long as the dead block did, and neither was ever true.
 
 ## Where this game runs, besides here
 
@@ -524,16 +520,27 @@ Escape opens a menu (General, Gameplay, Video, Audio, Controls), H a help screen
 
 Three bugs the frames found and no check could: the sidebar lit two pages at once (`set_pressed_no_signal` goes round a `ButtonGroup`), a listening key button drew its prompt over its own edge, and the 110° above. `headless_presentation` has five sections for this (146 checks), driving the menu's own switches, picks and rebinds against a fake host.
 
+## The menus are dot-menu's now (2026-10-09)
+
+Everything under *The menus, the keys and the flashlight* above still holds as behaviour; the code moved. The Escape menu, help, the map list, "Move HUD elements", the switch, the key rebinder, the six themes, the frame-rate counter, the browser's pointer-lock handling and the stock settings with the code that applies them are `dot-menu` (`DotMenu`, `DotMenuApplier`, `DotMenuStock`, `DotMenuBindings`), extracted from this game's `ui/` so every game gets them; seven files and about 1,600 lines left this repository. What stayed is this game's: `g2g_menu_pages.gd` (which rows go where, in the genre's words, and the live rows for the style, the flashlight and third person), `g2g_bindings.gd`'s rows, `G2GPresentation`'s own settings and their defaults (no shake, no flashes, `fov_desired`), and the `menu_*` methods on the client the live rows ask. Rendered before and after with `tools/screenshot_menus.sh`: every page is the same picture, except the map list's sentence, which the first render of the new one dropped (a dot-menu fix).
+
+- **The stock settings kept their keys and scopes**, so nobody's stored choice moved. `raw_input` is gone: declared here and applied by nothing.
+- **Tab is the scoreboard, held, and Next style is N.** Schema 3 drops a stored `bind_style_next` of exactly "Tab": a document stores defaults too, so every player who never chose has "Tab" written down, and keeping it would put two actions on one key.
+- **The board is a timer server's**: style, best time and rank on this map, time connected and ping, fastest first. Online the names, pings and times are dot-server's roster (sent only while a player holds Tab) and the columns are `G2GModule`'s `scoreboard_fields`, from `G2GGame.board_fields`, which is the standing `refresh_standing` already works out for the HUD, so a held board costs no store reads. The module takes the hooks back on unload, and sets them only on a dot-server that has them, because this pack runs on whatever server the host has. Offline, and against a server with no roster, the board is the local game. The record's ghost is not a session and is not on the online board.
+- **The client shell must be built with dot-menu before this pack is published**: a shell without it cannot parse any script here that names a `DotMenu*` class.
+
+`headless_presentation` drives the real menu with this game's pages against a fake client (181 checks, including the board and the migration); `headless_client` holds Tab and presses P on the real offline client (24); `dedicated` asserts the module's columns reach the server's board and leave with the module (189).
+
 ## Validating
 
 ```bash
 godot --headless --path . --import
 godot --headless --path . --script tools/export_zones.gd
 godot --headless --path . res://examples/headless_run.tscn   # 241 checks, 27 sections
-godot --headless --path . res://examples/headless_presentation.tscn  # 171 checks
-godot --headless --path . res://examples/headless_client.tscn  # 19 checks: the real client, offline
+godot --headless --path . res://examples/headless_presentation.tscn  # 181 checks
+godot --headless --path . res://examples/headless_client.tscn  # 24 checks: the real client, offline
 godot --headless --path . res://examples/headless_net.tscn   # 193 checks, 27 sections
-godot --headless --path . res://examples/dedicated.tscn      # 179 checks, 16 sections
+godot --headless --path . res://examples/dedicated.tscn      # 189 checks, 16 sections
 godot --headless --path . res://examples/jitter_probe.tscn   # 4 configurations
 godot --headless --path . res://examples/headless_imported.tscn  # 45 per map, +1 per track and stage: 2074 over the 42 (run with --fixed-fps 128)
 godot --headless --path . res://examples/headless_maps.tscn      # 51 checks

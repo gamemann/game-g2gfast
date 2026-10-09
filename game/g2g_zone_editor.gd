@@ -1,7 +1,6 @@
 extends Node
 
 const G2GBindings := preload("g2g_bindings.gd")
-const G2GUi := preload("ui/g2g_ui.gd")
 const G2GUnits := preload("g2g_units.gd")
 const G2GZoneOutlines := preload("g2g_zone_outlines.gd")
 
@@ -64,13 +63,16 @@ var _panel: PanelContainer = null
 var _text: Label = null
 var _layer: CanvasLayer = null
 
+## What the panel is drawn with. The client hands over the menu's; the default theme otherwise.
+var kit: DotMenuKit = DotMenuKit.new()
+
 
 func _ready() -> void:
 	_layer = CanvasLayer.new()
 	_layer.layer = 105
 	add_child(_layer)
 	_panel = PanelContainer.new()
-	var s := G2GUi.surface_box()
+	var s := kit.surface_box()
 	s.bg_color.a = 0.82
 	s.content_margin_left = 16
 	s.content_margin_right = 16
@@ -79,7 +81,7 @@ func _ready() -> void:
 	_panel.add_theme_stylebox_override(&"panel", s)
 	_panel.position = Vector2(18, 90)
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_text = G2GUi.label("", G2GUi.SIZE_SMALL, G2GUi.TEXT)
+	_text = kit.label("", kit.size_small, kit.palette.text)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(_text)
 	_layer.add_child(_panel)

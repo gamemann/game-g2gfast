@@ -31,6 +31,7 @@ const G2GClient := preload("../game/g2g_client.gd")
 ## menus_controls
 ## menus_controls_listen  a key button waiting for a key
 ## menus_help           the H screen over the menu
+## menus_scoreboard     Tab, held, with a sample of a busy server's roster
 ## menus_help_browser   the same, as a browser player on a server sees it
 ## menus_small          the menu in a 1024 x 640 window
 ## [/codeblock]
@@ -111,10 +112,10 @@ func _initialize() -> void:
 			_client.open_map_list(),
 		func() -> void: _capture("menus_maplist"),
 		func() -> void:
-			_client.map_menu.turn(1),
+			_client.menu.picker.turn(1),
 		func() -> void: _capture("menus_maplist_page2"),
 		func() -> void:
-			_client.map_menu.close()
+			_client.menu.picker.close()
 			_client.open_menu(&"general"),
 		func() -> void: _capture("menus_general"),
 		func() -> void: _client.open_menu(&"hud"),
@@ -126,11 +127,11 @@ func _initialize() -> void:
 			_client.open_hud_editor(),
 		func() -> void:
 			var clock: Rect2 = _client.hud.element_rect(&"timer")
-			_client.hud_editor.drag(&"timer", clock.get_center(), Vector2(320, 220)),
+			_client.menu.layout_editor.drag(&"timer", clock.get_center(), Vector2(320, 220)),
 		func() -> void: _capture("menus_hud_editor"),
 		func() -> void:
-			_client.hud_editor.reset_all()
-			_client.hud_editor.close()
+			_client.menu.layout_editor.reset_all()
+			_client.menu.layout_editor.close()
 			_client.open_menu(&"gameplay"),
 		func() -> void: _capture("menus_gameplay"),
 		func() -> void: _client.open_menu(&"video"),
@@ -148,9 +149,9 @@ func _initialize() -> void:
 		func() -> void:
 			# What a browser player on a server sees: the tips, and a command list in the
 			# shape the server sends (a sample of the real names, since this client is offline).
-			_client.help.online = true
-			_client.help.show_browser_tips = true
-			_client.help.commands = [
+			_client.menu.help.online = true
+			_client.menu.help.show_browser_tips = true
+			_client.menu.help.commands = [
 				["end", "To the end zone (stops the run)"], ["pb", "Your best here, or another player's: !pb [name]"],
 				["r", "Back to the start (alias)"], ["rank", "Your ranking and title on this server"],
 				["rs", "To the start of this stage (alias)"], ["rtv", "Rock the vote (alias)"],
@@ -158,10 +159,28 @@ func _initialize() -> void:
 				["style", "List styles, or switch (alias)"], ["top", "Fastest times here (alias)"],
 				["wr", "Fastest times here (alias)"], ["wrcp", "The record for each stage of this map"],
 			]
-			_client.help.open(),
+			_client.menu.help.open(),
 		func() -> void: _capture("menus_help_browser"),
 		func() -> void:
-			_client.help.close()
+			_client.menu.help.close()
+			_client.menu.close()
+			# What a runner holding Tab on a busy server sees. Offline the board is this
+			# client's own world, so the rows are a sample in the server's shape.
+			_client.menu.scoreboard.source = func() -> Dictionary:
+				return {"server": {"name": "TMC Surf & Bhop #1", "game": "g2gfast", "map": "surf_mesa", "players": 6, "max": 24},
+					"header": {"": "Time left 23:41"}, "you": 3,
+					"players": [
+						{"id": 1, "name": "Ada", "style": "Normal", "best": 72.418, "rank": 1, "of": 41, "seconds": 3912, "ping": 24},
+						{"id": 2, "name": "Bea", "style": "Sideways", "best": 95.002, "rank": 3, "of": 12, "seconds": 1260, "ping": 61},
+						{"id": 3, "name": "Cy", "style": "Normal", "best": 80.115, "rank": 6, "of": 41, "seconds": 432, "ping": 38},
+						{"id": 4, "name": "Dot", "style": "W only", "best": -1.0, "rank": 0, "seconds": 75, "ping": 142},
+						{"id": 5, "name": "Eli", "style": "Normal", "best": 88.731, "rank": 14, "of": 41, "seconds": 2207, "ping": 215},
+						{"id": 6, "name": "Fin", "style": "Half-sideways", "best": -1.0, "rank": 0, "seconds": 18, "ping": -1},
+					]}
+			_client.menu.scoreboard.open(),
+		func() -> void: _capture("menus_scoreboard"),
+		func() -> void:
+			_client.menu.scoreboard.close()
 			root.size = Vector2i(1024, 640)
 			_client.open_menu(&"gameplay"),
 		func() -> void: _capture("menus_small"),
@@ -202,11 +221,10 @@ func _aim() -> void:
 
 
 func _listen_on_first_key() -> void:
-	for node in _client.menu.find_children("*", "Button", true, false):
-		if node.get_script() == preload("../game/ui/g2g_key_button.gd"):
-			(node as Button).grab_focus()
-			(node as Button).pressed.emit()
-			return
+	for node in _client.menu.screen.find_children("*", "DotMenuKeyButton", true, false):
+		(node as Button).grab_focus()
+		(node as DotMenuKeyButton).listen()
+		return
 
 
 func _capture(name: String) -> void:

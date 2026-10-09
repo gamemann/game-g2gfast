@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 17
-const CHECKS := 186
+const CHECKS := 189
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -493,6 +493,18 @@ func _test_query_and_chat() -> void:
 			"%s of %d" % [snap.info.get("bots"), game.players.size()])
 		_check(not JSON.stringify(snap.game).contains("userid"), "and nothing identifying anybody")
 
+	# The Tab board: the server sends a holder every session's name, ping and time; the
+	# module adds this game's columns. A session named for a player the game has, without
+	# a socket, is what the server would hand the hook.
+	var keyed: Array = game.players.keys().filter(func(k: Variant) -> bool: return String(k).begins_with("u"))
+	var fields_fn: Callable = server.get(&"scoreboard_fields") if "scoreboard_fields" in server else Callable()
+	_check(fields_fn.is_valid() and not keyed.is_empty(), "the module gives the server's Tab board this game's columns",
+		"%d players keyed by session" % keyed.size())
+	if fields_fn.is_valid() and not keyed.is_empty():
+		var who: G2GPlayer = game.players[keyed[0]]
+		var row: Dictionary = fields_fn.call(DotClientSession.new(int(String(keyed[0]).trim_prefix("u"))))
+		_check(row.has("best") and row.has("rank") and str(row.get("style", "")) == who.timer_style.display_name,
+			"each runner's style, best time and rank on this map", str(row))
 	for name in ["r", "wr", "top", "style", "track", "rtv", "g2g_restart"]:
 		var command: DotConCommand = server.console.find_command(name)
 		_check(command != null and command.chat_allowed, "!%s works from chat" % name)
@@ -1410,6 +1422,8 @@ func _test_unload() -> void:
 	var unloaded := server.modules.unload_module("g2gfast")
 	_check(unloaded.ok, "the module unloads")
 	_check(server.console.find_cvar("sv_autobunnyhopping") == null, "and takes its cvars with it")
+	_check(not (server.get(&"scoreboard_fields") as Callable).is_valid() and not (server.get(&"scoreboard_extra") as Callable).is_valid(),
+		"and its Tab board columns: the server outlives this game, and the next one is not asked about it")
 	_check(game.players.is_empty(), "and the players it added")
 	await get_tree().process_frame
 	# The bridge's map-change host was the game's while the module was loaded, and the

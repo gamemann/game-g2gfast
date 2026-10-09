@@ -4,7 +4,6 @@ const G2GConfig := preload("g2g_config.gd")
 const G2GGame := preload("g2g_game.gd")
 const G2GMapCatalogue := preload("g2g_map_catalogue.gd")
 const G2GPlayer := preload("g2g_player.gd")
-const G2GUi := preload("ui/g2g_ui.gd")
 
 ## The competitive-shooter timer HUD: the clock, the speed in u/s, the keys, the strafes.
 ##
@@ -340,14 +339,17 @@ static func positions_to_text(value: Dictionary) -> String:
 	return JSON.stringify(out)
 
 
-## The colours of the current [G2GUi] theme, onto everything this HUD draws.
-func apply_theme() -> void:
+## The theme's HUD colours onto everything this HUD draws. [param palette] is the menu's
+## (dot-menu's `theme_changed`); null is the default theme, which is what a HUD built before
+## any menu — a suite, a server's preview — draws in.
+func apply_theme(palette: DotMenuPalette = null) -> void:
+	var p := palette if palette != null else DotMenuPalette.new()
 	if timer_hud != null:
-		timer_hud.panel_colour = G2GUi.HUD_PLATE
-		timer_hud.neutral_colour = G2GUi.HUD_TEXT
-		timer_hud.detail_colour = G2GUi.HUD_DETAIL
-		timer_hud.ahead_colour = G2GUi.HUD_AHEAD
-		timer_hud.behind_colour = G2GUi.HUD_BEHIND
+		timer_hud.panel_colour = p.hud_plate
+		timer_hud.neutral_colour = p.hud_text
+		timer_hud.detail_colour = p.hud_detail
+		timer_hud.ahead_colour = p.hud_ahead
+		timer_hud.behind_colour = p.hud_behind
 		timer_hud.queue_redraw()
 
 	# Text drawn straight over the world gets an outline in the plate's colour: the keys
@@ -356,14 +358,14 @@ func apply_theme() -> void:
 	for label in [_keys, _status, _notice, _spectating, _loading_label]:
 		if label == null:
 			continue
-		(label as Label).add_theme_color_override(&"font_color", G2GUi.HUD_TEXT)
-		(label as Label).add_theme_color_override(&"font_outline_color", Color(G2GUi.HUD_PLATE, 0.55))
+		(label as Label).add_theme_color_override(&"font_color", p.hud_text)
+		(label as Label).add_theme_color_override(&"font_outline_color", Color(p.hud_plate, 0.55))
 		(label as Label).add_theme_constant_override(&"outline_size", 3)
 
 	if _spectators != null:
 		_spectators.add_theme_stylebox_override(&"panel",
-			G2GUi.box(G2GUi.HUD_PLATE, 6, Color(0, 0, 0, 0), 0, Vector4(12, 8, 12, 8)))
-		_spectators_label.add_theme_color_override(&"font_color", G2GUi.HUD_TEXT)
+			DotMenuKit.new(p).box(p.hud_plate, 6, Color(0, 0, 0, 0), 0, Vector4(12, 8, 12, 8)))
+		_spectators_label.add_theme_color_override(&"font_color", p.hud_text)
 		_spectators_label.add_theme_font_size_override(&"font_size", 15)
 
 

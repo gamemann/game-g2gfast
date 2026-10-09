@@ -2,7 +2,6 @@ extends Node
 
 const G2GClient := preload("../game/g2g_client.gd")
 const G2GEvents := preload("../game/net/g2g_events.gd")
-const G2GUi := preload("../game/ui/g2g_ui.gd")
 
 ## The real client, offline: what a player's keys do, rather than what the pieces do.
 ##
@@ -19,8 +18,8 @@ const G2GUi := preload("../game/ui/g2g_ui.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 19
-const SECTIONS := 7
+const CHECKS := 24
+const SECTIONS := 8
 
 var _passed := 0
 var _failed := 0
@@ -66,6 +65,7 @@ func _run() -> void:
 	await _test_spectating_holds_the_runner()
 	_test_r_once_and_twice()
 	_test_p_cycles_the_theme()
+	_test_tab_holds_the_board()
 	await _test_the_layout_editor_is_an_overlay()
 	await _test_the_camera_is_the_watched_players()
 
@@ -165,13 +165,40 @@ func _test_r_once_and_twice() -> void:
 func _test_p_cycles_the_theme() -> void:
 	_section("P cycles the theme")
 	var settings := _client.presentation.settings
+	var menu := _client.menu
 	var before := StringName(str(settings.get_value(&"ui_theme")))
-	_client.cycle_theme()
+	var p := InputEventKey.new()
+	p.physical_keycode = KEY_P
+	p.keycode = KEY_P
+	p.pressed = true
+	var _took := menu.handle_event(p)
 	var after := StringName(str(settings.get_value(&"ui_theme")))
-	_check(after == G2GUi.next_theme(before) and G2GUi.current == after,
+	_check(after == menu.themes.next(before) and menu.palette().id == after,
 		"the key writes the setting and the palette follows it", "%s -> %s" % [before, after])
+	_check(_client.hud.timer_hud.panel_colour == menu.palette().hud_plate,
+		"and the HUD is drawn in it")
 	var _back := settings.set_value(&"ui_theme", before)
-	_check(G2GUi.current == before, "and setting it back puts the palette back")
+	_check(menu.palette().id == before, "and setting it back puts the palette back")
+	_done()
+
+
+## Tab, held, on the real client: the board, with this runner on it, and Escape over it.
+func _test_tab_holds_the_board() -> void:
+	_section("Tab holds the board, and the runner keeps their keys")
+	var menu := _client.menu
+	var tab := InputEventKey.new()
+	tab.physical_keycode = KEY_TAB
+	tab.keycode = KEY_TAB
+	tab.pressed = true
+	_check(menu.handle_event(tab) and menu.scoreboard.is_open(), "Tab puts the board up")
+	var rows := menu.scoreboard.rows()
+	_check(rows.any(func(r: Dictionary) -> bool: return bool(r.get("you", false)) and str(r.get("name", "")) == _client.player.display_name),
+		"with this runner on it, picked out", str(rows))
+	_check(not _client.overlay_open() and not _client.player.sampler.suspended,
+		"and it is not a menu: the sampler is still the runner's")
+	tab.pressed = false
+	var _up := menu.handle_event(tab)
+	_check(not menu.scoreboard.is_open(), "letting go puts it away")
 	_done()
 
 
@@ -181,7 +208,7 @@ func _test_the_layout_editor_is_an_overlay() -> void:
 	await get_tree().process_frame
 	_check(_client.overlay_open() and _client.player.sampler.suspended,
 		"the layout editor counts as an overlay")
-	_client.hud_editor.close()
+	_client.menu.layout_editor.close()
 	await get_tree().process_frame
 	_check(not _client.overlay_open() and not _client.player.sampler.suspended,
 		"and closing it gives the keys back")
