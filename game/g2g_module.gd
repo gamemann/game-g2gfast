@@ -140,6 +140,15 @@ func _module_load() -> DotResult:
 				bridge.broadcast_rules()
 	)
 
+	# Read by dot-net on every tick, so flipping it takes effect on the next snapshot.
+	add_cvar("sv_stagger_snapshots", "1" if game.config.stagger_snapshots else "0",
+		"Spread snapshot work over the ticks between snapshots. Lowers the worst tick on a full server.").changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.stagger_snapshots = new_value != "0"
+			if net != null and net.config != null:
+				net.config.stagger_snapshots = game.config.stagger_snapshots
+	)
+
 	# Who is watching you. Sent to the watched player and their watchers; off sends
 	# nothing at all, and clears every list already on screen.
 	add_cvar("sv_spec_list", "1" if game.config.spectator_list else "0",
@@ -858,6 +867,7 @@ func _build_netcode() -> DotResult:
 	config.enable_prediction = true
 	config.enable_lag_compensation = false
 	config.max_entities_per_snapshot = 64
+	config.stagger_snapshots = game.config.stagger_snapshots
 	# A surf map is kilometres long in metres. The extent bounds position quantisation.
 	config.world_extent = 512.0
 	net.config = config

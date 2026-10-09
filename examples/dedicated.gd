@@ -25,8 +25,8 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## aborts that function; the section counter sees it, and the checks it never reached are
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
-const SECTIONS := 16
-const CHECKS := 183
+const SECTIONS := 17
+const CHECKS := 186
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -74,6 +74,7 @@ func _run() -> void:
 		_test_cvars_reach_the_movement()
 		await _test_autobhop_live()
 		_test_thirdperson_cvar()
+		_test_stagger_cvar()
 		_test_commands()
 		_test_replay_bot_cvar()
 		_test_query_and_chat()
@@ -383,6 +384,21 @@ func _test_thirdperson_cvar() -> void:
 	_check(not player.camera.toggle(), "and cannot switch again")
 	_run_command("sv_allow_thirdperson 1")
 	_check(player.camera.toggle(), "until it is allowed again")
+	_done()
+
+
+## Armed by leaving the handler without its `net.config` line: the second check fails,
+## because the manager keeps the config it was built with.
+func _test_stagger_cvar() -> void:
+	_section("sv_stagger_snapshots")
+	var module := server.modules.get_module("g2gfast")
+	var net: DotNetManager = module.get("net") if module != null else null
+	_check(net != null and not net.config.stagger_snapshots, "snapshots are not staggered by default")
+	_run_command("sv_stagger_snapshots 1")
+	_check(net != null and net.config.stagger_snapshots and game.config.stagger_snapshots,
+		"sv_stagger_snapshots 1 reaches the running netcode, not only the config")
+	_run_command("sv_stagger_snapshots 0")
+	_check(net != null and not net.config.stagger_snapshots, "and 0 turns it back off")
 	_done()
 
 

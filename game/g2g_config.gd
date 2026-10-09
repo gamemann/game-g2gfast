@@ -112,6 +112,17 @@ const G2GUnits := preload("g2g_units.gd")
 ## blinded by somebody else's — and this is the operator's way to say no.
 @export var flashlight: bool = true
 
+## [code]sv_stagger_snapshots[/code]: spread the snapshot work over the ticks between
+## snapshots, a share of the peers on each tick, instead of every peer on one tick.
+##
+## Off by default, because it changes WHEN a given peer hears about a tick, not what it
+## hears: each peer still gets one snapshot per period, just not on the same tick as the
+## others. What it buys is the worst tick on a full server — 32 players measured 46.6 ms
+## p99 against 22.7 staggered in tools/load_probe (LOAD_STAGGER=1) — and that is the tick
+## that holds everybody's input up. Whether a full 128-tick server wants it is the
+## operator's call, and the cvar is live.
+@export var stagger_snapshots: bool = false
+
 ## [code]sv_spec_list[/code]: whether a player is told who is spectating them (and the
 ## people watching the same runner are told too).
 ##
