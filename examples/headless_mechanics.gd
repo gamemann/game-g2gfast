@@ -209,10 +209,17 @@ func _test_pits() -> void:
 	var fell := PackedStringArray()
 	for zone: DotTimerZone in pits:
 		bot.teleport(zone.destination, zone.destination_yaw, true)
+		# Counted in distinct ticks, not events: a pit cut into slabs (`hull_boxes`) is
+		# several overlapping zones, and a player inside three of them is sent three times
+		# on ONE tick -- surf_the_gloaming's hub under its jail read as a loop that way.
 		var resent := [0]
+		var resent_ticks := {}
 		var handler := func(id: StringName, z: DotTimerZone) -> void:
 			if id == &"bot" and z.kind == DotTimerZone.Kind.RESPAWN:
-				resent[0] += 1
+				var frame := Engine.get_physics_frames()
+				if not resent_ticks.has(frame):
+					resent_ticks[frame] = true
+					resent[0] += 1
 		game.timers.effect_requested.connect(handler)
 		# A destination may be in the air (the mapper's own, a hundred units over the
 		# floor is common) and may send you on through another teleport (a secret room's
@@ -452,7 +459,12 @@ func _test_ladders() -> void:
 			var out: Vector3 = away * side
 			var foot := Vector3(box.get_center().x, box.position.y + G2GUnits.to_metres(2.0), box.get_center().z) \
 				+ out * (half + G2GUnits.to_metres(17.0))
-			if bot.controller.motor.would_overlap(bot.controller.state, foot) or _in_pit(foot):
+			# The climbing side has room up the ladder as well as at its foot: on
+			# surf_greatriver_v4 one side of a ladder runs under a ledge, a climber there
+			# stops 11 units up, and so would one in the source game.
+			var up := foot + Vector3(0.0, G2GUnits.to_metres(96.0), 0.0)
+			if bot.controller.motor.would_overlap(bot.controller.state, foot) \
+					or bot.controller.motor.would_overlap(bot.controller.state, up) or _in_pit(foot):
 				continue
 			bot.teleport(foot, rad_to_deg(atan2(out.x, out.z)), true)
 			picked = true

@@ -1727,6 +1727,7 @@ class Zoner:
         want = name.strip().lower()
         out = []
         others = []
+        brushes = []
         for e in self.bsp.entities:
             if e.get("targetname", "").strip().lower() != want or not want:
                 continue
@@ -1738,7 +1739,14 @@ class Zoner:
                 # surf_grave_reloaded all eight at `info_landmark`s. A destination wins
                 # where both carry the name.
                 others.append((entity_origin(e), entity_yaw(e)))
-        return out or others
+            elif "origin" in e:
+                # Or at a BRUSH entity, which the engine sends to that entity's origin
+                # (the centre vbsp moved its brushes about). surf_29_12_06 aims all 13
+                # of its live teleports at other teleports' brushes, `g1`..`b4`, `a`,
+                # `b`, `jail`; taken as unresolved, every one sent the player to the
+                # spawn. Last, because a point entity is what a mapper usually meant.
+                brushes.append((entity_origin(e), entity_yaw(e)))
+        return out or others or brushes
 
     def teleports_to(self, name):
         """Every unclaimed `trigger_teleport` aimed at that destination name."""

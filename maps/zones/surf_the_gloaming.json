@@ -9,5 +9,11 @@
   "archive": "surf_the_gloaming.rar",
   "recorded": "2026-10-09"
  },
- "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 38 placed weapons, jails (jail1, jail2, jailt), a control room and a scout round -- combat. gb-maps-1 batch of 2026-10-09. Not published."
+ "notes": "Credit only, and deliberately no zones: a combat surf map with no finish (see maps/zones/README.md). 38 placed weapons, jails (jail1, jail2, jailt), a control room and a scout round -- combat. gb-maps-1 batch of 2026-10-09. Not published. The scout round's start-disabled teleports over the spawns are dropped (round_teleports).",
+ "round_teleports": {
+  "names": [
+   "ScoutRoundTeleport*"
+  ],
+  "note": "The scout round's four teleports start disabled over the spawn room and are switched on by the round; this game runs no rounds. Imported, they were pits over every spawn whose destination chain ends in a cycle, so they sent a player to the spawn inside them for ever (headless_mechanics: 'loops')."
+ }
 }
