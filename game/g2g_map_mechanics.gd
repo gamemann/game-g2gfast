@@ -92,7 +92,7 @@ func read(manifest: Dictionary) -> void:
 		conveyors.append({"box": _box(d), "push": G2GUnits.vector_to_metres(_vec(d.get("push")))})
 	for v: Variant in block.get("blocks", []):
 		var d: Dictionary = v
-		blocks.append({"box": _box(d), "delay": float(d.get("delay", 0.1)),
+		blocks.append({"box": _box(d), "delay": float(d.get("delay", 0.1)), "touch": bool(d.get("touch", false)),
 			"destination": G2GUnits.vector_to_metres(_vec(d.get("destination"))),
 			"yaw": float(d.get("destination_yaw", 0.0))})
 
@@ -140,7 +140,7 @@ func simulate(rider: Rider, motor: DotFpsMotor, state: DotFpsState, delta: float
 			rider.block = -1
 			return Event.HURT
 
-	return _blocks(rider, state, r, delta)
+	return _blocks(rider, state, r, hull, delta)
 
 
 func _pushes(rider: Rider, motor: DotFpsMotor, state: DotFpsState, hull: AABB, delta: float) -> void:
@@ -195,7 +195,7 @@ func _displace(motor: DotFpsMotor, state: DotFpsState, velocity: Vector3, delta:
 	state.velocity = own
 
 
-func _blocks(rider: Rider, state: DotFpsState, r: float, delta: float) -> Event:
+func _blocks(rider: Rider, state: DotFpsState, r: float, hull: AABB, delta: float) -> Event:
 	if blocks.is_empty() or not state.is_grounded():
 		rider.block = -1
 		rider.block_time = 0.0
@@ -203,7 +203,14 @@ func _blocks(rider: Rider, state: DotFpsState, r: float, delta: float) -> Event:
 
 	var on := -1
 	for i in blocks.size():
-		if _standing_on(blocks[i]["box"], state.position, r * 0.9):
+		var b: Dictionary = blocks[i]
+		# A door block is stood ON (its top); a trap is the map's own teleport volume over
+		# a block, so it is touched: the grounded hull in it, two units under the feet too.
+		if b["touch"]:
+			if (b["box"] as AABB).intersects(hull):
+				on = i
+				break
+		elif _standing_on(b["box"], state.position, r * 0.9):
 			on = i
 			break
 

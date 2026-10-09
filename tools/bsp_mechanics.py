@@ -423,11 +423,63 @@ def inert_filters(bsp, names_too=True):
     return dead
 
 
-def mechanics(bsp, origin_of, destinations, lift, yaw_to_godot):
+def trap_blocks(bsp, traps, origin_of, destinations):
+    """The anti-standing traps `conditional_teleports` dropped, as per-player blocks.
+
+    [b]The bhop maps that do not build blocks from doors build them from logic.[/b] A
+    `trigger_multiple` on each block fires every hundredth of a second while somebody
+    touches it and renames them -- `!activator,AddOutput,targetname activator,0.09,-1` --
+    and a teleport on the block fires only for that name (bhop_badges, bhop_badges_mini,
+    bhop_mario_fxd: 0.09 s; bhop_ananas 0.6 s). Stand there that long and you are sent
+    back. This game does not run the logic, so the teleport was dropped and standing cost
+    nothing. It is a block now: the teleport's own brushes, the delay the map's output
+    waits, and where the teleport sends you. `touch` because the box is the teleport's
+    volume over the block, not the block, and it is asked of a grounded player's hull.
+    A trap whose name the map never assigns with a delay is left dropped.
+    """
+    delay_of = {}
+    rx = re.compile(r"targetname[\s:]+([^,\s]+)\s*,\s*([0-9.]+)", re.IGNORECASE)
+    for e in bsp.entities:
+        for k, v in e.items():
+            if not k.startswith("On"):
+                continue
+            for m in rx.finditer(str(v)):
+                name = m.group(1).strip().lower()
+                try:
+                    d = float(m.group(2))
+                except ValueError:
+                    continue
+                delay_of[name] = min(delay_of.get(name, d), d)
+    names = {}
+    for e in bsp.entities:
+        if e.get("classname", "") == "filter_activator_name":
+            negated = e.get("Negated", "0").strip().lower() in ("1", "filter out entities that match criteria")
+            if not negated:
+                names[e.get("targetname", "").strip().lower()] = e.get("filtername", "").strip().lower()
+    out = []
+    for e in traps:
+        name = names.get(e.get("filtername", "").strip().lower())
+        # A name given at once (surf_kitsune's `TealF`, delay 0) is a gate, not a trap
+        # for standing still: there is no "too long" to time.
+        if not name or name not in delay_of or delay_of[name] < 0.02:
+            continue
+        hits = destinations(e.get("target", ""))
+        if not hits:
+            continue
+        delay = min(max(delay_of[name], BLOCK_DELAY_MIN), BLOCK_DELAY_MAX)
+        for _i, (lo, hi) in entity_brushes(bsp, e, origin_of):
+            g = godot_box(lo, hi)
+            out.append({"min": g[0], "max": g[1], "delay": round(delay, 4),
+                        "destination_src": list(hits[0][0]), "yaw_src": hits[0][1],
+                        "class": "trap", "touch": True})
+    return out
+
+
+def mechanics(bsp, origin_of, destinations, lift, yaw_to_godot, traps=()):
     """Everything above, as the manifest's `mechanics` block."""
     inert = inert_filters(bsp)
     blocks = []
-    for b in bhop_blocks(bsp, origin_of, destinations, inert):
+    for b in bhop_blocks(bsp, origin_of, destinations, inert) + trap_blocks(bsp, traps, origin_of, destinations):
         at = to_godot(b.pop("destination_src"))
         b["destination"] = [at[0], at[1] + lift, at[2]]
         b["destination_yaw"] = yaw_to_godot(b.pop("yaw_src"))

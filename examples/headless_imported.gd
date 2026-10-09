@@ -993,6 +993,12 @@ const ROUTE_SECONDS := 300.0
 ## yet. See route_bot.gd for how the bot drives it.
 func _test_runs_its_route() -> void:
 	_section("route")
+	# The route bot lands on a block and runs to its lip, and the recording is that bot's:
+	# both are a test of the collision line, and a sinking block (a door, or a map's
+	# anti-standing trap, 0.09 s on bhop_grove) sends a player who does that straight
+	# back. In Source too: a person hops every block. `headless_mechanics` asks the blocks.
+	if game.mechanics != null:
+		game.mechanics.blocks.clear()
 	var why: Array = []
 	var points := RouteBot.load_points(_map_id, why)
 	var zones := game.timers.zones if game != null else null
@@ -1079,6 +1085,12 @@ const LIFT_UNITS := 200.0
 ## person's ride (or `stage_ride`'s, saved with RIDE_SAVE_REPLAY), one per map.
 func _test_follows_its_recording() -> void:
 	_section("recording")
+	# The route bot lands on a block and runs to its lip, and the recording is that bot's:
+	# both are a test of the collision line, and a sinking block (a door, or a map's
+	# anti-standing trap, 0.09 s on bhop_grove) sends a player who does that straight
+	# back. In Source too: a person hops every block. `headless_mechanics` asks the blocks.
+	if game.mechanics != null:
+		game.mechanics.blocks.clear()
 	var why: Array = []
 	var replay := ReplayFollow.load_for(_map_id, why)
 	if replay == null:

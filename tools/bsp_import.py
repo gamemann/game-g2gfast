@@ -1635,6 +1635,9 @@ class Zoner:
         self.min_thickness = min_thickness
         self.solids = solids or []
         self.claimed = set()
+        # The conditional teleports `conditional_teleports` dropped: an anti-standing trap
+        # is one, and bsp_mechanics turns it into a per-player block.
+        self.traps = []
         self.zones = []
         self.notes = []
         self.track_names = {}
@@ -2216,6 +2219,7 @@ def conditional_teleports(z, rule):
         for n in names:
             if n == own or n == passes.get(own):
                 z.claimed.add(i)
+                z.traps.append(e)
                 used[n] += 1
                 dropped += 1
                 break
@@ -3026,7 +3030,7 @@ def main(argv=None):
         bsp, a.min_zone_thickness, doc, solids)
     zones = emit_zones(z)
     mech = bsp_mechanics.mechanics(bsp, entity_origin, z.destinations, DESTINATION_LIFT,
-                                   yaw_to_godot)
+                                   yaw_to_godot, z.traps)
     for s in spawns:
         s.pop("origin_src", None)
         s.pop("yaw_src", None)

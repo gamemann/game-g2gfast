@@ -294,7 +294,10 @@ func _test_blocks() -> void:
 	var wrong := PackedStringArray()
 	for b: Dictionary in _sample(m.blocks, SAMPLE):
 		var box: AABB = b["box"]
-		var top := Vector3(box.get_center().x, box.end.y + G2GUnits.to_metres(2.0), box.get_center().z)
+		# A door block is stood on top of; a trap is the map's teleport sheet lying ON a
+		# block, so its bottom is where the feet go.
+		var floor_y := box.position.y if bool(b.get("touch", false)) else box.end.y
+		var top := Vector3(box.get_center().x, floor_y + G2GUnits.to_metres(2.0), box.get_center().z)
 		# Somewhere to stand at all: a block narrower than the hull, or one under a ceiling,
 		# is checked by the ones beside it.
 		bot.teleport(top, 0.0, true)
