@@ -50,14 +50,14 @@ func _draw() -> void:
 	var rect := Rect2(origin, TRACK)
 	var eased := _t * _t * (3.0 - 2.0 * _t)
 
-	var off_fill := Color(1, 1, 1, 0.1)
+	var off_fill := Color(G2GUi.TEXT, 0.12)
 	var fill := off_fill.lerp(G2GUi.ACCENT_DEEP, eased)
 	if disabled:
-		fill = Color(1, 1, 1, 0.05)
+		fill = Color(G2GUi.TEXT, 0.05)
 
 	var track := G2GUi.box(fill, int(TRACK.y * 0.5))
 	if is_hovered() and not disabled:
-		track.border_color = Color(1, 1, 1, 0.18)
+		track.border_color = Color(G2GUi.TEXT, 0.18)
 		track.set_border_width_all(1)
 	draw_style_box(track, rect)
 

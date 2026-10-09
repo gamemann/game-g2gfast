@@ -17,6 +17,8 @@ const G2GMenu := preload("../game/ui/g2g_menu.gd")
 const G2GHelp := preload("../game/ui/g2g_help.gd")
 const G2GSwitch := preload("../game/ui/g2g_switch.gd")
 const G2GKeyButton := preload("../game/ui/g2g_key_button.gd")
+const G2GHudEditor := preload("../game/ui/g2g_hud_editor.gd")
+const G2GUi := preload("../game/ui/g2g_ui.gd")
 
 ## Settings, audio, effects, the console and the practice session.
 ##
@@ -30,7 +32,7 @@ const G2GKeyButton := preload("../game/ui/g2g_key_button.gd")
 ##
 ## Exits non-zero on any failure.
 
-const CHECKS := 146
+const CHECKS := 171
 
 var _passed := 0
 var _failed := 0
@@ -72,6 +74,8 @@ func _run() -> void:
 	_test_settings_reach_the_engine()
 	await _test_the_menu_is_a_view_of_the_settings()
 	await _test_help_lists_what_it_is_told()
+	await _test_a_theme_is_every_screen()
+	await _test_the_timer_is_the_players_layout()
 
 	print("")
 	_check(
@@ -1356,6 +1360,139 @@ func _test_help_lists_what_it_is_told() -> void:
 	_check(not shown.has("!spec"), "offline there is no server, so no commands are offered")
 
 	help.queue_free()
+	_done()
+
+
+func _test_a_theme_is_every_screen() -> void:
+	_section("A theme reaches the menus and the HUD, and switches while they are open")
+
+	var s := G2GPresentation.schema()
+	_check(G2GUi.theme_ids().size() == 6 and s.find(&"ui_theme") != null
+		and StringName(str(s.find(&"ui_theme").default_value)) == &"midnight",
+		"six themes, offered by a setting whose default is the palette the menus always had")
+	var row := G2GBindings.row_for_action(&"g2g_theme_next")
+	_check(not row.is_empty() and str(row["default"]) == "P", "and a key that cycles them, P unless rebound")
+
+	_check(G2GUi.use(&"paper") and G2GUi.is_light()
+		and G2GUi.ACCENT == (G2GUi.theme_named(&"paper")["ACCENT"] as Color),
+		"using a theme puts its palette where every screen reads it")
+	_check(not G2GUi.use(&"paper"), "using the one already in use changes nothing, so nothing rebuilds")
+	_check(G2GUi.use(&"no_such_theme") and G2GUi.current == &"midnight",
+		"an id from a newer build, or a typo in the file, is the default rather than no palette")
+
+	var p := _make()
+	var menu := G2GMenu.new()
+	menu.settings = p.settings
+	add_child(menu)
+	await get_tree().process_frame
+	menu.open(&"hud")
+
+	var _used := G2GUi.use(&"ember")
+	menu.restyle()
+	await get_tree().process_frame
+	var resume: Button = null
+	for b in menu.find_children("*", "Button", true, false):
+		if not b.is_queued_for_deletion() and (b as Button).text == "Resume":
+			resume = b
+	var fill := (resume.get_theme_stylebox(&"normal") as StyleBoxFlat).bg_color if resume != null else Color.BLACK
+	_check(fill == G2GUi.ACCENT_DEEP, "a menu open when the theme changes is rebuilt in it",
+		"%s against %s" % [fill, G2GUi.ACCENT_DEEP])
+	_check(menu.is_open() and str(menu.describe()["page"]) == "hud", "on the page it was showing, still open")
+
+	var hud := G2GHud.new()
+	add_child(hud)
+	hud.apply_theme()
+	_check(hud.timer_hud.panel_colour == G2GUi.HUD_PLATE and hud.timer_hud.neutral_colour == G2GUi.HUD_TEXT,
+		"and the clock's plate and text are the theme's")
+
+	var _back := G2GUi.use(&"midnight")
+	menu.queue_free()
+	hud.queue_free()
+	_done()
+
+
+func _test_the_timer_is_the_players_layout() -> void:
+	_section("The timer's lines and where everything goes are the player's")
+
+	var hud := G2GHud.new()
+	add_child(hud)
+	await get_tree().process_frame
+	if hud.size.x <= 0.0:
+		hud.size = Vector2(1600, 900)
+
+	hud.apply_layout({
+		"show_stats": false, "show_track": false, "size": 40, "comparison": "wr",
+		"position": "top_left", "compact": false,
+	})
+	var t := hud.timer_hud
+	_check(not t.show_stats and not t.show_track and t.show_time and t.clock_size == 40
+		and t.comparison == DotTimerHud.Comparison.WORLD_RECORD and not t.compact,
+		"every timer line is the timer's own switch, so an off line closes up rather than leaving a gap")
+	hud.place()
+	_check(t.corner == DotTimerHud.Placement.TOP_LEFT, "and the block goes where the player put it")
+
+	_check(G2GHud.positions_from_text("not json").is_empty() and G2GHud.positions_from_text("").is_empty(),
+		"a positions setting that is not a layout is the default layout")
+	var read := G2GHud.positions_from_text('{"timer":[0.25,0.5],"bogus":[1,1],"keys":[2,-1]}')
+	_check(read.size() == 2 and read[&"timer"] == Vector2(0.25, 0.5) and read[&"keys"] == Vector2(1, 0),
+		"unknown pieces are dropped and a piece off the screen is put back on it", str(read))
+	_check(G2GHud.positions_from_text(G2GHud.positions_to_text(read)) == read, "and it round-trips")
+
+	hud.move_element(&"timer", Vector2(300, 200))
+	var clock := hud.element_rect(&"timer")
+	_check(clock.get_center().distance_to(Vector2(300, 200)) < 1.0,
+		"a dragged clock is drawn where it was dropped, with or without a run on it", str(clock))
+	var keys := hud.element_rect(&"keys")
+	_check(keys.position.y >= clock.end.y - 0.5 and absf(keys.get_center().x - clock.get_center().x) < 1.0,
+		"and the keys follow it, centred underneath", "%s under %s" % [keys, clock])
+	hud.reset_element(&"timer")
+	hud.place()
+	_check(not hud.positions.has(&"timer") and t.corner == DotTimerHud.Placement.TOP_LEFT,
+		"putting it back is the layout's place again")
+
+	hud.set_spectators(PackedStringArray(["Ada", "Bea"]))
+	hud.place()
+	var listed := hud.find_child("Spectators", true, false) as Control
+	_check(listed != null and listed.visible and hud.element_rect(&"spectators").size.x > 0.0,
+		"who is spectating is drawn when somebody is")
+	hud.apply_layout({"show_spectators": false})
+	_check(listed != null and not listed.visible, "and not when the player turned it off")
+
+	hud.set_spectating(&"u8", "Bea")
+	_check(hud.shown_id() == &"u8", "while spectating, the clock is the watched player's")
+	hud.set_spectating(&"")
+	_check(hud.shown_id() == hud.player_id, "and back to your own when you stop")
+
+	var editor := G2GHudEditor.new()
+	editor.hud = hud
+	add_child(editor)
+	var saved: Array[String] = ["unset"]
+	editor.saved.connect(func(text: String) -> void: saved[0] = text)
+	var status := hud.element_rect(&"status")
+	editor.drag(&"status", status.get_center(), Vector2(400, 500))
+	_check(hud.element_rect(&"status").get_center().distance_to(Vector2(400, 500)) < 1.0
+		and saved[0].contains("status"),
+		"the editor moves a piece and saves where it went", saved[0])
+	_check(editor.piece_at(Vector2(400, 500)) == &"status", "and the piece is picked up where it is drawn")
+	editor.reset_all()
+	_check(saved[0] == "" and hud.positions.is_empty(), "Reset all is the default layout, saved as nothing")
+
+	var p := _make()
+	var menu := G2GMenu.new()
+	menu.settings = p.settings
+	add_child(menu)
+	await get_tree().process_frame
+	menu.open(&"hud")
+	await get_tree().process_frame
+	var switches := _switches(menu)
+	_check(switches.size() == 8, "the HUD page has a switch per timer line and piece (%d)" % switches.size())
+	if switches.size() > 4:
+		(switches[4] as Button).button_pressed = false
+	_check(not p.settings.get_bool(&"timer_show_stats", true), "and flipping one writes its setting")
+
+	menu.queue_free()
+	editor.queue_free()
+	hud.queue_free()
 	_done()
 
 

@@ -28,6 +28,7 @@ const CHANNEL := "g2g.menu"
 
 const PAGES: Array[Dictionary] = [
 	{"id": &"general", "title": "General", "blurb": "What the HUD shows, and chat."},
+	{"id": &"hud", "title": "HUD & theme", "blurb": "The colours, the timer's lines, and where everything goes. Saved to your account."},
 	{"id": &"gameplay", "title": "Gameplay", "blurb": "Your style, your view, and what else is drawn on the course."},
 	{"id": &"video", "title": "Video", "blurb": "Window, frame rate and image quality. Saved on this device."},
 	{"id": &"audio", "title": "Audio", "blurb": "Volume by kind of sound."},
@@ -61,11 +62,33 @@ var _leave: Button = null
 
 
 func _ready() -> void:
-	theme = G2GUi.theme()
 	G2GUi.fill_parent(self)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
+	_build()
+	get_viewport().size_changed.connect(_fit)
+	_fit()
 
+
+## Rebuilds this screen in the palette [G2GUi] has now. What a theme change calls.
+##
+## [b]Rebuilt, not recoloured.[/b] Every box and colour here is set once, as an override,
+## when the screen is built; walking the tree to find each one again is a second copy of
+## the build that drifts from the first. Building again is the one that cannot.
+func restyle() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_nav.clear()
+	_build()
+	_fit()
+	if visible:
+		_refresh_sidebar()
+		_show_page(_page)
+
+
+func _build() -> void:
+	theme = G2GUi.theme()
 	add_child(_backdrop())
 
 	var centre := CenterContainer.new()
@@ -82,9 +105,6 @@ func _ready() -> void:
 
 	columns.add_child(_sidebar())
 	columns.add_child(_content())
-
-	get_viewport().size_changed.connect(_fit)
-	_fit()
 
 
 ## Opens on [param page], or on the page it was last left on.
@@ -156,6 +176,7 @@ void fragment() {
 """
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
+	mat.set_shader_parameter(&"tint", G2GUi.BACKDROP)
 	back.material = mat
 	return back
 
@@ -176,7 +197,7 @@ func _sidebar() -> Control:
 	brand.add_theme_constant_override(&"separation", 10)
 	var mark := PanelContainer.new()
 	mark.add_theme_stylebox_override(&"panel", G2GUi.box(G2GUi.ACCENT, 8, Color(0, 0, 0, 0), 0, Vector4(8, 2, 8, 3)))
-	mark.add_child(G2GUi.label("g2g", G2GUi.SIZE_SMALL + 1, Color(0.03, 0.09, 0.08), true))
+	mark.add_child(G2GUi.label("g2g", G2GUi.SIZE_SMALL + 1, G2GUi.ink_on(G2GUi.ACCENT), true))
 	brand.add_child(mark)
 	brand.add_child(G2GUi.label("fast", G2GUi.SIZE_TITLE - 4, G2GUi.TEXT, true))
 	col.add_child(brand)
@@ -290,6 +311,8 @@ func _show_page(id: StringName) -> void:
 	match id:
 		&"general":
 			_page_general()
+		&"hud":
+			_page_hud()
 		&"gameplay":
 			_page_gameplay()
 		&"video":
@@ -314,6 +337,49 @@ func _page_general() -> void:
 	var chat := _card("Chat")
 	_select_setting(chat, &"chat_window", "Chat box", "Auto hides it on a server that already shows chat somewhere else.",
 		[[&"auto", "Auto"], [&"on", "Always"], [&"off", "Never"]])
+
+
+func _page_hud() -> void:
+	var look := _card("Theme")
+	var themes: Array = []
+	for t in G2GUi.THEMES:
+		themes.append([t["id"], str(t["name"])])
+	_select_setting(look, &"ui_theme", "Theme", "The menus and the HUD. %s cycles through them." % _key_for(&"g2g_theme_next"), themes)
+
+	var layout := _card("Layout")
+	if _host_has("menu_layout_presets"):
+		_select_live(layout, "Start from", "Sets every switch below at once; change anything after.",
+			[[&"", "Choose…"]] + (host.call("menu_layout_presets") as Array), &"", true,
+			func(value: Variant) -> void:
+				if StringName(str(value)) != &"" and _host_has("menu_apply_layout_preset"):
+					host.call("menu_apply_layout_preset", StringName(str(value)))
+					toast("Layout applied.")
+					_show_page(&"hud")
+		)
+	if _host_has("menu_edit_layout"):
+		var move := Button.new()
+		move.text = "Move HUD elements"
+		move.pressed.connect(func() -> void: host.call("menu_edit_layout"))
+		_row(layout, "Arrange", "Drag the timer, the keys, the status line and the spectator list wherever you want them.", move)
+	_select_setting(layout, &"timer_position", "Timer position", "Where the clock sits, unless you have dragged it.",
+		[[&"bottom_centre", "Bottom centre"], [&"bottom_left", "Bottom left"], [&"bottom_right", "Bottom right"],
+		[&"top_left", "Top left"], [&"top_centre", "Top centre"], [&"top_right", "Top right"]])
+	_slider_setting(layout, &"timer_size", "Timer size", "", 18.0, 56.0, 1.0,
+		func(v: float) -> String: return "%d" % roundi(v))
+	_switch_setting(layout, &"timer_compact", "Compact", "Style, track, stage and statistics on one line.")
+
+	var timer := _card("On the timer")
+	_switch_setting(timer, &"timer_show_time", "Time", "The running time itself.")
+	_switch_setting(timer, &"timer_show_track", "Style & track", "")
+	_switch_setting(timer, &"timer_show_stage", "Stage", "Stage 2 / 5, on a map with stages.")
+	_switch_setting(timer, &"timer_show_stats", "Jumps, strafes & sync", "")
+	_switch_setting(timer, &"timer_show_standing", "Record & rank", "The record, your best and your place.")
+	_select_setting(timer, &"timer_comparison", "Split against", "",
+		[[&"pb", "Your best"], [&"wr", "The record"], [&"none", "Nothing"]])
+
+	var around := _card("Around the screen")
+	_switch_setting(around, &"show_status", "Status line", "The map, time left and the rules, along the top.")
+	_switch_setting(around, &"show_spectators", "Who is spectating you", "When the server shares it.")
 
 
 func _page_gameplay() -> void:
@@ -639,9 +705,11 @@ func _primary_button(text: String) -> Button:
 	b.add_theme_stylebox_override(&"hover", G2GUi.box(G2GUi.ACCENT_DEEP.lightened(0.12), G2GUi.RADIUS_SMALL, Color(0, 0, 0, 0), 0, pad))
 	b.add_theme_stylebox_override(&"pressed", G2GUi.box(G2GUi.ACCENT, G2GUi.RADIUS_SMALL, Color(0, 0, 0, 0), 0, pad))
 	b.add_theme_stylebox_override(&"focus", G2GUi.box(Color(0, 0, 0, 0), G2GUi.RADIUS_SMALL, Color(G2GUi.ACCENT, 0.8), 2))
-	b.add_theme_color_override(&"font_color", Color(0.96, 1.0, 0.99))
-	b.add_theme_color_override(&"font_hover_color", Color(1, 1, 1))
-	b.add_theme_color_override(&"font_focus_color", Color(0.96, 1.0, 0.99))
+	var ink := G2GUi.ink_on(G2GUi.ACCENT_DEEP)
+	b.add_theme_color_override(&"font_color", ink)
+	b.add_theme_color_override(&"font_hover_color", ink)
+	b.add_theme_color_override(&"font_pressed_color", G2GUi.ink_on(G2GUi.ACCENT))
+	b.add_theme_color_override(&"font_focus_color", ink)
 	b.add_theme_font_override(&"font", G2GUi.bold())
 	return b
 

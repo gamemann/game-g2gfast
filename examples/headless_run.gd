@@ -7,6 +7,8 @@ const G2GConfig := preload("../game/g2g_config.gd")
 const G2GEffects := preload("../game/g2g_effects.gd")
 const G2GGame := preload("../game/g2g_game.gd")
 const G2GMapCatalogue := preload("../game/g2g_map_catalogue.gd")
+const G2GEvents := preload("../game/net/g2g_events.gd")
+const G2GMap := preload("../game/g2g_map.gd")
 const G2GMovement := preload("../game/g2g_movement.gd")
 const G2GPlayer := preload("../game/g2g_player.gd")
 const G2GReplays := preload("../game/g2g_replays.gd")
@@ -26,13 +28,13 @@ const BhopIntro := preload("res://maps/bhop_g2g_intro.gd")
 const SurfIntro := preload("res://maps/surf_g2g_intro.gd")
 const BhopStages := preload("res://maps/bhop_g2g_stages.gd")
 
-const CHECKS := 233
+const CHECKS := 241
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 26
+const SECTIONS := 27
 
 ## The surf map's start height, for the bonus-route bounds check below.
 const START_Y := 2048.0
@@ -92,6 +94,9 @@ func _run() -> void:
 	await _test_progression()
 	await _test_spectating()
 	await _test_effects_and_the_run()
+	# Last, on its own map load: the stages map's surf bonus is sensitive to what ran
+	# before it (`[bank-hang-1]`), and a section placed ahead of it moved that ride.
+	await _test_restart_key()
 
 	print("")
 	print("%d passed, %d failed, %d of %d sections ran to their last line" % [
@@ -1005,6 +1010,65 @@ func _test_stage_command() -> void:
 	_check(back.ok and bot.global_position.distance_to((back.value as DotTimerZone).destination) < 0.01
 			and int((back.value as DotTimerZone).number) == 1,
 		"`!rs` before any stage line is stage 1")
+
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	_done()
+
+
+## R and R twice: `G2GGame.restart`, which both the offline client and the server's
+## RESTART request call. One R is the start of the stage you are in, and the start of the
+## track when you are in none; two are the main start zone, from a bonus too.
+func _test_restart_key() -> void:
+	_section("R once is the stage, R twice is the start")
+	var loaded: DotResult = await game.change_map(&"bhop_g2g_intro")
+	_check(loaded.ok, "bhop_g2g_intro loads, for its staged main route and its bonuses")
+	await get_tree().physics_frame
+	var bot: G2GPlayer = game.players[&"bot"]
+	var map: G2GMap = game.current_map_node() as G2GMap
+	game.timers.set_player_track(&"bot", DotTimerTrack.MAIN)
+	game.spawn_player(&"bot")
+	await get_tree().physics_frame
+	var start := bot.global_position
+
+	# A run past the first stage line, put there directly: driving one is what the route
+	# sections are for, and what is being asked here is only where R sends it.
+	bot.teleport(start + Vector3(0.0, 0.0, -40.0), 0.0)
+	bot.timer.run.status = DotTimerRun.Status.RUNNING
+	bot.timer.run.stage = 2
+	var once := game.restart(&"bot", G2GEvents.RESTART_STAGE)
+	var stage_two := game.timers.zones.stage_zone(DotTimerTrack.MAIN, 2)
+	_check(once.ok and stage_two != null and bot.global_position.distance_to(stage_two.destination) < 0.01,
+		"one R in stage 2 is the start of stage 2", "%s" % bot.global_position)
+	_check(not bot.timer.run.is_running(), "and stops the run, because a stage restart is practice")
+
+	bot.teleport(start + Vector3(0.0, 0.0, -40.0), 0.0)
+	bot.timer.run.status = DotTimerRun.Status.RUNNING
+	bot.timer.run.stage = 1
+	var _first := game.restart(&"bot", G2GEvents.RESTART_STAGE)
+	_check(bot.global_position.distance_to(start) < 0.01, "in stage 1 it is the start zone")
+
+	bot.teleport(start + Vector3(0.0, 0.0, -40.0), 0.0)
+	bot.timer.run.status = DotTimerRun.Status.STOPPED
+	bot.timer.run.stage = 3
+	var _idle := game.restart(&"bot", G2GEvents.RESTART_STAGE)
+	_check(bot.global_position.distance_to(start) < 0.01, "and with no run going it is the start zone too")
+
+	game.timers.set_player_track(&"bot", 1)
+	var bonus_spawn := map.spawn_for(1) if map != null else Vector3.ZERO
+	var _bonus := game.restart(&"bot", G2GEvents.RESTART_STAGE)
+	_check(bot.timer.track == 1 and bot.global_position.distance_to(bonus_spawn) < 1.0,
+		"on a bonus one R is the bonus's start", "%s vs %s" % [bot.global_position, bonus_spawn])
+	var _twice := game.restart(&"bot", G2GEvents.RESTART_MAIN)
+	_check(bot.timer.track == DotTimerTrack.MAIN and bot.global_position.distance_to(start) < 0.01,
+		"and two are the main start zone")
+
+	var watcher := game.add_player(&"watcher", "Watcher", false)
+	await get_tree().physics_frame
+	var _watching := game.spectate.watch(&"watcher", &"bot")
+	var _r := game.restart(&"watcher", G2GEvents.RESTART_STAGE)
+	_check(not game.spectate.is_spectating(&"watcher"), "R stops spectating: a player who pressed it wants to run")
+	game.remove_player(&"watcher")
 
 	game.spawn_player(&"bot")
 	await get_tree().physics_frame

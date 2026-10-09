@@ -2,6 +2,7 @@ extends Node
 
 const G2GBindings := preload("g2g_bindings.gd")
 const G2GPaths := preload("g2g_paths.gd")
+const G2GUi := preload("ui/g2g_ui.gd")
 const G2GVote := preload("g2g_vote.gd")
 
 ## Settings, audio, effects and a console, on a client whose whole output is a number.
@@ -132,6 +133,51 @@ static func schema() -> DotSettingsSchema:
 	s.add(DotSettingsDef.boolean(&"show_crosshair", true, &"running").with_scope(
 		DotSettingsDef.Scope.ACCOUNT
 	))
+
+	# [b]The timer's layout, as the player's own.[/b] Timer plugins in this genre let a
+	# server pick one of a few layouts; here every line of the clock's block is a switch,
+	# the block goes where the player drags it, and all of it is ACCOUNT scope, because a
+	# runner who arranged their screen once arranged it for every server. Each line is one
+	# of `DotTimerHud`'s own fields, so turning one off removes it from the block rather
+	# than leaving a gap. See G2GHud.apply_layout.
+	s.add(DotSettingsDef.boolean(&"timer_show_time", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("The running time itself."))
+	s.add(DotSettingsDef.boolean(&"timer_show_track", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("The style and the track, beside the clock."))
+	s.add(DotSettingsDef.boolean(&"timer_show_stage", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Stage 2 / 5, on a map that has stages."))
+	s.add(DotSettingsDef.boolean(&"timer_show_stats", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Jumps, strafes and sync."))
+	s.add(DotSettingsDef.boolean(&"timer_show_standing", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("The record, your best and your place."))
+	s.add(DotSettingsDef.choice(&"timer_comparison", &"pb", [&"pb", &"wr", &"none"] as Array[StringName], &"hud")
+		.with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("What the split is against: your best, the record, or nothing."))
+	s.add(DotSettingsDef.boolean(&"timer_compact", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Style, track, stage and statistics on one line rather than four."))
+	s.add(DotSettingsDef.integer(&"timer_size", 30, 18, 56, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("The clock's size; the rest of the block scales with it."))
+	s.add(DotSettingsDef.choice(&"timer_position", &"bottom_centre", [
+		&"bottom_centre", &"bottom_left", &"bottom_right", &"top_left", &"top_centre", &"top_right",
+	] as Array[StringName], &"hud")
+		.with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Where the clock's block sits, unless it has been dragged."))
+	s.add(DotSettingsDef.boolean(&"show_status", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("The map, time left and rules along the top."))
+	s.add(DotSettingsDef.boolean(&"show_spectators", true, &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Who is spectating you, when the server shares it (sv_spec_list)."))
+	# Where each dragged piece of the HUD sits, as `{"timer": [x, y], ...}`: the CENTRE of
+	# each, as a fraction of the window, so a layout arranged on a laptop lands in the same
+	# place on a 4K screen. Empty is every piece in its default place. Text rather than one
+	# setting per piece, because the pieces are the HUD's to name and the schema should not
+	# need a migration to add one.
+	s.add(DotSettingsDef.text(&"hud_positions", "", &"hud").with_scope(DotSettingsDef.Scope.ACCOUNT)
+		.with_description("Where each dragged HUD element sits. Empty is the default layout."))
+
+	# The look of the menus and the HUD. ACCOUNT, like the layout: it is the player's.
+	s.add(DotSettingsDef.choice(&"ui_theme", &"midnight", G2GUi.theme_ids(), &"hud").with_scope(
+		DotSettingsDef.Scope.ACCOUNT
+	).with_description("The colours of the menus and the HUD."))
 	# Every start, stage and finish drawn as a glowing box. On by default: a line a runner
 	# cannot see is a line they find by failing. See G2GZoneOutlines.
 	s.add(DotSettingsDef.boolean(&"show_zones", true, &"running").with_scope(

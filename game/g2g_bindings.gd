@@ -52,6 +52,7 @@ const ROWS: Array[Dictionary] = [
 
 	{"action": &"g2g_help", "setting": &"bind_help", "label": "Help", "default": "H", "group": "Interface"},
 	{"action": &"g2g_servers", "setting": &"bind_servers", "label": "Server list", "default": "F3", "group": "Interface"},
+	{"action": &"g2g_theme_next", "setting": &"bind_theme_next", "label": "Next HUD theme", "default": "P", "group": "Interface"},
 ]
 
 

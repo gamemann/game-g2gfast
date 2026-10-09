@@ -140,6 +140,16 @@ func _module_load() -> DotResult:
 				bridge.broadcast_rules()
 	)
 
+	# Who is watching you. Sent to the watched player and their watchers; off sends
+	# nothing at all, and clears every list already on screen.
+	add_cvar("sv_spec_list", "1" if game.config.spectator_list else "0",
+		"Whether players see who is spectating them. 0 makes spectating anonymous.").changed.connect(
+		func(_old: String, new_value: String) -> void:
+			game.config.spectator_list = new_value != "0"
+			if bridge != null:
+				bridge.broadcast_spectators()
+	)
+
 	# --- Commands ----------------------------------------------------------------
 	add_command("g2g_status", _cmd_status, "What this server is doing", "").with_chat()
 	add_command("g2g_restart", _cmd_restart, "Back to the start", "").with_chat()
@@ -726,8 +736,8 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 				var best := game.spectate.watch_best(voter)
 				services.notice(
 					peer,
-					("Watching %s. !spec off to stop."
-						% game.spectate.target_of(voter)) if best.ok
+					("Watching %s. Click to switch; R or !spec off to stop."
+						% _shown_name(game.spectate.target_of(voter))) if best.ok
 					else best.error.message
 				)
 			elif args[0] == "off" or args[0] == "stop":
@@ -743,7 +753,7 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 				)
 				services.notice(
 					peer,
-					("Watching %s." % game.spectate.target_of(voter)) if res.ok
+					("Watching %s." % _shown_name(game.spectate.target_of(voter))) if res.ok
 					else res.error.message
 				)
 
@@ -755,7 +765,7 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 				var res := game.spectate.next_target(voter)
 				services.notice(
 					peer,
-					("Watching %s." % game.spectate.target_of(voter)) if res.ok
+					("Watching %s." % _shown_name(game.spectate.target_of(voter))) if res.ok
 					else res.error.message
 				)
 
@@ -771,24 +781,39 @@ func _on_chat_command(peer: int, command: String, args: PackedStringArray) -> vo
 			pass
 
 
+## A player's name for a reply, from their id. A reply that says "Watching u12." is
+## a reply in the game's own bookkeeping.
+func _shown_name(id: StringName) -> String:
+	var player = game.players.get(id) if game != null else null
+	return str(player.display_name) if player != null else String(id)
+
+
 ## A player id by display name, or "".
 ##
-## Case-insensitive and by prefix, which is what every server in this genre does —
-## `!spec ad` finds Ada. The first match wins and the order is the roster's, which is
-## stable; the alternative is refusing an ambiguous prefix, and a player who typed two
-## letters and got "be more specific" types three letters and gives up.
+## Case-insensitive, and the best kind of match wins: the whole name, then the start of
+## one, then anywhere in one — `!spec ad` finds Ada, and `!spec kitsune` finds
+## "xX_kitsune_Xx", whose name nobody can type from the front. Within a kind the first in
+## the roster wins, which is stable; the alternative is refusing an ambiguous match, and a
+## player who typed two letters and got "be more specific" types three letters and gives up.
 func _player_named(text: String) -> StringName:
 	var wanted := text.strip_edges().to_lower()
 
 	if wanted == "":
 		return &""
 
+	var prefix := &""
+	var inside := &""
+
 	for session in server.sessions():
 		var name := session.display_name.to_lower()
-		if name == wanted or name.begins_with(wanted):
+		if name == wanted:
 			return _player_id(session)
+		if prefix == &"" and name.begins_with(wanted):
+			prefix = _player_id(session)
+		elif inside == &"" and name.contains(wanted):
+			inside = _player_id(session)
 
-	return &""
+	return prefix if prefix != &"" else inside
 
 
 func _module_unload() -> void:

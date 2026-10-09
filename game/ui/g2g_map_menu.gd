@@ -43,13 +43,31 @@ var _footer: Label = null
 
 
 func _ready() -> void:
-	theme = G2GUi.theme()
 	G2GUi.fill_parent(self)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
+	_build()
+
+
+## Rebuilds this screen in the palette [G2GUi] has now. What a theme change calls.
+##
+## [b]Rebuilt, not recoloured.[/b] Every box and colour here is set once, as an override,
+## when the screen is built; walking the tree to find each one again is a second copy of
+## the build that drifts from the first. Building again is the one that cannot.
+func restyle() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_build()
+	if visible:
+		_rebuild()
+
+
+func _build() -> void:
+	theme = G2GUi.theme()
 
 	var back := ColorRect.new()
-	back.color = Color(0.02, 0.03, 0.05, 0.55)
+	back.color = Color(G2GUi.BACKDROP, 0.55)
 	G2GUi.fill_parent(back)
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(back)

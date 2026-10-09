@@ -36,13 +36,13 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 178
+const CHECKS := 193
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 26
+const SECTIONS := 27
 
 var _passed := 0
 var _failed := 0
@@ -97,6 +97,7 @@ func _run() -> void:
 		_test_rules_wire()
 		_test_blind_and_beacon()
 		_test_hunters_reach_the_client()
+		_test_spectating_reaches_the_client()
 		_test_leave()
 	_report()
 
@@ -1355,6 +1356,100 @@ func _test_blind_and_beacon() -> void:
 		"and leaves the player relevant, as every player here always is"
 	)
 
+	_server_bridge.remove_player(8)
+	_exchange()
+	_done()
+
+
+## `!spec`, a click, and who is watching — over the link.
+##
+## [b]Spectating changed the server and nothing else.[/b] The server's manager decided,
+## the server replied "Watching Bea." in chat, and the client's camera stayed on the
+## client's own player, because the client's manager is a mirror and no message told it
+## anything. So this asserts on the CLIENT: its mirror is watching, its camera has a pose
+## to follow, and the list of who is watching arrives — and stops arriving the moment the
+## operator says spectating is anonymous.
+func _test_spectating_reaches_the_client() -> void:
+	_section("spectating reaches the client, and who is watching")
+
+	var bea := _server_bridge.add_player(3, 8, "Bea")
+	_check(bea.ok, "a second player to watch joins", str(bea.error) if not bea.ok else "")
+	_exchange()
+	_steps(4)
+
+	var told: Array = [null]
+	var lists := {}
+	var on_spec := func(target: StringName, target_name: String) -> void: told[0] = [target, target_name]
+	var on_list := func(target: StringName, names: PackedStringArray) -> void: lists[target] = names
+	_client_bridge.spectate_received.connect(on_spec)
+	_client_bridge.spectators_received.connect(on_list)
+
+	_client_bridge.ask_spectate(G2GEvents.SPECTATE_NEXT)
+	_exchange()
+	_steps(2)
+
+	var ada := &"u%d" % SESSION
+	var target := _server_game.spectate.target_of(ada)
+	_check(target == &"u8", "a click asks the server, and the server picks the next player (%s)" % target)
+	_check(told[0] != null and told[0][0] == &"u8" and told[0][1] == "Bea",
+		"the client is told whom, by name", str(told[0]))
+	var mirror := _client_game.spectate
+	_check(mirror != null and mirror.is_spectating(ada) and mirror.target_of(ada) == &"u8",
+		"and its own mirror is watching the same player")
+	_check(mirror != null and mirror.camera_for(ada) != Transform3D.IDENTITY,
+		"so its camera has a pose to follow, from the players it already draws")
+	_check(lists.has(&"u8") and Array(lists[&"u8"]).has("Ada"),
+		"the watcher is told who is watching the player they watch", str(lists))
+
+	_server_game.config.spectator_list = false
+	_server_bridge.broadcast_spectators()
+	_exchange()
+	_check(lists.has(&"u8") and (lists[&"u8"] as PackedStringArray).is_empty(),
+		"sv_spec_list 0 clears the list on every screen, rather than leaving the last one")
+	_client_bridge.ask_spectate(G2GEvents.SPECTATE_PREVIOUS)
+	_exchange()
+	_check((lists[&"u8"] as PackedStringArray).is_empty(),
+		"and nothing is sent while it is off, whoever changes whom they watch")
+	_server_game.config.spectator_list = true
+	_server_bridge.broadcast_spectators()
+	_exchange()
+	_check(Array(lists.get(&"u8", PackedStringArray())).has("Ada"), "and turning it back on sends it again")
+
+	# R: one press stops watching and restarts. A runner who pressed R wants to run.
+	_client_bridge.ask_restart(G2GEvents.RESTART_STAGE)
+	_exchange()
+	_steps(2)
+	_check(not _server_game.spectate.is_spectating(ada), "R stops spectating on the server")
+	_check(told[0] != null and told[0][0] == &"" and mirror != null and not mirror.is_spectating(ada),
+		"and the client is told it is back in its own view")
+
+	# Two Rs from a bonus: back to the MAIN track's start, and everybody is told the track.
+	_client_bridge.ask_track(1)
+	_exchange()
+	_steps(2)
+	var on_bonus := _server_game.timers.timer_for(ada).track == 1
+	_client_bridge.ask_restart(G2GEvents.RESTART_STAGE)
+	_exchange()
+	_check(on_bonus and _server_game.timers.timer_for(ada).track == 1,
+		"one R on a bonus restarts the bonus")
+	_client_bridge.ask_restart(G2GEvents.RESTART_MAIN)
+	_exchange()
+	_steps(2)
+	_check(_server_game.timers.timer_for(ada).track == DotTimerTrack.MAIN,
+		"a double tap from a bonus goes back to the main track")
+	_check(_client_game.timers.timer_for(ada).track == DotTimerTrack.MAIN,
+		"and the client is told, as a track change from the menu is")
+
+	# A client from before the body existed sends RESTART with nothing in it, which must
+	# still mean what its R meant: the start of the track it is on.
+	var request := G2GRequest.new(G2GEvents.Ask.RESTART, PackedByteArray())
+	request.sender_peer_id = CLIENT_PEER
+	_server_bridge._on_request(request)
+	_check(_server_game.timers.timer_for(ada).track == DotTimerTrack.MAIN,
+		"an empty RESTART body still restarts, on the track the player is on")
+
+	_client_bridge.spectate_received.disconnect(on_spec)
+	_client_bridge.spectators_received.disconnect(on_list)
 	_server_bridge.remove_player(8)
 	_exchange()
 	_done()

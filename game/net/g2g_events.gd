@@ -59,6 +59,15 @@ enum Kind {
 	## current}]` as JSON. Sent only to a player holding the changemap flag, on asking.
 	## Appended, for the reason above.
 	MAPS,
+	## Who this client is watching, server to that client only: the target's player key
+	## (empty for nobody) and the camera mode. The client's own spectator manager is a
+	## mirror, told rather than asked, and its camera follows the target from the poses it
+	## already has. Appended.
+	SPECTATE,
+	## Who is watching a player: their key and the names of their spectators, to that
+	## player and to everybody watching them. Only sent while `sv_spec_list` is on; an
+	## empty list clears it. Appended.
+	SPECTATORS,
 }
 
 enum Ask {
@@ -82,7 +91,31 @@ enum Ask {
 	## The M screen: an empty id asks for the map list, an id asks to change to it. Both
 	## are refused unless the asker holds the changemap flag. Appended.
 	MAPS,
+	## Spectating, from a click rather than a chat line: one of the SPECTATE_* steps.
+	## Appended.
+	SPECTATE,
 }
+
+## [constant Ask.SPECTATE]'s body. Numbered rather than signed because `write_int` is a
+## varint and a varint is never negative.
+const SPECTATE_STOP := 0
+const SPECTATE_NEXT := 1
+const SPECTATE_PREVIOUS := 2
+const SPECTATE_BEST := 3
+
+## [constant Ask.RESTART]'s body. An empty body reads as [constant RESTART_TRACK], which is
+## exactly what every client before the body existed meant by R.
+##
+## TRACK: the start of the track you are on. STAGE: the start of the stage you are in, or
+## the track's start when you are in none. MAIN: the main track's start zone, from anywhere
+## (a bonus included) — the double tap.
+const RESTART_TRACK := 0
+const RESTART_STAGE := 1
+const RESTART_MAIN := 2
+
+## Spectator names one SPECTATORS event carries. A server full of people watching one
+## runner is the case this exists for, and thirty-two names is more than fits on a screen.
+const SPECTATORS_MAX := 32
 
 const NAME_BYTES := 64
 const AVATAR_BYTES := 4096
@@ -539,3 +572,43 @@ static func write_map_id(id: String) -> PackedByteArray:
 
 static func read_map_id(reader: DotNetReader) -> String:
 	return reader.read_string(NAME_BYTES)
+
+
+# --- SPECTATE / SPECTATORS -------------------------------------------------------
+
+## Whom a client is watching. [param target] is a player key ("u12", or the ghost's), empty
+## for nobody; [param mode] is a `DotSpectatorView.Mode`.
+static func write_spectate(target: String, mode: int, target_name: String = "") -> PackedByteArray:
+	var writer := _w()
+	writer.write_string(target, NAME_BYTES)
+	writer.write_uint(clampi(mode, 0, 255), 8)
+	writer.write_string(target_name, NAME_BYTES)
+	return writer.to_bytes()
+
+
+static func read_spectate(reader: DotNetReader) -> Dictionary:
+	var target := reader.read_string(NAME_BYTES)
+	var mode := reader.read_uint(8)
+	var target_name := reader.read_string(NAME_BYTES)
+	return {"ok": reader.ok(), "target": target, "mode": mode, "name": target_name}
+
+
+## Who is watching [param target]: up to [constant SPECTATORS_MAX] names, the rest dropped
+## from the end. A count first, so a reader never reads past what was written.
+static func write_spectators(target: String, names: PackedStringArray) -> PackedByteArray:
+	var writer := _w()
+	writer.write_string(target, NAME_BYTES)
+	var count := mini(names.size(), SPECTATORS_MAX)
+	writer.write_varint(count)
+	for i in range(count):
+		writer.write_string(names[i], NAME_BYTES)
+	return writer.to_bytes()
+
+
+static func read_spectators(reader: DotNetReader) -> Dictionary:
+	var target := reader.read_string(NAME_BYTES)
+	var count := mini(reader.read_varint(), SPECTATORS_MAX)
+	var names := PackedStringArray()
+	for i in range(count):
+		names.append(reader.read_string(NAME_BYTES))
+	return {"ok": reader.ok(), "target": target, "names": names}

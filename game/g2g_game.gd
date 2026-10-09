@@ -6,6 +6,7 @@ const G2GCamera := preload("g2g_camera.gd")
 const G2GCombat := preload("g2g_combat.gd")
 const G2GConfig := preload("g2g_config.gd")
 const G2GEffects := preload("g2g_effects.gd")
+const G2GEvents := preload("net/g2g_events.gd")
 const G2GHunters := preload("g2g_hunters.gd")
 const G2GMap := preload("g2g_map.gd")
 const G2GMapCatalogue := preload("g2g_map_catalogue.gd")
@@ -635,6 +636,24 @@ func _build_progress() -> void:
 		progress = null
 
 
+## Who is watching whom. On a server it decides; on a client it is a mirror the bridge
+## tells (`DotSpectatorManager.authoritative` follows the game's), and only its camera is
+## used. After combat on a server, because its rules read whether the deathmatch is on.
+func _build_spectate() -> void:
+	spectate = G2GSpectate.new()
+	spectate.name = "Spectate"
+	spectate.game = self
+	add_child(spectate)
+
+	var watching := spectate.setup()
+
+	if not watching.ok:
+		DotLog.warn(CHANNEL, "spectating is off", {"why": watching.error.message})
+		remove_child(spectate)
+		spectate.queue_free()
+		spectate = null
+
+
 ## The deathmatch, the hunters and the props, if this server runs any.
 ##
 ## [b]Before `_build_maps`, and that is load-bearing.[/b] All three connect to
@@ -648,6 +667,11 @@ func _build_progress() -> void:
 ## Built and off costs a node and three signal connections.
 func _build_layers() -> void:
 	if not authoritative:
+		# Spectating is the one layer a client needs a copy of: the camera is drawn
+		# here, from the poses this client has. Until 2026-10-08 this return came first
+		# and a client had no spectator manager at all, so `_drive_spectator_camera`
+		# returned on its first line every frame and `!spec` moved no client's camera.
+		_build_spectate()
 		return
 
 	if config.deathmatch or config.hunters:
@@ -686,18 +710,7 @@ func _build_layers() -> void:
 	# Built whatever else is on. A player watching a runner needs no combat, no hunters
 	# and no props, and refusing them the camera because the server is a plain timer
 	# server would be refusing it on every server this game was written for.
-	spectate = G2GSpectate.new()
-	spectate.name = "Spectate"
-	spectate.game = self
-	add_child(spectate)
-
-	var watching := spectate.setup()
-
-	if not watching.ok:
-		DotLog.warn(CHANNEL, "spectating is off", {"why": watching.error.message})
-		remove_child(spectate)
-		spectate.queue_free()
-		spectate = null
+	_build_spectate()
 
 	if config.deathmatch or config.hunters:
 		effects = G2GEffects.new()
@@ -1557,6 +1570,42 @@ func restart_stage(id: StringName) -> DotResult:
 	while number > 1 and _no_restart_reason(id, number) != null:
 		number -= 1
 	return timers.request_stage(id, number)
+
+
+## R, and R twice. [param mode] is one of `G2GEvents.RESTART_*`:
+##
+## - TRACK: the start of the track the player is on. What R always was, and what `!r` is.
+## - STAGE: one R. The start of the stage the player is in, on a map with stages and a run
+##   past its first line — the genre's `!rs`, which stops the run, because a stage restart
+##   is practice. Anywhere else (no run, stage 1, a map with no stages) it is TRACK, so a
+##   single R in a start zone or on a linear map still means "again from the top".
+## - MAIN: two Rs. The main track's start zone, from a bonus as well, which is the only
+##   way back to the main route that does not need a command.
+##
+## [b]Spectating ends here too.[/b] A player who pressed R wants to run, and leaving them
+## watching somebody else while their own body was moved is a key that looks broken.
+func restart(id: StringName, mode: int) -> DotResult:
+	if not players.has(id):
+		return DotResult.fail(DotError.CODE_STATE, "No such player.")
+
+	if spectate != null and spectate.is_spectating(id):
+		spectate.stop(id)
+
+	var found := timers.player(id) if timers != null else null
+	var track := found.timer.track if found != null else DotTimerTrack.MAIN
+
+	match mode:
+		G2GEvents.RESTART_STAGE:
+			var run := found.timer.run if found != null else null
+			var staged := timers.stage_count(track) > 1
+			if staged and run != null and run.is_running() and run.stage > 1:
+				return restart_stage(id)
+		G2GEvents.RESTART_MAIN:
+			if track != DotTimerTrack.MAIN:
+				var _switched := timers.set_player_track(id, DotTimerTrack.MAIN)
+
+	spawn_player(id)
+	return DotResult.success(null)
 
 
 ## The reason stage [param number] on [param id]'s track cannot be restarted, or null.

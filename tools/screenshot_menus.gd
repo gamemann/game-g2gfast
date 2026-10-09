@@ -21,7 +21,10 @@ const G2GClient := preload("../game/g2g_client.gd")
 ## menus_zone_editor    Z, one corner placed, the box following the aim
 ## menus_maplist        M: the map list, first page
 ## menus_maplist_page2  and the next
-## menus_general        the menu's five pages
+## menus_general        the menu's six pages
+## menus_hud
+## menus_hud_paper      the same page in the light theme
+## menus_hud_editor     "Move HUD elements", with the clock dragged up and left
 ## menus_gameplay
 ## menus_video
 ## menus_audio
@@ -68,6 +71,13 @@ func _initialize() -> void:
 	root.add_child(_client)
 
 	_steps = [
+		# Settings in memory from here on: the frames below flip the theme and drag the
+		# HUD, and a screenshot tool that saved those into the player's own settings file
+		# would change their game.
+		func() -> void:
+			_client.presentation.settings.local_store = DotSettingsStoreMemory.new()
+			_client.presentation.settings.load_now()
+			_client.presentation.apply_all(),
 		func() -> void: _capture("menus_play"),
 		func() -> void:
 			_aim()
@@ -107,7 +117,21 @@ func _initialize() -> void:
 			_client.map_menu.close()
 			_client.open_menu(&"general"),
 		func() -> void: _capture("menus_general"),
-		func() -> void: _client.open_menu(&"gameplay"),
+		func() -> void: _client.open_menu(&"hud"),
+		func() -> void: _capture("menus_hud"),
+		func() -> void: _client.presentation.settings.set_value(&"ui_theme", &"paper"),
+		func() -> void: _capture("menus_hud_paper"),
+		func() -> void:
+			_client.presentation.settings.set_value(&"ui_theme", &"midnight")
+			_client.open_hud_editor(),
+		func() -> void:
+			var clock: Rect2 = _client.hud.element_rect(&"timer")
+			_client.hud_editor.drag(&"timer", clock.get_center(), Vector2(320, 220)),
+		func() -> void: _capture("menus_hud_editor"),
+		func() -> void:
+			_client.hud_editor.reset_all()
+			_client.hud_editor.close()
+			_client.open_menu(&"gameplay"),
 		func() -> void: _capture("menus_gameplay"),
 		func() -> void: _client.open_menu(&"video"),
 		func() -> void: _capture("menus_video"),

@@ -12,6 +12,8 @@ const G2GMapMenu := preload("ui/g2g_map_menu.gd")
 const G2GZoneEditor := preload("g2g_zone_editor.gd")
 const G2GZoneOutlines := preload("g2g_zone_outlines.gd")
 const G2GHud := preload("g2g_hud.gd")
+const G2GHudEditor := preload("ui/g2g_hud_editor.gd")
+const G2GEvents := preload("net/g2g_events.gd")
 const G2GMenu := preload("ui/g2g_menu.gd")
 const G2GNetBridge := preload("net/g2g_net_bridge.gd")
 const G2GPlayer := preload("g2g_player.gd")
@@ -69,6 +71,9 @@ var help: G2GHelp = null
 ## The M screen: every map, a page at a time. See [G2GMapMenu].
 var map_menu: G2GMapMenu = null
 
+## Moving the HUD's pieces about: the menu's "Move HUD elements".
+var hud_editor: G2GHudEditor = null
+
 ## Every zone drawn as a glowing box. See [G2GZoneOutlines].
 var zone_outlines: G2GZoneOutlines = null
 
@@ -109,6 +114,26 @@ var _style_restored := false
 
 ## Players whose beacon this client already listens to, by instance id.
 var _beacons_heard: Dictionary = {}
+
+## When R was last pressed, for the double tap. See [method _restart_key].
+var _last_restart_msec := -100000
+
+## How close two presses of R have to be to count as one double tap, in milliseconds.
+##
+## Short, because the first press has already acted: one R puts a runner back at the start
+## of their stage the moment it lands, and only a second inside this window widens it to the
+## whole course. A long window would make "R, then R again after a fall" — two stage
+## restarts — read as a full restart.
+const DOUBLE_TAP_MSEC := 350
+
+## Whom this client is watching, by player key, or empty. The server's word, from the
+## SPECTATE event; offline, nobody.
+var spectating: StringName = &""
+
+## Who is watching whom, as the server last said: player key -> names. Kept for every key
+## rather than only the one on screen, so switching whom you watch shows their list at
+## once instead of after the next change to it.
+var spectator_lists: Dictionary = {}
 
 ## Who [member player] should be, whether or not that player exists yet.
 ##
@@ -357,6 +382,9 @@ func _adopt(candidate: G2GPlayer) -> void:
 	apply_client_settings()
 	_apply_rules_to_player()
 	_restore_style()
+	# A new player has a new sampler (offline), and it has to start the way the old one
+	# was left: a chat box open across a respawn or a map change is still open.
+	_refresh_suspended()
 
 
 func _build_netcode() -> DotResult:
@@ -423,6 +451,11 @@ func _build_netcode() -> DotResult:
 
 	bridge.hello_received.connect(_on_hello)
 	bridge.rules_received.connect(_on_rules)
+	bridge.spectate_received.connect(_on_spectate)
+	bridge.spectators_received.connect(func(target: StringName, names: PackedStringArray) -> void:
+		spectator_lists[target] = names
+		_show_spectator_list()
+	)
 	bridge.maps_received.connect(func(rows: Array) -> void: _open_map_menu(rows, "this server"))
 	bridge.map_refused.connect(_on_map_refused)
 	bridge.finish_received.connect(func(pid: int, time: float, rank: int) -> void:
@@ -731,6 +764,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
+	# Spectating: the two buttons cycle whom. Pressed only — a release is not a second
+	# click — and only once the pointer is the view's, so the click that captures it in a
+	# browser is not also a change of target.
+	if is_spectating() and event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		var button := (event as InputEventMouseButton).button_index
+		if button == MOUSE_BUTTON_LEFT or button == MOUSE_BUTTON_RIGHT:
+			cycle_spectate(button == MOUSE_BUTTON_RIGHT)
+			get_viewport().set_input_as_handled()
+			return
+
 	if event is InputEventMouseMotion:
 		if not mouse_drives_view():
 			return
@@ -772,10 +815,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_style_index = (_style_index + 1) % styles.size()
 		menu_choose_style(styles[_style_index].id)
 	elif event.is_action_pressed(&"g2g_restart"):
-		if _offline:
-			game.spawn_player(&"local")
-		else:
-			bridge.ask_restart()
+		_restart_key()
+	elif event.is_action_pressed(&"g2g_theme_next"):
+		cycle_theme()
 	# [b]Offline only.[/b] Online this changed THIS client's world and nobody else's:
 	# the server went on simulating the player on its own map, and every tick's
 	# correction put them back in a place their screen no longer had. A client's map
@@ -809,6 +851,134 @@ func _unhandled_input(event: InputEvent) -> void:
 				player.teleport(cp.position, cp.yaw)
 				player.controller.state.velocity = cp.velocity
 				player.controller.state.pitch = cp.pitch
+
+
+## R. Once: back to the start of the stage you are in (or of the track, when you are in
+## none). Twice inside [constant DOUBLE_TAP_MSEC]: back to the main start zone, from a bonus
+## too. See [method G2GGame.restart] for what each means.
+##
+## [b]The first press acts at once rather than waiting to see whether a second comes.[/b]
+## Waiting would put a third of a second of nothing between every R and the restart, on the
+## key a runner presses more than any other; and the second press only ever widens what the
+## first did, so having acted early costs nothing.
+func _restart_key(now_msec: int = -1) -> int:
+	var now := now_msec if now_msec >= 0 else Time.get_ticks_msec()
+	var mode := G2GEvents.RESTART_MAIN if now - _last_restart_msec <= DOUBLE_TAP_MSEC \
+		else G2GEvents.RESTART_STAGE
+	# A double tap is spent: a third press starts counting again rather than being a
+	# second double tap.
+	_last_restart_msec = now if mode == G2GEvents.RESTART_STAGE else -100000
+
+	if _offline:
+		var _restarted := game.restart(&"local", mode)
+		if hud != null:
+			hud.refresh_stage_reference()
+	elif bridge != null:
+		bridge.ask_restart(mode)
+	return mode
+
+
+# --- Themes and the HUD's layout -------------------------------------------------------
+
+## The next theme, round the end. P by default; the menu's General page picks one by name.
+func cycle_theme() -> void:
+	if presentation == null or presentation.settings == null:
+		return
+	var next := G2GUi.next_theme(StringName(str(presentation.settings.get_value(&"ui_theme"))))
+	var _set := presentation.settings.set_value(&"ui_theme", next)
+	if hud != null:
+		hud.notice("Theme: %s" % str(G2GUi.theme_named(next)["name"]))
+
+
+## Puts [param id] on every screen this client draws. The menus are rebuilt — see
+## [method G2GMenu.restyle] for why rebuilt rather than recoloured — and only when the
+## palette actually changed, because a settings change of any other kind lands here too.
+func apply_theme(id: StringName) -> void:
+	if not G2GUi.use(id):
+		return
+	for screen in [menu, help, map_menu, hud_editor]:
+		if screen != null:
+			screen.restyle()
+	if hud != null:
+		hud.apply_theme()
+
+
+## The layout editor, from the menu's "Move HUD elements".
+func open_hud_editor() -> void:
+	if hud_editor == null or hud == null:
+		return
+	if menu != null and menu.is_open():
+		menu.close()
+	# Here rather than when the editor is built: offline the HUD is made a few lines
+	# later, and online it is a JOIN away.
+	hud_editor.hud = hud
+	hud_editor.open()
+	_on_overlay_opened()
+
+
+## The HUD's layout settings as one dictionary, the shape [method G2GHud.apply_layout]
+## takes.
+func _hud_layout(st: DotSettingsManager) -> Dictionary:
+	return {
+		"show_time": st.get_bool(&"timer_show_time", true),
+		"show_track": st.get_bool(&"timer_show_track", true),
+		"show_stage": st.get_bool(&"timer_show_stage", true),
+		"show_stats": st.get_bool(&"timer_show_stats", true),
+		"show_standing": st.get_bool(&"timer_show_standing", true),
+		"comparison": st.get_string(&"timer_comparison", "pb"),
+		"compact": st.get_bool(&"timer_compact", true),
+		"size": st.get_int(&"timer_size", 30),
+		"position": st.get_string(&"timer_position", "bottom_centre"),
+		"show_status": st.get_bool(&"show_status", true),
+		"show_spectators": st.get_bool(&"show_spectators", true),
+		"positions": G2GHud.positions_from_text(st.get_string(&"hud_positions", "")),
+	}
+
+
+## Layouts a player can start from, as setting values. A preset writes settings and is
+## not one itself, so a player who picks one and then moves one thing has their own.
+const LAYOUT_PRESETS := {
+	&"classic": {
+		"timer_show_time": true, "timer_show_track": true, "timer_show_stage": true,
+		"timer_show_stats": true, "timer_show_standing": true, "timer_compact": true,
+		"timer_size": 30, "timer_position": &"bottom_centre", "show_speed": true,
+		"show_splits": true, "show_keys": true, "show_status": true, "hud_positions": "",
+	},
+	&"minimal": {
+		"timer_show_time": true, "timer_show_track": false, "timer_show_stage": false,
+		"timer_show_stats": false, "timer_show_standing": false, "timer_compact": true,
+		"timer_size": 34, "timer_position": &"bottom_centre", "show_speed": true,
+		"show_splits": false, "show_keys": false, "show_status": false, "hud_positions": "",
+	},
+	&"everything": {
+		"timer_show_time": true, "timer_show_track": true, "timer_show_stage": true,
+		"timer_show_stats": true, "timer_show_standing": true, "timer_compact": false,
+		"timer_size": 28, "timer_position": &"bottom_centre", "show_speed": true,
+		"show_splits": true, "show_keys": true, "show_status": true, "hud_positions": "",
+	},
+	&"corner": {
+		"timer_show_time": true, "timer_show_track": true, "timer_show_stage": true,
+		"timer_show_stats": false, "timer_show_standing": true, "timer_compact": true,
+		"timer_size": 26, "timer_position": &"top_left", "show_speed": true,
+		"show_splits": true, "show_keys": true, "show_status": true, "hud_positions": "",
+	},
+}
+
+
+func menu_layout_presets() -> Array:
+	return [[&"classic", "Classic"], [&"minimal", "Minimal"], [&"everything", "Everything"], [&"corner", "Top-left corner"]]
+
+
+func menu_apply_layout_preset(id: StringName) -> void:
+	if presentation == null or presentation.settings == null or not LAYOUT_PRESETS.has(id):
+		return
+	var preset: Dictionary = LAYOUT_PRESETS[id]
+	for key: Variant in preset:
+		var _set := presentation.settings.set_value(StringName(str(key)), preset[key])
+
+
+func menu_edit_layout() -> void:
+	open_hud_editor()
 
 
 # --- Menus ---------------------------------------------------------------------
@@ -849,6 +1019,15 @@ func _build_overlays() -> void:
 	map_menu.chosen.connect(_on_map_chosen)
 	_overlay_layer.add_child(map_menu)
 
+	hud_editor = G2GHudEditor.new()
+	hud_editor.name = "HudEditor"
+	hud_editor.closed.connect(_on_overlay_closed)
+	hud_editor.saved.connect(func(text: String) -> void:
+		if presentation != null and presentation.settings != null:
+			var _saved := presentation.settings.set_value(&"hud_positions", text)
+	)
+	_overlay_layer.add_child(hud_editor)
+
 	help = G2GHelp.new()
 	help.name = "Help"
 	help.online = not _offline
@@ -871,7 +1050,8 @@ func _build_overlays() -> void:
 
 func overlay_open() -> bool:
 	return (menu != null and menu.is_open()) or (help != null and help.is_open()) \
-		or (map_menu != null and map_menu.is_open())
+		or (map_menu != null and map_menu.is_open()) \
+		or (hud_editor != null and hud_editor.is_open())
 
 
 ## M: the map list. Offline it is this game's catalogue; online it is asked of the server,
@@ -932,6 +1112,12 @@ func _overlay_key(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	if hud_editor != null and hud_editor.is_open():
+		if escape:
+			hud_editor.close()
+			get_viewport().set_input_as_handled()
+		return
+
 	if map_menu != null and map_menu.is_open():
 		if escape or event.is_action_pressed(&"g2g_map_next") \
 				or map_menu.key((event as InputEventKey).keycode):
@@ -946,6 +1132,46 @@ func _overlay_key(event: InputEvent) -> void:
 	elif menu != null and menu.is_open() and escape:
 		menu.close()
 		get_viewport().set_input_as_handled()
+
+
+# --- Spectating -------------------------------------------------------------------
+
+## The server said whom this client watches. The camera follows on its own (the bridge
+## has told the mirror); this is the rest: the HUD's line and clock, the sampler, and the
+## list of who else is watching.
+func _on_spectate(target: StringName, target_name: String) -> void:
+	var was := spectating
+	spectating = target
+	if hud != null:
+		hud.set_spectating(target, target_name)
+	_show_spectator_list()
+	_refresh_suspended()
+	if was != &"" and target == &"" and hud != null:
+		hud.notice("Back to your own view.")
+
+
+## The list for whoever the HUD is showing: the player being watched, or this player.
+func _show_spectator_list() -> void:
+	if hud == null:
+		return
+	var shown := spectating if spectating != &"" else (player.player_id if player != null else _watch_id)
+	hud.set_spectators(spectator_lists.get(shown, PackedStringArray()))
+
+
+## Whether this client is watching somebody. While it is, the left and right buttons cycle
+## whom, and movement is suspended: the body stays where it was, and the keys a spectator
+## presses are not walking it off a ramp nobody is looking at.
+func is_spectating() -> bool:
+	return spectating != &""
+
+
+## Left click: the previous player; right click: the next. Online only — the server's
+## manager decides, and a client that cycled its own mirror would be watching somebody the
+## server does not think it is.
+func cycle_spectate(forward: bool) -> void:
+	if _offline or bridge == null:
+		return
+	bridge.ask_spectate(G2GEvents.SPECTATE_NEXT if forward else G2GEvents.SPECTATE_PREVIOUS)
 
 
 func _on_overlay_opened() -> void:
@@ -987,7 +1213,8 @@ func _active_sampler() -> DotFpsSampler:
 ## menu or the help screen. `DotFpsSampler` POLLS the keys, so swallowing events is not
 ## enough — see [method _wire_chat_window] for what that costs on a timer server.
 func _refresh_suspended() -> void:
-	var busy := overlay_open() or (presentation != null and presentation.swallows_input())
+	var busy := overlay_open() or (presentation != null and presentation.swallows_input()) \
+		or is_spectating()
 	for sampler in [_sampler, player.sampler if player != null else null]:
 		if sampler != null:
 			(sampler as DotFpsSampler).suspended = busy
@@ -1069,9 +1296,12 @@ func apply_client_settings() -> void:
 		return
 	var st := presentation.settings
 
+	apply_theme(StringName(st.get_string(&"ui_theme", "midnight")))
+
 	if hud != null:
 		hud.apply_visibility(st.get_bool(&"show_speed", true), st.get_bool(&"show_splits", true),
 			st.get_bool(&"show_keys", true), st.get_bool(&"show_crosshair", true))
+		hud.apply_layout(_hud_layout(st))
 
 	if _fps_label != null:
 		_fps_label.visible = st.get_bool(&"show_fps", false)

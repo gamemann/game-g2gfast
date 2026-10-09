@@ -200,6 +200,13 @@ func next_target(viewer: StringName) -> DotResult:
 	return manager.next_target(String(viewer))
 
 
+## The player before the one being watched, round the end. Left click.
+func previous_target(viewer: StringName) -> DotResult:
+	if manager == null:
+		return DotResult.fail(DotError.CODE_STATE, "Spectating is not set up.")
+	return _watched(viewer, manager.previous_target(String(viewer)))
+
+
 ## Who a viewer is watching, or "".
 func target_of(viewer: StringName) -> StringName:
 	if manager == null:

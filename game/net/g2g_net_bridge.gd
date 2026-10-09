@@ -111,6 +111,13 @@ var may_change_map_fn: Callable = Callable()
 ## The server's map list arrived, for the M screen.
 signal maps_received(rows: Array)
 
+## The server said whom this client is watching: a player key and their name, or an
+## empty key for nobody. Client side; the mirror is already updated when it fires.
+signal spectate_received(target: StringName, target_name: String)
+
+## The server said who is watching [param target]. Client side.
+signal spectators_received(target: StringName, names: PackedStringArray)
+
 ## The map's time left as the server last described it. Client side; what the HUD draws.
 ## Never adopted means never told, which the HUD answers with the local clock.
 var clock_view: DotVoteClockView = DotVoteClockView.new()
@@ -325,6 +332,9 @@ func remove_player(session_id: int) -> void:
 	# place a leaving player is announced.
 	_release_entity(session_id)
 	game.remove_player(_player_key(session_id))
+	# Whoever was watching them has been moved on by now (the spectate layer answers
+	# player_removed), and whoever they were watching has one spectator fewer.
+	_send_spectator_lists()
 
 	if net != null and peer_id > 0:
 		if was_ready:
@@ -447,6 +457,7 @@ func server_tick(tick: int) -> void:
 	_tick = tick
 	_game_ticked_for = -1
 	_watch_hunters()
+	_watch_spectate()
 	if net != null:
 		net.server_tick(tick)
 	ensure_game_ticked(tick)
@@ -718,6 +729,123 @@ func _admit(peer_id: int) -> void:
 
 	# Last, so everything above describes the world the announce is about to put it in.
 	_map_admit(peer_id)
+
+
+# --- Spectating -----------------------------------------------------------------
+#
+# The server's spectator manager decides who watches whom; this half tells the two people
+# each decision is about. Until it existed `!spec` changed the server's view and nothing
+# else: the server said "Watching ada." and the client's camera stayed where it was,
+# because the client's manager is a mirror and nobody told it anything.
+
+var _watched_spectate: DotSpectatorManager = null
+
+## What each player was last told about who is watching them: target key -> names.
+var _sent_spectators: Dictionary = {}
+
+
+## Follows the game's spectator manager. Server side, every tick, for the hunters' reason:
+## the game builds it, and may build it again.
+func _watch_spectate() -> void:
+	if net == null or not net.is_server or game == null:
+		return
+	var manager: DotSpectatorManager = game.spectate.manager if game.spectate != null else null
+	if manager == _watched_spectate:
+		return
+	if _watched_spectate != null and is_instance_valid(_watched_spectate):
+		if _watched_spectate.view_changed.is_connected(_on_view_changed):
+			_watched_spectate.view_changed.disconnect(_on_view_changed)
+		if _watched_spectate.retargeted.is_connected(_on_retargeted):
+			_watched_spectate.retargeted.disconnect(_on_retargeted)
+	_watched_spectate = manager
+	_sent_spectators.clear()
+	if manager != null:
+		manager.view_changed.connect(_on_view_changed)
+		manager.retargeted.connect(_on_retargeted)
+
+
+func _on_view_changed(key: String, mode: int, target: String) -> void:
+	# Nobody left to watch is not a camera worth keeping: a spectator parked on an empty
+	# fixed view has a frozen screen and no idea why. They are put back in their own view.
+	if target == "" and mode != DotSpectatorView.Mode.NONE and _watched_spectate != null:
+		_watched_spectate.stop(key)
+		return
+	var peer := peer_for_player(session_of(StringName(key)))
+	if peer > 0 and _ready_peers.has(peer):
+		_tell(peer, G2GEvents.Kind.SPECTATE, G2GEvents.write_spectate(target, mode, _name_of(target)))
+	_send_spectator_lists()
+
+
+func _on_retargeted(key: String, _from: String, to: String, _reason: StringName) -> void:
+	var v := _watched_spectate.view(key) if _watched_spectate != null else null
+	_on_view_changed(key, int(v.mode) if v != null else DotSpectatorView.Mode.NONE, to)
+
+
+func _name_of(key: String) -> String:
+	if key == "" or game == null:
+		return ""
+	var player: G2GPlayer = game.players.get(StringName(key))
+	return player.display_name if player != null else key
+
+
+## The names of everybody watching [param target], sorted, so two calls compare equal.
+func spectators_of(target: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	if _watched_spectate == null or target == "":
+		return out
+	for viewer in _watched_spectate.viewers():
+		if _watched_spectate.view(viewer).target == target:
+			out.append(_name_of(viewer))
+	out.sort()
+	return out
+
+
+## Tells every player whose list of spectators changed, and everybody watching them. With
+## [param force], tells everybody listed whatever it was — `sv_spec_list` changing.
+##
+## [b]Gated on the server, not only hidden on the client.[/b] `sv_spec_list 0` is an
+## operator saying spectating is anonymous here, and a list the client merely chose not to
+## draw would still be on the wire for anybody who wanted to read it.
+func _send_spectator_lists(force: bool = false) -> void:
+	if net == null or not net.is_server or game == null or _watched_spectate == null:
+		return
+	var now := {}
+	if game.config.spectator_list:
+		for viewer in _watched_spectate.viewers():
+			var target := _watched_spectate.view(viewer).target
+			if target != "" and not now.has(target):
+				now[target] = spectators_of(target)
+
+	var targets := {}
+	for t: Variant in now:
+		targets[t] = true
+	for t: Variant in _sent_spectators:
+		targets[t] = true
+
+	for t: Variant in targets:
+		var names: PackedStringArray = now.get(t, PackedStringArray())
+		if not force and _sent_spectators.has(t) and _sent_spectators[t] == names:
+			continue
+		var body := G2GEvents.write_spectators(str(t), names)
+		var told := {}
+		var own := peer_for_player(session_of(StringName(str(t))))
+		if own > 0 and _ready_peers.has(own):
+			_tell(own, G2GEvents.Kind.SPECTATORS, body)
+			told[own] = true
+		for viewer in _watched_spectate.viewers():
+			if _watched_spectate.view(viewer).target != str(t):
+				continue
+			var peer := peer_for_player(session_of(StringName(viewer)))
+			if peer > 0 and _ready_peers.has(peer) and not told.has(peer):
+				_tell(peer, G2GEvents.Kind.SPECTATORS, body)
+				told[peer] = true
+
+	_sent_spectators = now
+
+
+## `sv_spec_list` changed: everybody's list again, empty if it went off.
+func broadcast_spectators() -> void:
+	_send_spectator_lists(true)
 
 
 # --- Hunters -------------------------------------------------------------------
@@ -1199,8 +1327,24 @@ func ask_track(track: int) -> void:
 	_ask(G2GEvents.Ask.TRACK, G2GEvents.write_int(track))
 
 
-func ask_restart() -> void:
-	_ask(G2GEvents.Ask.RESTART, PackedByteArray())
+func ask_restart(mode: int = G2GEvents.RESTART_TRACK) -> void:
+	_ask(G2GEvents.Ask.RESTART, G2GEvents.write_int(mode))
+
+
+## A spectating step: one of `G2GEvents.SPECTATE_*`.
+func ask_spectate(step: int) -> void:
+	_ask(G2GEvents.Ask.SPECTATE, G2GEvents.write_int(step))
+
+
+## The server's word on whom this client watches, onto the client's mirror. The mirror's
+## camera then follows the target from the poses this client already draws, once a frame.
+func _apply_spectate(target: String, mode: int, target_name: String) -> void:
+	var key := String(_player_key(local_player_id))
+	var manager: DotSpectatorManager = game.spectate.manager if game != null and game.spectate != null else null
+	if manager != null:
+		var wanted := mode if target != "" else DotSpectatorView.Mode.NONE
+		manager.apply_wire({"k": key, "v": {"m": wanted, "t": target, "u": -1}})
+	spectate_received.emit(StringName(target), target_name)
 
 
 func ask_rtv() -> void:
@@ -1260,7 +1404,15 @@ func _on_request(message: DotNetMessage) -> void:
 			if avatar != null and player != null:
 				dress(session_id, avatar)
 		G2GEvents.Ask.RESTART:
-			game.spawn_player(id)
+			# The mode is the body; an older client sends none, which reads as TRACK —
+			# exactly what its R meant. A double tap from a bonus changes the track, and
+			# every client is told, as a track change from the menu is.
+			var track_before := _track_of(id)
+			var _restarted := game.restart(id, G2GEvents.read_int(reader))
+			if _track_of(id) != track_before:
+				_broadcast(G2GEvents.Kind.JOIN, _join_body(session_id))
+		G2GEvents.Ask.SPECTATE:
+			_on_spectate_asked(peer_id, session_id, id, G2GEvents.read_int(reader))
 		G2GEvents.Ask.RTV:
 			if rtv_fn.is_valid():
 				rtv_fn.call(id)
@@ -1272,6 +1424,33 @@ func _on_request(message: DotNetMessage) -> void:
 			_on_map_reply(peer_id, G2GEvents.read_map_message(reader, G2GEvents.MAP_REPLY_BYTES))
 		G2GEvents.Ask.MAPS:
 			_on_maps_asked(peer_id, session_id, G2GEvents.read_map_id(reader).strip_edges())
+
+
+func _track_of(id: StringName) -> int:
+	var found := game.timers.player(id) if game != null and game.timers != null else null
+	return found.timer.track if found != null else DotTimerTrack.MAIN
+
+
+## A click while spectating, or the first one. The answer is a SPECTATE event (from the
+## manager's own signal, so a chat `!spec` and a click are told the same way), or a
+## NOTICE saying why not.
+func _on_spectate_asked(peer_id: int, session_id: int, id: StringName, step: int) -> void:
+	if game.spectate == null:
+		_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id, "Spectating is not available here."))
+		return
+	var res: DotResult
+	match step:
+		G2GEvents.SPECTATE_STOP:
+			game.spectate.stop(id)
+			return
+		G2GEvents.SPECTATE_NEXT:
+			res = game.spectate.next_target(id)
+		G2GEvents.SPECTATE_PREVIOUS:
+			res = game.spectate.previous_target(id)
+		_:
+			res = game.spectate.watch_best(id)
+	if not res.ok:
+		_tell(peer_id, G2GEvents.Kind.NOTICE, G2GEvents.write_text(session_id, res.error.message))
 
 
 ## The M screen's two questions. Refused unless the session may change the map, checked
@@ -1374,6 +1553,14 @@ func _on_event(message: DotNetMessage) -> void:
 			var rules := G2GEvents.read_rules(reader)
 			if bool(rules["ok"]):
 				rules_received.emit(rules)
+		G2GEvents.Kind.SPECTATE:
+			var spec := G2GEvents.read_spectate(reader)
+			if bool(spec["ok"]):
+				_apply_spectate(str(spec["target"]), int(spec["mode"]), str(spec["name"]))
+		G2GEvents.Kind.SPECTATORS:
+			var watching := G2GEvents.read_spectators(reader)
+			if bool(watching["ok"]):
+				spectators_received.emit(StringName(str(watching["target"])), watching["names"])
 
 
 func _apply_hello(reader: DotNetReader) -> void:

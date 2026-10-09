@@ -112,6 +112,16 @@ const G2GUnits := preload("g2g_units.gd")
 ## blinded by somebody else's — and this is the operator's way to say no.
 @export var flashlight: bool = true
 
+## [code]sv_spec_list[/code]: whether a player is told who is spectating them (and the
+## people watching the same runner are told too).
+##
+## On by default, because on a records server being watched is the point: somebody going
+## for a record wants to know the server is watching. Off is an operator saying spectating
+## is anonymous here — and then the names are not sent at all, rather than sent and hidden,
+## so a modified client cannot draw them anyway. A player who does not want the list on
+## their screen turns `show_spectators` off on their own side.
+@export var spectator_list: bool = true
+
 @export_group("Content")
 
 ## The map a server loads when it boots.

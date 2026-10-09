@@ -4,6 +4,7 @@ const G2GConfig := preload("g2g_config.gd")
 const G2GGame := preload("g2g_game.gd")
 const G2GMapCatalogue := preload("g2g_map_catalogue.gd")
 const G2GPlayer := preload("g2g_player.gd")
+const G2GUi := preload("ui/g2g_ui.gd")
 
 ## The competitive-shooter timer HUD: the clock, the speed in u/s, the keys, the strafes.
 ##
@@ -14,6 +15,9 @@ const G2GPlayer := preload("g2g_player.gd")
 var timer_hud: DotTimerHud = null
 var _keys: Label = null
 var _status: Label = null
+var _spectating: Label = null
+var _spectators: PanelContainer = null
+var _spectators_label: Label = null
 var _notice: Label = null
 var _crosshair: DotCrosshair = null
 var _notice_until: float = 0.0
@@ -21,6 +25,45 @@ var _notice_until: float = 0.0
 var game: G2GGame = null
 var player_id: StringName = &"local"
 
+## Whose run the clock, the speed and the keys describe: the player this HUD belongs to, or
+## the one they are spectating. See [method set_spectating].
+##
+## [b]The watched player's, while watching.[/b] A spectator's own clock is a player standing
+## in a start zone, and what they came to see is somebody else's time and speed. The
+## standing line (the record, YOUR best, YOUR place) stays the HUD owner's: it is filed per
+## player and a client is only ever told its own.
+var followed_id: StringName = &""
+
+# --- Layout -------------------------------------------------------------------
+
+## The pieces a player can move, in the order the layout editor offers them.
+const ELEMENTS: Array[StringName] = [&"timer", &"keys", &"status", &"spectators"]
+
+## [code]timer_position[/code]'s values, onto `DotTimerHud`'s own placements.
+const PLACEMENTS := {
+	&"bottom_centre": DotTimerHud.Placement.BOTTOM_CENTRE,
+	&"bottom_left": DotTimerHud.Placement.BOTTOM_LEFT,
+	&"bottom_right": DotTimerHud.Placement.BOTTOM_RIGHT,
+	&"top_left": DotTimerHud.Placement.TOP_LEFT,
+	&"top_centre": DotTimerHud.Placement.TOP_CENTRE,
+	&"top_right": DotTimerHud.Placement.TOP_RIGHT,
+}
+
+## The timer block's margin from the edge in a corner placement. The bottom one is the
+## height the clock always had, which the notice line's clearance is derived from.
+const TIMER_MARGIN := Vector2(24.0, 92.0)
+const TIMER_MARGIN_TOP := Vector2(24.0, 56.0)
+
+## Where each moved piece's CENTRE is, as a fraction of this HUD's size. A piece with no
+## entry is where the layout puts it. Written by the layout editor, kept in the
+## `hud_positions` setting; see [method positions_from_text].
+var positions: Dictionary = {}
+
+var _timer_placement: StringName = &"bottom_centre"
+var _show_keys: bool = true
+var _show_status: bool = true
+var _show_spectators: bool = true
+var _spectator_names := PackedStringArray()
 ## The map's time left as the server's vote last described it. Null, or never adopted,
 ## when nothing has told this HUD anything — offline, where the local map session IS the
 ## clock that ends the map, and the only case in which it is.
@@ -164,6 +207,28 @@ func _ready() -> void:
 	_notice.offset_top = -(NOTICE_CLEARANCE + 26.0)
 	_notice.offset_bottom = -NOTICE_CLEARANCE
 
+	# Who you are watching, under the status line. Not movable: it belongs to the status
+	# line's place in the top centre, where a spectator looks for "what am I seeing".
+	_spectating = _label("Spectating", HORIZONTAL_ALIGNMENT_CENTER)
+	_spectating.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_spectating.offset_left = 0.0
+	_spectating.offset_right = 0.0
+	_spectating.offset_top = 44.0
+	_spectating.offset_bottom = 70.0
+	_spectating.visible = false
+
+	# Who is watching you. Down the right-hand side by default, clear of the clock, the
+	# chat box (bottom left) and the status line, and on a plate, because it is a list of
+	# names drawn over arbitrary sky.
+	_spectators = PanelContainer.new()
+	_spectators.name = "Spectators"
+	_spectators.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spectators.visible = false
+	add_child(_spectators)
+	_spectators_label = Label.new()
+	_spectators_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spectators.add_child(_spectators_label)
+
 	# Last, so it draws over every widget above. Sized to the viewport in
 	# `show_loading`, for the reason the blind is. See [member loading_cover].
 	loading_cover = ColorRect.new()
@@ -187,6 +252,8 @@ func _ready() -> void:
 	_loading_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	loading_cover.add_child(_loading_label)
 
+	apply_theme()
+
 
 ## What the player chose to see: the four HUD switches in the menu's General page.
 ##
@@ -197,10 +264,295 @@ func apply_visibility(show_speed: bool, show_splits: bool, show_keys: bool, show
 	if timer_hud != null:
 		timer_hud.show_speed = show_speed
 		timer_hud.show_split = show_splits
+	_show_keys = show_keys
 	if _keys != null:
 		_keys.visible = show_keys
 	if _crosshair != null:
 		_crosshair.visible = show_crosshair
+
+
+## The timer's layout, from the `timer_*`, `show_status`, `show_spectators` and
+## `hud_positions` settings. [param layout] is those keys without their prefix; a key that
+## is missing keeps its current value, so a caller can change one thing.
+##
+## [b]Every line is a `DotTimerHud` field[/b], so a line switched off is gone from the
+## block rather than blank in it, and the block closes up around what is left.
+func apply_layout(layout: Dictionary) -> void:
+	if timer_hud != null:
+		timer_hud.show_time = bool(layout.get("show_time", timer_hud.show_time))
+		timer_hud.show_track = bool(layout.get("show_track", timer_hud.show_track))
+		timer_hud.show_stage = bool(layout.get("show_stage", timer_hud.show_stage))
+		timer_hud.show_stats = bool(layout.get("show_stats", timer_hud.show_stats))
+		timer_hud.show_standing = bool(layout.get("show_standing", timer_hud.show_standing))
+		timer_hud.compact = bool(layout.get("compact", timer_hud.compact))
+		timer_hud.clock_size = clampi(int(layout.get("size", timer_hud.clock_size)), 12, 96)
+		if layout.has("comparison"):
+			match StringName(str(layout["comparison"])):
+				&"wr":
+					timer_hud.comparison = DotTimerHud.Comparison.WORLD_RECORD
+				&"none":
+					timer_hud.comparison = DotTimerHud.Comparison.NONE
+				_:
+					timer_hud.comparison = DotTimerHud.Comparison.PERSONAL_BEST
+		timer_hud.queue_redraw()
+
+	if layout.has("position"):
+		var wanted := StringName(str(layout["position"]))
+		_timer_placement = wanted if PLACEMENTS.has(wanted) else &"bottom_centre"
+	_show_status = bool(layout.get("show_status", _show_status))
+	_show_spectators = bool(layout.get("show_spectators", _show_spectators))
+	if layout.has("positions"):
+		positions = (layout["positions"] as Dictionary).duplicate()
+	_refresh_spectators()
+	place()
+
+
+## [member positions] as the setting stores it, and back. JSON of
+## `{"timer": [0.5, 0.82], ...}`; anything that is not a known piece with two numbers in
+## 0..1 is dropped, because the setting is a file a player can edit by hand and a piece
+## put off-screen by a typo is a piece they cannot find again to drag back.
+static func positions_from_text(text: String) -> Dictionary:
+	var out := {}
+	if text.strip_edges() == "":
+		return out
+	var json := JSON.new()
+	if json.parse(text) != OK or not (json.data is Dictionary):
+		return out
+	for key: Variant in (json.data as Dictionary):
+		var id := StringName(str(key))
+		var at: Variant = (json.data as Dictionary)[key]
+		if not ELEMENTS.has(id) or not (at is Array) or (at as Array).size() != 2:
+			continue
+		var x := float((at as Array)[0])
+		var y := float((at as Array)[1])
+		if is_finite(x) and is_finite(y):
+			out[id] = Vector2(clampf(x, 0.0, 1.0), clampf(y, 0.0, 1.0))
+	return out
+
+
+static func positions_to_text(value: Dictionary) -> String:
+	if value.is_empty():
+		return ""
+	var out := {}
+	for id: Variant in value:
+		var at := value[id] as Vector2
+		out[String(id)] = [snappedf(at.x, 0.0001), snappedf(at.y, 0.0001)]
+	return JSON.stringify(out)
+
+
+## The colours of the current [G2GUi] theme, onto everything this HUD draws.
+func apply_theme() -> void:
+	if timer_hud != null:
+		timer_hud.panel_colour = G2GUi.HUD_PLATE
+		timer_hud.neutral_colour = G2GUi.HUD_TEXT
+		timer_hud.detail_colour = G2GUi.HUD_DETAIL
+		timer_hud.ahead_colour = G2GUi.HUD_AHEAD
+		timer_hud.behind_colour = G2GUi.HUD_BEHIND
+		timer_hud.queue_redraw()
+
+	# Text drawn straight over the world gets an outline in the plate's colour: the keys
+	# and the status line have no plate of their own, and a light theme's dark text over a
+	# dark corridor is otherwise not there.
+	for label in [_keys, _status, _notice, _spectating, _loading_label]:
+		if label == null:
+			continue
+		(label as Label).add_theme_color_override(&"font_color", G2GUi.HUD_TEXT)
+		(label as Label).add_theme_color_override(&"font_outline_color", Color(G2GUi.HUD_PLATE, 0.55))
+		(label as Label).add_theme_constant_override(&"outline_size", 3)
+
+	if _spectators != null:
+		_spectators.add_theme_stylebox_override(&"panel",
+			G2GUi.box(G2GUi.HUD_PLATE, 6, Color(0, 0, 0, 0), 0, Vector4(12, 8, 12, 8)))
+		_spectators_label.add_theme_color_override(&"font_color", G2GUi.HUD_TEXT)
+		_spectators_label.add_theme_font_size_override(&"font_size", 15)
+
+
+# --- Spectating -----------------------------------------------------------------
+
+## Who this HUD's player is watching, by id and by name; an empty id is nobody.
+##
+## The line tells a spectator the two things nobody can guess: how to change who they are
+## watching, and how to stop. Both are in the words a player would type or press.
+func set_spectating(target: StringName, target_name: String = "") -> void:
+	followed_id = target
+	if _spectating == null:
+		return
+	_spectating.visible = target != &""
+	if target != &"":
+		_spectating.text = "Spectating %s    ◀ left click   ·   right click ▶    R or !spec off to stop" % (
+			target_name if target_name != "" else String(target))
+	refresh_stage_reference()
+
+
+## The names of whoever is spectating the player this HUD shows (its owner, or the player
+## they are watching). Empty hides the list; so does `show_spectators`.
+func set_spectators(names: PackedStringArray) -> void:
+	_spectator_names = names
+	_refresh_spectators()
+
+
+func spectator_names() -> PackedStringArray:
+	return _spectator_names
+
+
+func _refresh_spectators() -> void:
+	if _spectators == null:
+		return
+	_spectators.visible = _show_spectators and not _spectator_names.is_empty()
+	if _spectators.visible:
+		_spectators_label.text = "Spectators (%d)\n%s" % [_spectator_names.size(), "\n".join(_spectator_names)]
+
+
+## The player the clock describes.
+func shown_id() -> StringName:
+	return followed_id if followed_id != &"" else player_id
+
+
+# --- Placing --------------------------------------------------------------------
+
+## Puts every movable piece where the layout says. Every frame, because two of them change
+## size with what they show — the clock's block grows a line when a stage starts, and the
+## spectator list with every name — and a piece anchored by its centre has to be re-centred.
+func place() -> void:
+	if timer_hud == null or not is_inside_tree():
+		return
+	var area := size
+
+	# The clock: a corner placement, or a dragged centre.
+	if positions.has(&"timer"):
+		var block := _timer_block()
+		timer_hud.corner = DotTimerHud.Placement.TOP_LEFT
+		timer_hud.margin = _clamp_into(_centre_of(&"timer", area) - block * 0.5, block, area)
+	else:
+		timer_hud.corner = PLACEMENTS.get(_timer_placement, DotTimerHud.Placement.BOTTOM_CENTRE)
+		timer_hud.margin = TIMER_MARGIN_TOP if String(_timer_placement).begins_with("top") else TIMER_MARGIN
+
+	# The keys: under the clock wherever the clock is, and over it only when the clock sits
+	# so low there is no room beneath.
+	var keys_size := _keys.get_combined_minimum_size()
+	keys_size.x = maxf(keys_size.x, 260.0)
+	if positions.has(&"keys"):
+		_put(_keys, _clamp_into(_centre_of(&"keys", area) - keys_size * 0.5, keys_size, area), keys_size)
+	else:
+		var clock := element_rect(&"timer")
+		var below := clock.position.y + clock.size.y + 4.0
+		var y := below if below + keys_size.y <= area.y - 8.0 else clock.position.y - keys_size.y - 4.0
+		if clock.size == Vector2.ZERO:
+			y = area.y - 80.0
+		var x := clock.get_center().x - keys_size.x * 0.5 if clock.size != Vector2.ZERO \
+			else (area.x - keys_size.x) * 0.5
+		_put(_keys, _clamp_into(Vector2(x, y), keys_size, area), keys_size)
+	_keys.visible = _show_keys
+
+	# The status line: the whole top edge, or its own width where it was dragged.
+	_status.visible = _show_status
+	if positions.has(&"status"):
+		var status_size := _status.get_combined_minimum_size()
+		status_size.x = maxf(status_size.x, 200.0)
+		_put(_status, _clamp_into(_centre_of(&"status", area) - status_size * 0.5, status_size, area), status_size)
+	else:
+		_put(_status, Vector2(0.0, 14.0), Vector2(area.x, 26.0))
+
+	# The spectator list: down the right, centred vertically.
+	var list_size := _list_size()
+	if positions.has(&"spectators"):
+		_put(_spectators, _clamp_into(_centre_of(&"spectators", area) - list_size * 0.5, list_size, area), list_size)
+	else:
+		_put(_spectators, Vector2(area.x - list_size.x - 18.0, (area.y - list_size.y) * 0.42), list_size)
+
+
+## Where piece [param id] is drawn now, in this HUD's coordinates. What the layout editor
+## draws a frame round and picks with the mouse.
+func element_rect(id: StringName) -> Rect2:
+	match id:
+		&"timer":
+			if timer_hud == null:
+				return Rect2()
+			var block := _timer_block()
+			return Rect2(_timer_origin(block), block)
+		&"keys":
+			return Rect2(_keys.position, _keys.size) if _keys != null else Rect2()
+		&"status":
+			if _status == null:
+				return Rect2()
+			if positions.has(&"status"):
+				return Rect2(_status.position, _status.size)
+			var width := maxf(_status.get_combined_minimum_size().x, 200.0)
+			return Rect2(Vector2((size.x - width) * 0.5, _status.position.y), Vector2(width, _status.size.y))
+		&"spectators":
+			if _spectators == null:
+				return Rect2()
+			return Rect2(_spectators.position, _list_size())
+	return Rect2()
+
+
+## Moves piece [param id]'s centre to [param centre] (HUD coordinates).
+func move_element(id: StringName, centre: Vector2) -> void:
+	if not ELEMENTS.has(id) or size.x <= 0.0 or size.y <= 0.0:
+		return
+	positions[id] = Vector2(clampf(centre.x / size.x, 0.0, 1.0), clampf(centre.y / size.y, 0.0, 1.0))
+	place()
+
+
+## Puts piece [param id] back where the layout puts it.
+func reset_element(id: StringName) -> void:
+	positions.erase(id)
+	place()
+
+
+## The clock's block, or the size of one when it draws nothing yet (no run, every line
+## switched off): still a place to grab, so the editor never shows a piece that cannot be
+## found — and the same size for placing it as for picking it, or a dragged clock with
+## nothing on it would sit somewhere other than where it was dropped.
+func _timer_block() -> Vector2:
+	var block := timer_hud.block_size() if timer_hud != null else Vector2.ZERO
+	return block if block != Vector2.ZERO else Vector2(220.0, 64.0)
+
+
+## The spectator list's size, or the size of a short one while nobody is watching — for the
+## clock's reason: the layout editor has to be able to find it and place it before anybody
+## is in it.
+func _list_size() -> Vector2:
+	if _spectators == null:
+		return Vector2.ZERO
+	return _spectators.get_combined_minimum_size() if not _spectator_names.is_empty() \
+		else Vector2(150.0, 60.0)
+
+
+func _timer_origin(block: Vector2) -> Vector2:
+	# DotTimerHud's own rule, asked rather than copied would need a method it does not
+	# have; this is `_plate_origin`, which is three lines and is checked against the
+	# drawn block by the presentation suite.
+	var out := timer_hud.margin
+	match timer_hud.corner:
+		DotTimerHud.Placement.TOP_CENTRE, DotTimerHud.Placement.BOTTOM_CENTRE:
+			out.x = (size.x - block.x) * 0.5
+		DotTimerHud.Placement.TOP_RIGHT, DotTimerHud.Placement.BOTTOM_RIGHT:
+			out.x = size.x - block.x - timer_hud.margin.x
+	match timer_hud.corner:
+		DotTimerHud.Placement.BOTTOM_LEFT, DotTimerHud.Placement.BOTTOM_CENTRE, DotTimerHud.Placement.BOTTOM_RIGHT:
+			out.y = size.y - block.y - timer_hud.margin.y
+	return out
+
+
+func _centre_of(id: StringName, area: Vector2) -> Vector2:
+	var at := positions[id] as Vector2
+	return Vector2(at.x * area.x, at.y * area.y)
+
+
+static func _clamp_into(origin: Vector2, piece: Vector2, area: Vector2) -> Vector2:
+	return Vector2(
+		clampf(origin.x, 0.0, maxf(area.x - piece.x, 0.0)),
+		clampf(origin.y, 0.0, maxf(area.y - piece.y, 0.0))
+	)
+
+
+## A Control placed by hand: top-left anchors, then the position and size. Offsets are set
+## through `position`/`size`, which with all four anchors at zero is the same thing.
+static func _put(c: Control, at: Vector2, extent: Vector2) -> void:
+	c.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	c.position = at
+	c.size = extent
 
 
 func _label(p_name: String, align: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
@@ -272,14 +624,17 @@ func refresh_stage_reference() -> void:
 	if game == null or game.timers == null:
 		return
 
-	var timer := game.timers.timer_for(player_id)
+	var timer := game.timers.timer_for(shown_id())
 
 	if timer == null:
 		timer_hud.set_stage_reference(0, {})
 		return
 
+	# The stage count is the watched player's track; the splits are this HUD's owner's own
+	# bests, which say nothing about somebody else's run.
 	timer_hud.set_stage_reference(
-		game.timers.stage_count(timer.track), game.timers.stage_splits_for(player_id)
+		game.timers.stage_count(timer.track),
+		game.timers.stage_splits_for(player_id) if shown_id() == player_id else {}
 	)
 
 
@@ -297,7 +652,11 @@ func _process(delta: float) -> void:
 	if Time.get_ticks_msec() / 1000.0 > _notice_until:
 		_notice.text = ""
 
-	var player: G2GPlayer = game.players.get(player_id)
+	place()
+
+	var player: G2GPlayer = game.players.get(shown_id())
+	if player == null:
+		player = game.players.get(player_id)
 	if player == null:
 		return
 

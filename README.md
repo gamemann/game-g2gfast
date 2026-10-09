@@ -33,18 +33,20 @@ The game comes with three maps of its own: `bhop_g2g_intro`, `bhop_g2g_stages` a
 | **F** | Flashlight. Only you see it |
 | **O** | Hide every other player and the record's ghost |
 | **Tab** | Change style |
-| **R** | Back to the start |
+| **R** | Back to the start of the stage you are in (or of the track, outside a stage). **R R** quickly: back to the main start zone, from a bonus too |
 | **C** / **V** | Save a practice checkpoint / go back to it |
 | **Y** / **U** | Chat / team chat |
 | **M** | The map list: every map, 1–7 or a click to change to it, 8 and 9 to turn the page. Offline, or on a server if you have the changemap flag; anybody else types `!rtv` |
 | **Z** | The zone editor (offline, or an admin): see [Zones](#zones) |
 | **H** | Help: every key and every chat command on the server |
+| **P** | Next HUD theme |
+| **Left / right click** | While spectating: the previous / next player |
 | **Esc** | The menu: settings, key bindings, help. Click the game or **Resume** to take the mouse back |
 | **`** | The console. `settings` lists every setting |
 
-Every key can be rebound under **Esc → Controls**, and the bindings are saved on your device. The menu also has the HUD switches, your style, the field of view, a frame-rate cap (unlimited by default), V-Sync, render scale and the volumes. In a browser, **H** also lists the keys the browser keeps for itself — **Ctrl+W** closes the tab, and Ctrl is Duck.
+Every key can be rebound under **Esc → Controls**, and the bindings are saved on your device. **Esc → HUD & theme** picks one of six themes for the menus and the HUD, switches each line of the timer on or off, sets its size and corner, and has **Move HUD elements**, where you drag the timer, the keys, the status line and the spectator list wherever you want them; the layout is saved to your account. The menu also has the HUD switches, your style, the field of view, a frame-rate cap (unlimited by default), V-Sync, render scale and the volumes. In a browser, **H** also lists the keys the browser keeps for itself — **Ctrl+W** closes the tab, and Ctrl is Duck.
 
-In chat: `!r` (restart), `!wr` or `!top` (fastest times), `!style`, `!track bonus 1`, `!s <n>` (go to stage n), `!rs` (restart this stage), `!stats`, `!rtv`.
+In chat: `!r` (restart), `!wr` or `!top` (fastest times), `!style`, `!track bonus 1`, `!s <n>` (go to stage n), `!rs` (restart this stage), `!stats`, `!rtv`, and `!spec` (or `/spec`) to watch whoever is furthest into a run, `!spec <part of a name>` to watch somebody in particular, `!spec off` to stop. While you watch somebody, the list of everybody else watching them is on the right, and when people watch you, you see theirs; a server turns that off with `sv_spec_list 0`, and you can hide it under **Esc → HUD & theme**.
 
 Records in chat: `!pb [name]`, `!rank`, `!players`, `!rr` (latest records), `!profile` or `!p`, `!mapsdone`, `!mapsleft`, `!wrcp` (stage records), `!prinfo` (your attempts here), `!tier`, `!end`, `!pause` and `!unpause`, `!autorestart`, and `!restore` to take back a run you dropped by disconnecting.
 
@@ -87,6 +89,7 @@ sv_maxvelocity 3500
 sv_crestlaunch 1.25          // how fast you must be going for a ramp's top to launch you (x run speed, 0 = never)
 sv_allow_thirdperson 1
 sv_flashlight 1              // players may use their own flashlight (F); nobody else sees it
+sv_spec_list 1               // players see who is spectating them; 0 makes spectating anonymous
 sv_replay_bot 1              // the server record runs as a visible ghost
 sv_map_sync_timeout 30       // how long a map change waits for slow clients
 sv_deathmatch 0              // players can shoot each other

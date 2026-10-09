@@ -32,13 +32,34 @@ var _side_column: VBoxContainer = null
 
 
 func _ready() -> void:
-	theme = G2GUi.theme()
 	G2GUi.fill_parent(self)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
+	_build()
+	get_viewport().size_changed.connect(_fit)
+	_fit()
+
+
+## Rebuilds this screen in the palette [G2GUi] has now. What a theme change calls.
+##
+## [b]Rebuilt, not recoloured.[/b] Every box and colour here is set once, as an override,
+## when the screen is built; walking the tree to find each one again is a second copy of
+## the build that drifts from the first. Building again is the one that cannot.
+func restyle() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_build()
+	_fit()
+	if visible:
+		_rebuild()
+
+
+func _build() -> void:
+	theme = G2GUi.theme()
 
 	var back := ColorRect.new()
-	back.color = Color(0.02, 0.03, 0.05, 0.72)
+	back.color = Color(G2GUi.BACKDROP, 0.72)
 	G2GUi.fill_parent(back)
 	add_child(back)
 
@@ -99,9 +120,6 @@ func _ready() -> void:
 	_side_column.size_flags_stretch_ratio = 1.25
 	_side_column.add_theme_constant_override(&"separation", 10)
 	_body.add_child(_side_column)
-
-	get_viewport().size_changed.connect(_fit)
-	_fit()
 
 
 func open() -> void:
