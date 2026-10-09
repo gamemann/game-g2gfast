@@ -2499,17 +2499,19 @@ def round_teleports(z, rule):
         if str(e.get("StartDisabled", "0")).strip() != "1":
             continue
         name = e.get("targetname", "").strip().lower()
-        for pat in pats:
-            if name and fnmatch.fnmatchcase(name, pat):
-                z.claimed.add(i)
-                used[pat] += 1
-                dropped += 1
-                break
+        # Every pattern a name matches is credited, so overlapping ones (`youlose*` and
+        # `youlose3`) are not reported stale; the teleport is dropped once.
+        hits = [pat for pat in pats if name and fnmatch.fnmatchcase(name, pat)]
+        for pat in hits:
+            used[pat] += 1
+        if hits:
+            z.claimed.add(i)
+            dropped += 1
     stale = [n for n in pats if not used[n]]
     if stale:
         raise ValueError("round_teleports names no start-disabled teleport: %s" % ", ".join(stale))
     z.notes.append("%d round teleports dropped (%s)"
-                   % (dropped, ", ".join("%s x%d" % kv for kv in sorted(used.items()))))
+                   % (dropped, ", ".join("%s matched %d" % kv for kv in sorted(used.items()))))
     return dropped
 
 
