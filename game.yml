@@ -26,7 +26,7 @@ client_scene: game/g2g.tscn
 module: game/g2g_module.gd
 
 cvars:
-  # A map id typed at the console that is not in maps: below is fetched as <owner>/<id>
+  # A map id typed at the console that is in no map list is fetched as <owner>/<id>
   # (gamemann/surf_mesa) at the origin's latest; the listed ones come at their pinned version.
   sv_map_content_owner: "gamemann"
   sv_airaccelerate: "1000"
@@ -36,40 +36,10 @@ cvars:
   sv_allow_thirdperson: "1"
   sv_replay_bot: "1"
 
-# The courses this server offers: every COURSE in g2gfast-maps' maps.json, each published
-# as its own pack (gamemann/<map id>). Written without versions; the server's installer
-# pins each to the version on the origin when it installs the game, checks it exists, and
-# dot-server carries the pinned list (DotGameDescriptor.maps). A map is downloaded when the
-# server changes to it, not with the game. Left out on purpose: bhop_eazy, bhop_lego2 and
-# buses_from_hell_fixed have no finish (NOT_COURSES), and bhop_arcane_v2 carries a texture
-# from private reference content, so the map publisher refuses it. Also left out until they are
-# published (gb-maps-1, 2026-10-05): the courses surf_quilavar and surf_beginner, because the
-# installer refuses a listed map the origin does not have; and the combat surf maps imported
-# with them, which are NOT_COURSES like bhop_eazy.
-maps:
-  - gamemann/surf_mesa
-  - gamemann/surf_beginner2
-  - gamemann/surf_kitsune
-  - gamemann/surf_aquaflow
-  - gamemann/surf_arcade
-  - gamemann/surf_interference
-  - gamemann/surf_summit
-  - gamemann/surf_year3000
-  - gamemann/surf_greensway
-  - gamemann/surf_life_of_duck
-  - gamemann/surf_stonework3
-  - gamemann/bhop_ananas
-  - gamemann/bhop_aztec
-  - gamemann/bhop_badges
-  - gamemann/bhop_badges_mini
-  - gamemann/bhop_evolve
-  - gamemann/bhop_fur
-  - gamemann/bhop_fury_2
-  - gamemann/bhop_grove
-  - gamemann/bhop_interloper
-  - gamemann/bhop_mario_fxd
-  - gamemann/bhop_monster_jam
-  - gamemann/bhop_pandora2_fix
-  - gamemann/bhop_pit
-  - gamemann/bhop_supernova
-  - gamemann/bhop_tesquo_v2
+# Delivered maps the game itself offers: none. The game ships its three built-in maps
+# (maps/*.tscn) and every other course is its own pack (gamemann/<map id>, from
+# g2gfast-maps), chosen by the SERVER rather than by a release of this game: a server
+# owner lists them in their deployment's map config (dot-server-deploy: cfg/content.yml),
+# which takes the newest version of each on every start. An entry here would be a default
+# every server offers, at the version pinned when the game was installed.
+maps: []
