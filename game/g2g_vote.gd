@@ -135,9 +135,16 @@ func setup() -> DotResult:
 
 	# dot-vote's own map source, rather than a subclass. It duck-types the catalogue
 	# and the session as [Object]s — which is why dot-vote installs in a project that
-	# has never heard of dot-map — and `apply` calls `session.change_to(id)`, which is
-	# exactly what an admin's `g2g_map` calls.
-	source = DotVoteMapSource.of(game.maps.catalogue, game.maps)
+	# has never heard of dot-map — and `apply` calls `session.change_to(id)`.
+	#
+	# [b]The session it is given is the GAME's, not `game.maps`.[/b] It was `game.maps`,
+	# and `DotMapSession.change_to` swaps this process's world and tells nobody: a vote
+	# moved the server to bhop_fur while every client stayed on surf_mesa, and the
+	# respawn that follows a change put each of them at bhop_fur's start — in the sky
+	# over a map they were still drawing. `G2GGame.change_map` is what an admin's
+	# `g2g_map` and the time limit call: it goes through the map-sync host, which tells
+	# the clients, waits for them, and only then swaps.
+	source = DotVoteMapSource.of(game.maps.catalogue, GameMaps.new(game))
 
 	if not source.is_usable():
 		return DotResult.fail(DotError.CODE_STATE, "There is nothing to vote for.")
@@ -449,3 +456,20 @@ func describe() -> Dictionary:
 		"voters": _player_count(),
 		"director": director.describe() if director != null else {},
 	}
+
+
+## What [DotVoteMapSource] reads a session for — the current map, and a way to change it —
+## answered by the game, so that a vote changes the map the way everything else does.
+## See [method setup].
+class GameMaps extends RefCounted:
+	var game: Node = null
+
+	var current: Variant:
+		get:
+			return game.maps.current if game != null and game.maps != null else null
+
+	func _init(p_game: Node) -> void:
+		game = p_game
+
+	func change_to(id: StringName) -> DotResult:
+		return await game.change_map(id)

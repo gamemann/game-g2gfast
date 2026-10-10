@@ -414,11 +414,6 @@ func _build_netcode() -> DotResult:
 	var extra := extras.attach(bridge, game)
 	DotLog.result("g2g.client", "the client's chat and voice", extra)
 
-	extras.line_received.connect(func(text: String) -> void:
-		if hud != null:
-			hud.notice(text)
-	)
-
 	extras.said.connect(_on_said)
 
 	# What the server says is carrying chat. It decides whether the box is drawn at all
@@ -527,6 +522,12 @@ func _on_chat_submitted(text: String, channel: StringName) -> void:
 
 ## A line somebody said, in the chat box, with the name drawn apart from the text.
 func _on_said(speaker: String, text: String, kind: String) -> void:
+	# The server's own lines (a vote, a record, a map change) also go on the HUD's centre
+	# notice. Only those: every line used to, which put whatever anybody typed over the
+	# timer.
+	if kind == "system" and hud != null:
+		hud.notice(text)
+
 	if presentation == null or presentation.chat_window == null:
 		return
 

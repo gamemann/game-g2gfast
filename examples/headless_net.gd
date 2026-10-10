@@ -36,13 +36,13 @@ const SNAPSHOT_RATE := 32
 ## server's. See the note in [method _build].
 const CLIENT_ENGINE_TICK_RATE := 60
 
-const CHECKS := 193
+const CHECKS := 198
 
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose. The CHECKS
 ## total above is the other half — see docs/testing.md.
-const SECTIONS := 27
+const SECTIONS := 28
 
 var _passed := 0
 var _failed := 0
@@ -85,6 +85,7 @@ func _run() -> void:
 		_test_avatar()
 		await _test_lossy()
 		await _test_map_change()
+		await _test_map_by_vote()
 		await _test_map_delivered()
 		await _test_map_owned()
 		await _test_map_republished()
@@ -913,6 +914,57 @@ func _test_map_change() -> void:
 	_steps(4)
 	_check(_client_player().global_position.distance_to(_server_player().global_position) < 1.0, "at the new spawn",
 		"%.3f m" % _client_player().global_position.distance_to(_server_player().global_position))
+	_done()
+
+
+## [b]A map won by vote reaches the clients.[/b]
+##
+## The vote's map source was handed `game.maps`, and `DotMapSession.change_to` swaps the
+## server's own world and tells nobody — so on a live server a vote moved it to bhop_fur
+## while both players stayed on surf_mesa, and the respawn put them at bhop_fur's start
+## in the sky over a map they were still drawing. `_test_map_change` could not see it: it
+## calls `G2GGame.change_map`, which was always right. This goes in through the door the
+## vote uses — `source.apply`, exactly what the director calls on a winner. Armed by
+## giving the source `game.maps` back: the server changed and the client did not.
+func _test_map_by_vote() -> void:
+	_section("changing the map by vote: the clients are told")
+
+	var host := _server_bridge.map_host
+	host.poll_interval_sec = 0.05
+	host.sync_timeout_sec = 5.0
+
+	var vote := G2GVote.new()
+	vote.name = "MapVote"
+	vote.game = _server_game
+	vote.authoritative = false
+	vote.config_path = ""
+	add_child(vote)
+	var built := vote.setup()
+	_check(built.ok, "a vote is built on the server's game", str(built.error) if not built.ok else "")
+
+	var announced := [0]
+	var on_announce := func(_m: Variant) -> void: announced[0] += 1
+	host.change_finished.connect(on_announce)
+
+	var target := &"bhop_g2g_intro"
+	var applied := [null]
+	var apply := func() -> void: applied[0] = await vote.source.apply(target)
+	apply.call()
+
+	var on_client := await _until_client_on(target, 8.0)
+	host.change_finished.disconnect(on_announce)
+
+	_check(_server_game.maps.current.id == target, "the server changes to the map that won")
+	_check(announced[0] == 1, "through the map-sync host, which tells the clients",
+		"the vote swapped the server's world on its own")
+	_check(on_client, "and the client follows it",
+		"client on %s" % (String(_client_game.maps.current.id) if _client_game.maps.current != null else "nothing"))
+
+	_steps(4)
+	_check(_client_player() != null and _client_player().global_position.distance_to(_server_player().global_position) < 1.0,
+		"standing where the server put it, not at the new map's start inside the old one")
+
+	vote.queue_free()
 	_done()
 
 

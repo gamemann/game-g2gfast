@@ -664,6 +664,11 @@ func _build_chat() -> void:
 	chat_window.name = "ChatWindow"
 	chat_window.open_action = &"g2g_chat"
 	chat_window.team_action = &"g2g_chat_team"
+	# [b]An outline, because the floors are pale.[/b] Light-blue names and white text over
+	# light grey tiles were a log the players asked, in that log, to be able to read. dot-ui
+	# outlines rather than panels on purpose (see `DotFeedView`): a backing box is a grey
+	# rectangle in the corner of the view even when nobody is talking.
+	chat_window.outline_size = 5
 	chat_window.channels = [
 		{"id": &"all", "label": "Say", "colour": Color(0.88, 0.90, 0.94)},
 		{"id": &"team", "label": "Say (TEAM)", "colour": Color(0.55, 0.85, 0.60), "team": true},

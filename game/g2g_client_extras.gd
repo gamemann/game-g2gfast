@@ -111,7 +111,10 @@ func _build_chat() -> void:
 
 	chat.message_received.connect(
 		func(message: DotChatMessage, _channel: StringName) -> void:
-			said.emit(message.sender_name, message.text, message.kind_name())
+			# A dot-chat line's kind is "say" on every channel; the channel is what makes
+			# it a team line, and "team" is what the chat box colours.
+			var kind := "team" if message.channel in [G2GServices.CH_TEAM, G2GServices.CH_RUNNING] else message.kind_name()
+			said.emit(message.sender_name, message.text, kind)
 			line_received.emit(message.describe())
 	)
 

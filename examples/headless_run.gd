@@ -576,8 +576,8 @@ func _test_avatars() -> void:
 	# Kenney skins spelt `skin-c`; without a translation every member is stock here.
 	var site_avatars = preload("res://game/g2g_avatars.gd")
 	var site_doc := DotAvatar.make(&"builtin")
-	site_doc.set_part(&"top", &"skin-c")
-	site_doc.set_part(&"face", &"skin-k")
+	site_doc.set_part(&"top", &"top.skin-c")
+	site_doc.set_part(&"face", &"face.skin-k")
 	var as_ours: DotAvatar = site_avatars.from_site(site_doc)
 	_check(
 		as_ours != null and site_avatars.schema().validate(as_ours).ok and as_ours.part_in(&"body") == &"body_kenney_c" and as_ours.part_in(&"head") == &"head_kenney_k",
@@ -585,8 +585,8 @@ func _test_avatars() -> void:
 		str(as_ours.to_dict()) if as_ours != null else "null"
 	)
 	var unknown_skin := DotAvatar.make(&"builtin")
-	unknown_skin.set_part(&"top", &"skin-z")
-	unknown_skin.set_part(&"face", &"skin-z")
+	unknown_skin.set_part(&"top", &"top.skin-z")
+	unknown_skin.set_part(&"face", &"face.skin-z")
 	var not_site := DotAvatar.make(&"elsewhere")
 	not_site.set_part(&"top", &"skin-c")
 	_check(

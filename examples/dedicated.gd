@@ -26,7 +26,7 @@ const G2GVote := preload("../game/g2g_vote.gd")
 ## what the total sees when the section had already announced itself. See
 ## docs/testing.md: this suite had neither until 2026-09-24.
 const SECTIONS := 17
-const CHECKS := 189
+const CHECKS := 190
 
 ## Everything this run writes, and it is deleted on the way in and on the way out.
 ##
@@ -1242,6 +1242,11 @@ func _test_live_tools() -> void:
 	var on_stop := func(_r: DotTimerRun, why: StringName) -> void: stopped.append(why)
 	player.timer.run_stopped.connect(on_stop)
 
+	# Out of the start zone first. Standing in it ends a run (dot-timer v0.1.4, as in every
+	# timer of the genre), so a run begun by hand at the spawn was replaced on the next tick
+	# and every check below read a fresh, untainted one.
+	_check(await _stand_past_start(player), "One stands on the course, past the start zone")
+
 	player.timer.run.begin(0.0)
 	var _on := await _run_command_later("noclip One")
 	_check(DotFpsAdminModifiers.is_noclipped(player.controller), "`noclip One` puts them in noclip")
@@ -1303,6 +1308,28 @@ func _test_live_tools() -> void:
 	player.timer.stop()
 	var _released := server.release_session(session.peer_id)
 	_done()
+
+
+## Puts [param player] on the floor a step past the main start zone, toward the finish.
+## True when they are there and out of the start.
+func _stand_past_start(player: G2GPlayer) -> bool:
+	var zones := player.timer.zones
+	if zones == null:
+		return false
+	var starts := zones.of_kind(DotTimerZone.Kind.START, DotTimerTrack.MAIN)
+	var ends := zones.of_kind(DotTimerZone.Kind.END, DotTimerTrack.MAIN)
+	if starts.is_empty() or ends.is_empty():
+		return false
+	var start := starts[0]
+	var toward := ends[0].centre() - start.centre()
+	toward.y = 0.0
+	toward = toward.normalized()
+	var reach := maxf(start.size().x, start.size().z) * 0.5 + 1.5
+	var at := start.centre() + toward * reach
+	at.y = player.global_position.y
+	player.teleport(at)
+	await _physics(4)
+	return not start.contains(player.global_position)
 
 
 ## The two that are about a screen. What is asserted is the flag on the player and on the
